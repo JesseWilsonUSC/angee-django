@@ -1,0 +1,6 @@
+# Platform-managed provider baseline. Operators attach their own credential;
+# demo model handles remain a separate optional tier.
+- xref: provider_anthropic_demo
+  vendor: integrate.anthropic
+  backend_class: anthropic
+  name: Anthropic

@@ -1,0 +1,6 @@
+# Platform-managed provider baseline. A blank base_url delegates to the backend
+# default; operators may configure their own endpoint after installation.
+- xref: provider_ollama_demo
+  vendor: agents_integrate_ollama.ollama
+  backend_class: ollama
+  name: Ollama

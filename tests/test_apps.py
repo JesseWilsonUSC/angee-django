@@ -206,25 +206,27 @@ def test_agents_config_owns_builtin_mcp_demo_seed() -> None:
     assert mcp_rows["mcp_angee"]["credential"] == "agents.cred_mcp_angee"
 
 
-def test_anthropic_addon_owns_demo_provider_chain() -> None:
-    """The demo Anthropic inference chain lives with the Anthropic addon."""
+def test_anthropic_addon_owns_install_provider_and_demo_models() -> None:
+    """Anthropic always installs its provider while keeping credentials and models optional."""
 
     module = import_module("angee.agents_integrate_anthropic")
     config = AppConfig("angee.agents_integrate_anthropic", module)
     manifest = resource_manifest_for(config)
 
+    assert manifest["install"] == ({
+        "path": "resources/install/030_agents.inferenceprovider.yaml",
+        "depends_on": ("integrate:resources/master/010_integrate.vendor.yaml",),
+    },)
     assert [item["path"] for item in manifest["demo"]] == [
         "resources/demo/010_integrate.credential.yaml",
-        "resources/demo/030_agents.inferenceprovider.yaml",
         "resources/demo/040_agents.inferencemodel.yaml",
     ]
     assert manifest["demo"][0]["adopt"] == ("user", "name")
-    assert "adopt" not in manifest["demo"][1]
-    assert manifest["demo"][2]["adopt"] == ("provider", "name")
-    provider_rows = _resource_rows(config, "demo", "resources/demo/030_agents.inferenceprovider.yaml")
-    assert provider_rows["provider_anthropic_demo"]["owner"] == "iam.user_admin"
-    assert provider_rows["provider_anthropic_demo"]["credential"] == ("agents_integrate_anthropic.cred_anthropic_demo")
-    assert provider_rows["provider_anthropic_demo"]["backend_class"] == "anthropic"
+    assert manifest["demo"][1]["adopt"] == ("provider", "name")
+    provider_rows = _resource_rows(config, "install", "resources/install/030_agents.inferenceprovider.yaml")
+    assert provider_rows["provider_anthropic_demo"] == {
+        "vendor": "integrate.anthropic", "backend_class": "anthropic", "name": "Anthropic",
+    }
     model_rows = _resource_rows(config, "demo", "resources/demo/040_agents.inferencemodel.yaml")
     assert model_rows["model_claude_demo"]["provider"] == "agents_integrate_anthropic.provider_anthropic_demo"
 
@@ -252,8 +254,8 @@ def test_openai_addon_owns_demo_provider_chain() -> None:
     assert model_rows["model_openai_demo"]["provider"] == "agents_integrate_openai.provider_openai_demo"
 
 
-def test_ollama_addon_owns_vendor_and_demo_provider_chain() -> None:
-    """The Ollama addon contributes its vendor plus an unauthenticated demo provider."""
+def test_ollama_addon_owns_vendor_install_provider_and_demo_models() -> None:
+    """Ollama always installs its provider while keeping model examples optional."""
 
     module = import_module("angee.agents_integrate_ollama")
     config = AppConfig("angee.agents_integrate_ollama", module)
@@ -267,18 +269,17 @@ def test_ollama_addon_owns_vendor_and_demo_provider_chain() -> None:
         "angee.integrate",
     )
     assert manifest["master"] == ({"path": "resources/master/010_integrate.vendor.yaml", "adopt": "slug"},)
-    assert [item["path"] for item in manifest["demo"]] == [
-        "resources/demo/030_agents.inferenceprovider.yaml",
-        "resources/demo/040_agents.inferencemodel.yaml",
-    ]
+    assert manifest["install"] == ({
+        "path": "resources/install/030_agents.inferenceprovider.yaml",
+        "depends_on": ("resources/master/010_integrate.vendor.yaml",),
+    },)
+    assert [item["path"] for item in manifest["demo"]] == ["resources/demo/040_agents.inferencemodel.yaml"]
     vendor_rows = _resource_rows(config, "master", "resources/master/010_integrate.vendor.yaml")
     assert vendor_rows["ollama"]["slug"] == "ollama"
-    provider_rows = _resource_rows(config, "demo", "resources/demo/030_agents.inferenceprovider.yaml")
+    provider_rows = _resource_rows(config, "install", "resources/install/030_agents.inferenceprovider.yaml")
     assert provider_rows["provider_ollama_demo"] == {
-        "owner": "iam.user_admin",
         "vendor": "agents_integrate_ollama.ollama",
         "backend_class": "ollama",
-        "lifecycle": "connected",
         "name": "Ollama",
     }
     model_rows = _resource_rows(config, "demo", "resources/demo/040_agents.inferencemodel.yaml")
