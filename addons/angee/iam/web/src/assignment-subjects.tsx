@@ -1,6 +1,6 @@
 import { useAuthoredQuery } from "@angee/refine";
-import { Select, type SelectChoice, type SelectProps } from "@angee/ui";
-import { useMemo, type ReactElement } from "react";
+import type { SelectChoice } from "@angee/ui";
+import { useMemo } from "react";
 
 import {
   IamAssignmentSubjects,
@@ -76,29 +76,4 @@ export function useAssignmentSubjects(
     truncated: userCount > limit || groupCount > limit,
     refetch: query.refetch,
   };
-}
-
-export type AssignmentSubjectPickerProps = Omit<SelectProps, "options"> &
-  UseAssignmentSubjectsOptions;
-
-export function AssignmentSubjectPicker({
-  limit,
-  placeholder,
-  disabled,
-  ...props
-}: AssignmentSubjectPickerProps): ReactElement {
-  const t = useIamT();
-  const subjects = useAssignmentSubjects({ limit });
-  return (
-    <Select
-      {...props}
-      options={subjects.options}
-      placeholder={placeholder ?? (
-        subjects.isFetching
-          ? t("assignmentSubjects.loading")
-          : t("assignmentSubjects.placeholder")
-      )}
-      disabled={disabled || subjects.isFetching || subjects.options.length === 0}
-    />
-  );
 }

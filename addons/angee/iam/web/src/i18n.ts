@@ -22,8 +22,6 @@ export const enIamMessages: Record<string, string> = {
   // Typed assignment subjects shared by workflow and approval controls.
   "assignmentSubjects.users": "Users",
   "assignmentSubjects.groups": "Groups",
-  "assignmentSubjects.loading": "Loading people and groups",
-  "assignmentSubjects.placeholder": "Select a person or group",
 
   // Users page — form-section labels and actions.
   "users.group.profile": "Profile",

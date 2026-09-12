@@ -17,11 +17,9 @@ export {
 export { userDisplayName, type UserDisplayNameInput } from "./identity-labels";
 export { RecordAccessPanel } from "./RecordAccessPanel";
 export {
-  AssignmentSubjectPicker,
   assignmentSubjectOptions,
   useAssignmentSubjects,
   type AssignmentSubjectOption,
-  type AssignmentSubjectPickerProps,
   type AssignmentSubjectsResult,
   type UseAssignmentSubjectsOptions,
 } from "./assignment-subjects";

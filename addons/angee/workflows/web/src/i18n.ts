@@ -1,8 +1,6 @@
 import { createNamespaceT } from "@angee/ui";
 
 export const enWorkflowsMessages: Record<string, string> = {
-  "action.edit": "Edit workflow",
-  "action.create": "Create workflow",
   "col.workflow": "Workflow",
   "col.publicationStatus": "Publication",
   "form.definition": "Definition",
