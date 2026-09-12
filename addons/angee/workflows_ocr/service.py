@@ -165,12 +165,21 @@ def extract(
         retained_parts = error.parts
         _validate_parts(retained_parts, source_count=len(source_facts))
         status = "failed"
-        error_code = type(error).__name__
+        error_code = ":".join(value for value in (error.stage, error.code) if value) or type(error).__name__
+        document_metadata = {
+            "failure": {
+                "stage": error.stage or "document_pipeline",
+                "code": error.code or type(error).__name__,
+            }
+        }
     except (RuntimeError, TimeoutError, ValidationError) as error:
         # The retained code is actionable without copying document values or a
         # provider response into an exception or workflow journal.
         status = "failed"
-        error_code = type(error).__name__
+        stage = "result_validation" if isinstance(error, ValidationError) else "document_pipeline"
+        code = type(error).__name__
+        error_code = f"{stage}:{code}"
+        document_metadata = {**document_metadata, "failure": {"stage": stage, "code": code}}
 
     target = canonical_record_target(authorized_target)
     return extraction_model.objects.create_revision(

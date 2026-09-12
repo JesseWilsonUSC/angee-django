@@ -8,8 +8,16 @@ from types import SimpleNamespace
 import pytest
 from django.core.exceptions import ValidationError
 from PIL import Image
+from pydantic_ai.messages import ModelResponse, ToolCallPart
 
-from angee.workflows_ocr.engines import DocumentPipelineError, DocumentSource, PageImage, PageResult
+from angee.workflows_ocr.engines import (
+    DocumentPart,
+    DocumentPipelineError,
+    DocumentSource,
+    InferenceMappingEngine,
+    PageImage,
+    PageResult,
+)
 from angee.workflows_ocr.routing import acquire_native_parts
 from angee.workflows_ocr.service import _merge, _validated_schema
 from angee.workflows_ocr_glm.engine import GlmOllamaEngine
@@ -53,6 +61,64 @@ def test_schema_owner_requires_object_root() -> None:
     assert _validated_schema(SCHEMA) == SCHEMA
     with pytest.raises(ValidationError, match="root must have type object"):
         _validated_schema({"$id": "bad", "type": "array"})
+
+
+def test_inference_mapping_uses_catalogue_model_without_provider_restriction() -> None:
+    response = SimpleNamespace(
+        text='{"number":"INV-42"}',
+        usage=SimpleNamespace(input_tokens=23, output_tokens=7),
+        provider_response_id="response-1",
+    )
+    requested = {}
+
+    def chat(messages, *, model_settings, model_request_parameters):
+        requested.update(settings=model_settings, parameters=model_request_parameters)
+        return response
+
+    model = SimpleNamespace(
+        status="available",
+        model_use="chat",
+        provider=SimpleNamespace(
+            backend_class="anthropic",
+            backend=SimpleNamespace(),
+        ),
+        chat=chat,
+    )
+    part = DocumentPart(0, None, "text/plain", "native_text", "Invoice INV-42", "native", "hash")
+
+    value, claims, metadata = InferenceMappingEngine().map_text_parts(
+        (part,), SCHEMA, model=model, config={"max_tokens": 128}, timeout=5,
+    )
+
+    assert value == {"number": "INV-42"}
+    assert claims["/number"][0]["part_position"] == 0
+    assert metadata["input_tokens"] == 23
+    assert metadata["output_tokens"] == 7
+    assert requested["parameters"].output_mode == "auto"
+    assert requested["parameters"].output_object.json_schema == SCHEMA
+
+
+def test_inference_mapping_consumes_native_structured_tool_result() -> None:
+    response = ModelResponse(
+        parts=[ToolCallPart("document_extraction", {"number": "INV-43"}, "call-1")]
+    )
+    response.usage.input_tokens = 19
+    response.usage.output_tokens = 5
+    model = SimpleNamespace(
+        status="available",
+        model_use="chat",
+        chat=lambda *args, **kwargs: response,
+    )
+
+    value, _claims, _metadata = InferenceMappingEngine().map_text_parts(
+        (DocumentPart(0, None, "text/plain", "native_text", "Invoice INV-43", "native", "hash"),),
+        SCHEMA,
+        model=model,
+        config={},
+        timeout=5,
+    )
+
+    assert value == {"number": "INV-43"}
 
 
 def test_glm_engine_rejects_nonlocal_provider_before_sending_page() -> None:

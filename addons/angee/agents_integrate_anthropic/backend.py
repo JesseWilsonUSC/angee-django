@@ -6,7 +6,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-import httpx
+import anthropic
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 
@@ -38,27 +38,28 @@ def oauth_system_blocks(system: Any) -> list[dict[str, Any]]:
     return blocks
 
 
-class _OAuthMessagesTransport(httpx.AsyncHTTPTransport):
-    """Rewrite Messages API system prompts into the OAuth block shape.
+async def _rewrite_oauth_messages_request(request: Any) -> None:
+    """Rewrite a Messages request through the SDK client's request-hook seam.
 
-    Installed only on OAuth-credentialed async clients, so SDK consumers that
+    Installed only on OAuth-credentialed SDK clients, so consumers that
     assemble their own system prompt (pydantic-ai joins instructions into one
     string) still satisfy the edge's exact-first-block check without knowing
     the vendor quirk.
     """
 
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        if request.method == "POST" and request.url.path.endswith("/messages"):
-            try:
-                body = json.loads(request.content.decode("utf-8"))
-            except ValueError, UnicodeDecodeError:
-                body = None
-            if isinstance(body, dict):
-                body["system"] = oauth_system_blocks(body.get("system"))
-                content = json.dumps(body).encode("utf-8")
-                request.stream = httpx.ByteStream(content)
-                request.headers["content-length"] = str(len(content))
-        return await super().handle_async_request(request)
+    if request.method != "POST" or not request.url.path.endswith("/messages"):
+        return
+    try:
+        body = json.loads(request.content.decode("utf-8"))
+    except ValueError, UnicodeDecodeError:
+        return
+    if isinstance(body, dict):
+        body["system"] = oauth_system_blocks(body.get("system"))
+        content = json.dumps(body).encode("utf-8")
+        # Preserve the exact SDK-owned stream implementation instead of
+        # importing its isolated HTTP dependency as a second public contract.
+        request.stream = type(request.stream)(content)
+        request.headers["content-length"] = str(len(content))
 
 
 DEFAULT_MODEL_LIMIT = 1000
@@ -96,7 +97,9 @@ class AnthropicInferenceBackend(SDKInferenceBackend):
 
         kwargs = super()._async_client_kwargs(credential=credential)
         if "auth_token" in kwargs:
-            kwargs["http_client"] = httpx.AsyncClient(transport=_OAuthMessagesTransport())
+            kwargs["http_client"] = anthropic.DefaultAsyncHttpxClient(
+                event_hooks={"request": [_rewrite_oauth_messages_request]}
+            )
         return kwargs
 
     def list_models(self) -> Sequence[InferenceModelSpec]:

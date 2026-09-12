@@ -2,6 +2,8 @@
 
 SETTINGS = {
     "ANGEE_OCR_ENGINE_CLASSES": {
+        "inference": "angee.workflows_ocr.engines.InferenceMappingEngine",
+        "inference_document": "angee.workflows_ocr.engines.InferenceDocumentEngine",
         "none": "angee.workflows_ocr.engines.NoOcrEngine",
     },
     "ANGEE_WORKFLOW_STEP_CLASSES.ocr_extract": "angee.workflows_ocr.steps.OcrExtractStepImpl",
