@@ -45,6 +45,8 @@ vi.mock("./useBulkDelete", () => ({
 }));
 
 import { ResourceList } from "./ResourceList";
+import { Form } from "../form/Form";
+import { Field } from "../page/Field";
 
 beforeEach(() => {
   captured.onCreateInLane = undefined;
@@ -108,5 +110,48 @@ describe("in-lane create on a controlled board", () => {
       queue: "que_eng",
       stage: "stage_doing",
     });
+  });
+});
+
+// The board pages do not pass `formFields`; they render a `<Form>` declaration as
+// a child (`useTaskFormDeclaration`). That declaration names the fields, so a
+// create default for a field it does not name has nowhere to land.
+function DeclaredFormBoard() {
+  const [creating, setCreating] = React.useState(false);
+  return (
+    <ResourceList
+      resource="agents.InferenceProvider"
+      columns={[]}
+      placement="drawer"
+      defaultView="board"
+      laneSource={{ field: "stage", rankField: "sort_order" }}
+      createDefaults={{ queue: "que_eng" }}
+      creating={creating}
+      onSelect={(id) => setCreating(id === null)}
+      onClose={() => setCreating(false)}
+    >
+      <Form resource="agents.InferenceProvider">
+        <Field name="name" />
+      </Form>
+    </ResourceList>
+  );
+}
+
+test("declared-form board: what the lane default does with an undeclared field", () => {
+  render(<DeclaredFormBoard />);
+
+  expect(captured.onCreateInLane).toBeTypeOf("function");
+  act(() => captured.onCreateInLane?.("stage_doing"));
+
+  // The surface opens here too -- a press that renders nothing is the reported
+  // D6 symptom, and it does not happen in either shape.
+  expect(captured.formRendered).toBeGreaterThan(0);
+
+  // Both defaults reach the form even though the declaration names neither, so
+  // nothing is lost on the way in. Whether they survive submission is a separate
+  // question: `emptyDraft` builds the draft from declared fields only.
+  expect(captured.formDefaults).toEqual({
+    queue: "que_eng",
+    stage: "stage_doing",
   });
 });
