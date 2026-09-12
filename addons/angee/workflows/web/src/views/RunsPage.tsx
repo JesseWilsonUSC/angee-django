@@ -1,6 +1,7 @@
 import * as React from "react";
+import type { ActionFieldName } from "@angee/gql/console/actions";
 import { rowPublicId } from "@angee/metadata";
-import { useAuthoredMutation, useAuthoredQuery } from "@angee/refine";
+import { useActionMutation, useAuthoredMutation, useAuthoredQuery } from "@angee/refine";
 import {
   Action,
   Badge,
@@ -33,7 +34,6 @@ import { useNavigate } from "@tanstack/react-router";
 
 import {
   CancelWorkflowRunDocument,
-  ReprocessWorkflowRunDocument,
   WorkflowGraphDocument,
   WorkflowAttemptPayloadDocument,
   WorkflowInspectionSelectionDocument,
@@ -108,10 +108,9 @@ export function RunsPage(): React.ReactElement {
     errorFrom: (data) =>
       data?.cancel_workflow_run.ok === false ? data.cancel_workflow_run.message : null,
   });
-  const [reprocessRun] = useAuthoredMutation(ReprocessWorkflowRunDocument, {
+  const [reprocessRun] = useActionMutation<ActionFieldName>("reprocess_workflow_run", {
+    idArgument: "run",
     invalidateModels: [RUN_MODEL, STEP_RUN_MODEL, DECISION_MODEL],
-    errorFrom: (data) => data?.reprocess_workflow_run.ok === false
-      ? data.reprocess_workflow_run.message : null,
   });
   const reprocessKeys = React.useRef(new Map<string, string>());
   const cancel = React.useCallback(
@@ -130,8 +129,7 @@ export function RunsPage(): React.ReactElement {
       requestKey = crypto.randomUUID();
       reprocessKeys.current.set(id, requestKey);
     }
-    const data = await reprocessRun({ run: id, requestKey });
-    const outcome = data?.reprocess_workflow_run;
+    const outcome = await reprocessRun(id, { request_key: requestKey });
     if (outcome?.ok) reprocessKeys.current.delete(id);
     if (outcome?.ok && outcome.id) {
       const href = recordHref(RUN_MODEL, outcome.id);

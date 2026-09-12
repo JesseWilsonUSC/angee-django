@@ -15,6 +15,16 @@ export {
   type IamLoginPageProps,
 } from "./IamLoginPage";
 export { userDisplayName, type UserDisplayNameInput } from "./identity-labels";
+export { RecordAccessPanel } from "./RecordAccessPanel";
+export {
+  AssignmentSubjectPicker,
+  assignmentSubjectOptions,
+  useAssignmentSubjects,
+  type AssignmentSubjectOption,
+  type AssignmentSubjectPickerProps,
+  type AssignmentSubjectsResult,
+  type UseAssignmentSubjectsOptions,
+} from "./assignment-subjects";
 
 // IAM contributes its grouped Settings tree, including the inbound OIDC sign-in
 // provider admin; a route-less parent inherits its first child's target.

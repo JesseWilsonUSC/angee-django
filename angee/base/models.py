@@ -415,6 +415,7 @@ class AngeeModel(TimestampMixin, RebacMixin):
     def grant_record_access(self, relation: str, subject: models.Model | SubjectRef) -> None:
         """Idempotently grant ``subject`` one declared direct relation."""
 
+        self.validate_record_access_target()
         self._grant_declared_record_access(type(self), relation, subject)
 
     def _grant_declared_record_access(
@@ -440,6 +441,7 @@ class AngeeModel(TimestampMixin, RebacMixin):
     def revoke_record_access(self, relation: str, subject: models.Model | SubjectRef) -> None:
         """Idempotently revoke ``subject`` from one declared direct relation."""
 
+        self.validate_record_access_target()
         self._revoke_declared_record_access(type(self), relation, subject)
 
     def _revoke_declared_record_access(
@@ -460,17 +462,26 @@ class AngeeModel(TimestampMixin, RebacMixin):
             )
         )
 
-    def direct_record_access(self) -> tuple[DirectRecordAccess, ...]:
+    def direct_record_access(self, relations: Sequence[str] | None = None) -> tuple[DirectRecordAccess, ...]:
         """Return authorized direct tuples for this record's declared relations.
 
         This deliberately reads only stored relationship rows. It does not walk
         usersets, groups, roles, relation arrows, or effective permissions.
+        ``relations`` narrows both authorization and rows to a caller-authorized
+        subset of the declared share surface.
         """
 
         declaration = type(self).get_rebac_grantable()
         if not declaration:
             raise ValueError(f"{type(self)._meta.label} declares no grantable relations.")
-        for permission in sorted(set(declaration.values())):
+        selected = tuple(declaration) if relations is None else tuple(dict.fromkeys(relations))
+        unknown = tuple(relation for relation in selected if relation not in declaration)
+        if unknown:
+            raise ValueError(
+                f"{type(self)._meta.label} does not declare grantable relation {unknown[0]!r}."
+            )
+        self.validate_record_access_target()
+        for permission in sorted({declaration[relation] for relation in selected}):
             self._require_record_access(permission)
 
         resource = to_object_ref(self)
@@ -479,7 +490,7 @@ class AngeeModel(TimestampMixin, RebacMixin):
             .objects.filter(
                 resource_type=resource.resource_type,
                 resource_id=resource.resource_id,
-                relation__in=tuple(sorted(declaration)),
+                relation__in=tuple(sorted(selected)),
             )
             .order_by("relation", "subject_type", "subject_id", "optional_subject_relation")
         )
@@ -494,6 +505,11 @@ class AngeeModel(TimestampMixin, RebacMixin):
             )
             for row in rows
         )
+
+    def validate_record_access_target(self) -> None:
+        """Validate model-owned constraints on the record that receives direct grants."""
+
+        return None
 
     def _require_record_access(self, permission: str) -> None:
         """Raise when the ambient actor lacks a declared share permission."""

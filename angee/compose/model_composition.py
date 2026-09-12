@@ -19,6 +19,7 @@ from django.db import models
 from django.db.models.utils import make_model_tuple
 from django.utils.module_loading import module_has_submodule
 
+from angee.base.models import AngeeModel
 from angee.base.transitions import revalidate_transition_metadata
 
 
@@ -109,6 +110,8 @@ class ModelComposition:
         for model in dict.fromkeys(declarations):
             self._validate_import(model)
         self._validate_fields()
+        for source in self.ordered_models:
+            self.grantable(source)
 
     @classmethod
     def discover(cls, app_configs: Iterable[AppConfig]) -> ModelComposition:
@@ -187,6 +190,27 @@ class ModelComposition:
         """Return the donor classes themselves in addon/namespace precedence order."""
 
         return self.extensions.get(source._meta.label_lower, ())
+
+    def grantable(self, source: type[models.Model]) -> dict[str, str]:
+        """Merge explicit same-record grants without inheriting parent authority.
+
+        Donors may add relationships, but cannot silently change the permission
+        required to grant a relationship already declared by another owner.
+        """
+
+        grantable: dict[str, str] = {}
+        for owner in (source, *self.donors(source)):
+            # Donors may be plain abstract Django models. Bind the existing
+            # validator to their own declaration, without inheriting grants.
+            declaration = AngeeModel.get_rebac_grantable.__func__(owner)
+            for relation, permission in declaration.items():
+                previous = grantable.setdefault(relation, permission)
+                if previous != permission:
+                    raise ImproperlyConfigured(
+                        f"{source._meta.label_lower} composes conflicting rebac_grantable "
+                        f"permissions for {relation!r}: {previous!r} and {permission!r}."
+                    )
+        return grantable
 
     def _validate_fields(self) -> None:
         """Reject competing additive fields and parent columns redeclared by children.

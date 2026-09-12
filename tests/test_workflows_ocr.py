@@ -64,6 +64,41 @@ def test_glm_engine_rejects_nonlocal_provider_before_sending_page() -> None:
         GlmOllamaEngine().extract_page(_page(0, 0), SCHEMA, model=model, config={}, timeout=1)
 
 
+@pytest.mark.parametrize("base_url", [
+    "https://example.invalid/v1", "ftp://localhost/v1", "http://user:pass@localhost/v1",
+    "http://localhost/v1?token=secret", "http://localhost/v1#fragment",
+])
+def test_glm_configuration_and_execution_reject_the_same_provider(base_url, monkeypatch):
+    model = SimpleNamespace(
+        status="available", model_use="multimodal", provider_model_name="test-model",
+        provider=SimpleNamespace(backend_class="ollama", base_url=base_url),
+    )
+    def unexpected_request(*args, **kwargs):
+        raise AssertionError("An invalid provider must never receive document evidence.")
+    monkeypatch.setattr("httpx.Client", unexpected_request)
+    engine = GlmOllamaEngine()
+    with pytest.raises(ValueError, match="loopback Ollama"):
+        engine.validate_model(model, role="recognition")
+    with pytest.raises(ValueError, match="loopback Ollama"):
+        engine.recognize_page(_page(0, 0), model=model, config={}, timeout=1)
+
+
+def test_glm_model_roles_and_retired_status_share_the_execution_validator():
+    model = SimpleNamespace(
+        status="available", model_use="chat",
+        provider=SimpleNamespace(backend_class="ollama", base_url="http://localhost:11434/v1"),
+    )
+    engine = GlmOllamaEngine()
+    engine.validate_model(model, role="mapping")
+    with pytest.raises(ValueError, match="image-capable"):
+        engine.validate_model(model, role="recognition")
+    model.model_use = "multimodal"
+    engine.validate_model(model, role="recognition")
+    model.status = "retired"
+    with pytest.raises(ValueError, match="available"):
+        engine.validate_model(model, role="mapping")
+
+
 def test_native_acquisition_converts_input_errors_to_retained_pipeline_failures() -> None:
     source = DocumentSource(0, "a" * 64, "image/png", b"not an image")
     with pytest.raises(DocumentPipelineError, match=r"acquisition failed \(ValueError\)"):

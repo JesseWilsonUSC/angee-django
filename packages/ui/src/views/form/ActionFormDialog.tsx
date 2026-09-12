@@ -359,7 +359,7 @@ function argDefaultValues(
       const prefill = arg.fromContext ?? defaultRelationListPrefill;
       values[arg.name] = [...prefill(context)];
     } else if (arg.argKind === "relation") {
-      values[arg.name] = arg.defaultValue ?? "";
+      values[arg.name] = relationValueId(arg.fromContext?.(context) ?? arg.defaultValue) ?? "";
     } else {
       values[arg.name] = arg.fromContext?.(context) ?? arg.defaultValue ?? emptyValueForField(arg);
     }

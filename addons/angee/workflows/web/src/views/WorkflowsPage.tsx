@@ -3,6 +3,7 @@ import { Badge, Column, List, ResourceList, TopMenuTabs, type RecordTabDescripto
 import { useSearch } from "@tanstack/react-router";
 
 import { useWorkflowsT } from "../i18n";
+import { publicationLabel } from "../publication";
 import { WorkflowCanvas } from "./WorkflowCanvas";
 import { workflowDefinitionForm } from "./WorkflowDefinitionForm";
 import { WorkflowRunsPanel, WorkflowVersionsPanel } from "./WorkflowHistoryPanels";
@@ -57,8 +58,4 @@ export function WorkflowsPage(): React.ReactElement {
   );
 }
 
-export function publicationLabel(row: WorkflowHeadRow, t: ReturnType<typeof useWorkflowsT>): string {
-  if (row.publication_status === "archived") return t("publication.retired");
-  if (typeof row.current_published_version === "number") return t("publication.published", { version: row.current_published_version });
-  return t("publication.unpublished");
-}
+export { publicationLabel } from "../publication";

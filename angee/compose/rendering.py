@@ -62,8 +62,9 @@ def render_models(composition: ModelComposition, label: str, *, runtime_module: 
                     "",
                 ]
             )
-        if "rebac_grantable" in source.__dict__ or parent is not None:
-            body_lines.extend([f"    rebac_grantable = {source.__dict__.get('rebac_grantable', {})!r}", ""])
+        grantable = composition.grantable(source)
+        if grantable or "rebac_grantable" in source.__dict__ or parent is not None:
+            body_lines.extend([f"    rebac_grantable = {grantable!r}", ""])
         lines = [
             f"{meta_name} = getattr({source_alias}, 'Meta', object)",
             "",

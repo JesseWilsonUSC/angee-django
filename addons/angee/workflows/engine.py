@@ -2233,5 +2233,4 @@ def _start_error_workflow(run: Any, *, failed_step_run: Any) -> None:
 def _is_error_workflow_run(run: Any) -> bool:
     """Return whether ``run`` was started by an error-workflow failure path."""
 
-    parent = getattr(run, "parent_step_run", None)
-    return parent is not None
+    return run.origin == RunOrigin.ERROR_WORKFLOW

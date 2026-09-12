@@ -994,6 +994,28 @@ and current contracts before applying a historical example to a new deployment.
 
 ## Framework Contracts
 
+### Direct record access
+
+Models opt into direct sharing with `rebac_grantable`, mapping each relation to
+the permission required to manage it. The model remains the policy owner:
+`direct_record_access(relations=...)` lists only the caller-authorized declared
+subset, and `validate_record_access_target()` enforces model-specific target
+rules for listing, options, grants, and revocations. For example, Workflow
+accepts grants only on its lineage head; GraphQL must not infer that rule from
+Workflow fields.
+
+The public GraphQL recipient is typed as either a user or group. It resolves to
+the canonical REBAC subject (`auth/user:<id>` or
+`auth/group:<id>#member`); arbitrary subject strings are not accepted. Historic
+unsupported, wildcard, or malformed subjects remain visible as raw audit
+subjects with a null typed recipient.
+
+Use `authorized_action_target` for mutation preflight that requires the native
+unredacted write scope. A surface that manages a declared relation under another
+permission uses `authorized_permission_target`, which resolves through that
+exact actor permission while preserving scoped not-found behavior and the final
+row access check.
+
 Framework contracts should be self-explaining in code. Add docstrings to public
 modules, classes, methods, functions, declarative manifest attributes, and public
 module-level constants. Add docstrings to private helpers when their role is not

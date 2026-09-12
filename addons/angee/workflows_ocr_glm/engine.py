@@ -6,7 +6,7 @@ import base64
 import json
 import time
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -33,18 +33,8 @@ class GlmOllamaEngine(OcrEngine):
     pipeline_version = "document-v1"
     document_engine = True
 
-    def _generate(
-        self,
-        prompt: str,
-        *,
-        model: Any,
-        config: dict[str, Any],
-        timeout: float,
-        page: PageImage | None = None,
-        schema: dict[str, Any] | None = None,
-    ) -> tuple[str, dict[str, Any]]:
-        """Own endpoint validation, the vendor envelope, and operator-safe failures."""
-
+    @staticmethod
+    def _base_url(model: Any | None) -> str:
         if model is None:
             raise ValueError("GLM OCR requires an inference model.")
         provider = model.provider
@@ -61,6 +51,28 @@ class GlmOllamaEngine(OcrEngine):
             or parsed.fragment
         ):
             raise ValueError("GLM OCR only sends document evidence to a loopback Ollama endpoint.")
+        return base_url
+
+    def validate_model(self, model: Any | None, *, role: Literal["mapping", "recognition"]) -> None:
+        """Own local-provider restrictions for setup and actual inference alike."""
+
+        self._base_url(model)
+        super().validate_model(model, role=role)
+
+    def _generate(
+        self,
+        prompt: str,
+        *,
+        model: Any,
+        config: dict[str, Any],
+        timeout: float,
+        page: PageImage | None = None,
+        schema: dict[str, Any] | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        """Own endpoint validation, the vendor envelope, and operator-safe failures."""
+
+        self.validate_model(model, role="recognition" if page is not None else "mapping")
+        base_url = self._base_url(model)
         if timeout <= 0:
             raise TimeoutError("Document extraction exceeded its configured timeout.")
         request: dict[str, Any] = {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import logging
 import uuid
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping
@@ -2010,6 +2011,39 @@ class TriggerManager(AngeeManager.from_queryset(TriggerQuerySet)):  # type: igno
             )
             self._record_fire_locked(trigger, timestamp=timestamp)
             return run
+
+    def fire_event(self, trigger: Any, *, subject: models.Model, actor: Any, request_key: str) -> Any:
+        """Manually admit one existing subject through its native event trigger.
+
+        The public caller authorizes the exact trigger and subject here; the
+        existing ``start_event`` owner still locks and validates the trigger,
+        captures donor input, pins publication, and owns occurrence dedup.
+        """
+
+        trigger.with_actor(actor)._require_record_access("write")
+        subject.with_actor(actor)._require_record_access("read")
+        request_key = request_key.strip() if isinstance(request_key, str) else ""
+        if not request_key:
+            raise ValidationError({"request_key": "Firing an event trigger requires a non-empty request key."})
+        declaration = trigger.validated_config(require_publisher=True)
+        if not isinstance(declaration, EventTriggerConfig):
+            raise ValidationError({"trigger": "Only an enabled event trigger can process an existing record."})
+        if trigger.kind != TriggerKind.EVENT or not trigger.enabled:
+            raise ValidationError({"trigger": "Only an enabled event trigger can process an existing record."})
+        if subject._meta.label_lower != declaration.model:
+            raise ValidationError({"subject": "The record does not match this event trigger."})
+        identity = ":".join((
+            str(trigger.pk), str(getattr(actor, "pk", "")), subject._meta.label_lower,
+            str(subject.pk), request_key,
+        ))
+        occurrence_id = f"manual:{hashlib.sha256(identity.encode()).hexdigest()}"
+        run = self.start_event(
+            trigger.pk, subject=subject, occurrence_id=occurrence_id,
+            timestamp=timezone.now(), actor=actor, source=declaration.source,
+        )
+        if run is None:
+            raise ValidationError({"trigger": "The event trigger did not admit this record."})
+        return run
 
     def claim_due_schedule(self, trigger_id: int, *, timestamp: datetime) -> tuple[Any, datetime] | None:
         """Lock and advance one due schedule trigger if rate limits allow it."""

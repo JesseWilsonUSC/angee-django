@@ -3,7 +3,7 @@ import { useAuthoredQuery } from "@angee/refine";
 import type { ActionFieldName } from "@angee/gql/console/actions";
 import {
   Badge, Button, Collapsible, Column, EmptyState, ErrorBanner, errorMessage, Field, Form, Group, List,
-  LoadingPanel, ResourceList, REFINE_CREATE_ID, SegmentedControl, SlotOutlet, registerForm,
+  LoadingPanel, ResourceList, REFINE_CREATE_ID, SegmentedControl, registerForm, slotContents,
   TextLink, useImplConfigFields, useFormViewValues,
   useRouteHref, useSlot, useActionOutcomeMutation, useActionResultRun,
   type RecordToolbarContext, type RegisteredFormProps,
@@ -100,7 +100,12 @@ function WorkflowTriggerCollection({
   );
 }
 
-function WorkflowTriggerForm({ resource: _resource, ...props }: RegisteredFormProps): React.ReactElement {
+function WorkflowTriggerForm({
+  resource: _resource,
+  workflowReadOnly = true,
+  showBackToList = true,
+  ...props
+}: RegisteredFormProps & { workflowReadOnly?: boolean; showBackToList?: boolean }): React.ReactElement {
   const t = useWorkflowsT();
   const authoring = useAuthoredQuery(WorkflowTriggerAuthoringDocument, {});
   const declarations = authoring.data?.workflow_trigger_declarations ?? [];
@@ -178,7 +183,7 @@ function WorkflowTriggerForm({ resource: _resource, ...props }: RegisteredFormPr
         : String((context.record as TriggerRecord | null)?.summary
           ?? (context.record as TriggerRecord | null)?.kind
           ?? t("triggers.saved"))}
-      toolbarStart={(context) => <TriggerToolbar context={context} />}
+      toolbarStart={(context) => <TriggerToolbar context={context} showBackToList={showBackToList} />}
       formExtras={(context) => <>
         <WorkflowEventConditionEditor context={context} />
         <TriggerRawConfig context={context} hasSchema={config.hasSchema} />
@@ -186,11 +191,11 @@ function WorkflowTriggerForm({ resource: _resource, ...props }: RegisteredFormPr
       </>}
     >
       <Group label={t("triggers.details")} columns={2}>
-        <Field name="workflow" createOnly readOnly />
+        <Field name="workflow" createOnly readOnly={workflowReadOnly} />
         <Field name="kind" widget="select" options={kindOptions} createOnly required />
       </Group>
       {ruleFields.map((field) => <Field key={field.name} {...field} />)}
-      <SlotOutlet entries={extensionFields} />
+      {slotContents(extensionFields)}
       <Field name="execution_actor" />
       <Group label={t("triggers.advanced")} columns={2} collapsible>
         {advancedFields.map((field) => <Field key={field.name} {...field} />)}
@@ -273,7 +278,7 @@ function ScheduleModeControl({ context }: { context: RecordToolbarContext }): Re
   );
 }
 
-function TriggerToolbar({ context }: { context: RecordToolbarContext }): React.ReactElement {
+function TriggerToolbar({ context, showBackToList }: { context: RecordToolbarContext; showBackToList: boolean }): React.ReactElement {
   const t = useWorkflowsT();
   const { close } = React.useContext(TriggerWorkflowContext);
   const [enableMutation, enableState] = useActionOutcomeMutation<ActionFieldName>("enable_workflow_trigger", {
@@ -294,11 +299,11 @@ function TriggerToolbar({ context }: { context: RecordToolbarContext }): React.R
 
   return (
     <>
-      <Button type="button" size="sm" variant="ghost" onClick={() => {
+      {showBackToList ? <Button type="button" size="sm" variant="ghost" onClick={() => {
         void context.form.requestLeave().then((leave) => { if (leave) close(); });
       }}>
         {t("triggers.backToList")}
-      </Button>
+      </Button> : null}
       <ScheduleModeControl context={context} />
       {record && !context.form.formReadOnly ? (
         <Button
@@ -374,6 +379,11 @@ function TriggerStatus({ context }: { context: RecordToolbarContext }): React.Re
 }
 
 export const workflowTriggerForm = registerForm(TRIGGER_MODEL, WorkflowTriggerForm);
+
+/** Native Trigger form for scopes where the operator chooses the workflow lineage. */
+export const workflowTriggerAssignmentForm = registerForm(TRIGGER_MODEL, (props: RegisteredFormProps) => (
+  <WorkflowTriggerForm {...props} workflowReadOnly={false} showBackToList={false} />
+));
 
 function WorkflowTriggerReadOnlyForm(props: RegisteredFormProps): React.ReactElement {
   return <WorkflowTriggerForm {...props} readOnly />;

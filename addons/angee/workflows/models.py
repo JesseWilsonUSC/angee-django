@@ -149,6 +149,7 @@ class Workflow(ResourceLoadMixin, AuditMixin, AngeeDataModel):
     """
 
     runtime = True
+    rebac_grantable = {"editor": "write", "viewer": "write"}
 
     sqid_prefix = "wfl_"
     key = models.SlugField(max_length=100, blank=True, default="")
@@ -219,6 +220,12 @@ class Workflow(ResourceLoadMixin, AuditMixin, AngeeDataModel):
         """Return the workflow's display label."""
 
         return self.name
+
+    def validate_record_access_target(self) -> None:
+        """Keep direct grants on the mutable owner of a workflow lineage."""
+
+        if self.published_from_id is not None:
+            raise ValidationError("Direct record access can only be managed on a workflow lineage head.")
 
     @classmethod
     def lineage_projection_annotation(cls) -> dict[str, Any]:

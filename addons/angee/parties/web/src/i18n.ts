@@ -1,6 +1,9 @@
 import { createNamespaceT } from "@angee/ui";
 
 export const enPartiesMessages: Record<string, string> = {
+  "partyPicker.label": "Party",
+  "partyPicker.createOrganization": "Create organization",
+  "partyPicker.createPerson": "Create person",
   "common.yes": "Yes",
   "overview.metric.contacts": "People",
   "overview.metric.organizations": "Organizations",

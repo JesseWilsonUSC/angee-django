@@ -174,6 +174,47 @@ def test_runtime_model_render_plan_keeps_model_owned_meta(tmp_path: Path) -> Non
     assert "rebac_resource_type = 'tests/second-render-plan'" in source
 
 
+def test_runtime_composes_additive_grants_without_parent_authority() -> None:
+    """Addon grants belong to the extended record, never its MTI descendants."""
+
+    module = ModuleType("tests.grant_composition")
+    parent = _source_model(module, "GrantParent", "tests", runtime=True, rebac_grantable={"viewer": "share"})
+    donor = _source_model(module, "GrantDonor", "tests", extends="tests.GrantParent", rebac_grantable={"reviewer": "write"})
+    child = type("GrantChild", (models.Model,), {
+        "__module__": module.__name__, "runtime": True, "extends": "tests.GrantParent",
+        "Meta": type("Meta", (), {"abstract": True, "app_label": "tests"}),
+    })
+    module.GrantChild = child
+    composition = ModelComposition({"tests": (parent, child)}, {"tests.grantparent": (donor,)})
+
+    assert composition.grantable(parent) == {"viewer": "share", "reviewer": "write"}
+    assert composition.grantable(child) == {}
+    rendered = render_models(composition, "tests")
+    assert "rebac_grantable = {'viewer': 'share', 'reviewer': 'write'}" in rendered
+    assert "rebac_grantable = {}" in rendered[rendered.index("class GrantChild("):]
+
+
+def test_runtime_rejects_conflicting_donor_grant_authority() -> None:
+    """An addon cannot silently weaken an existing relationship's grant gate."""
+
+    module = ModuleType("tests.grant_conflict")
+    source = _source_model(module, "GrantSource", "tests", runtime=True, rebac_grantable={"reviewer": "admin"})
+    donor = _source_model(module, "GrantConflict", "tests", extends="tests.GrantSource", rebac_grantable={"reviewer": "write"})
+    with pytest.raises(ImproperlyConfigured, match="conflicting rebac_grantable"):
+        ModelComposition({"tests": (source,)}, {"tests.grantsource": (donor,)})
+
+
+@pytest.mark.parametrize("invalid", [None, [], {"": "write"}, {"reviewer": 42}])
+def test_runtime_validates_donor_grants_with_model_owner(invalid: Any) -> None:
+    """Malformed addon declarations retain the model's configuration error contract."""
+
+    module = ModuleType("tests.grant_invalid")
+    source = _source_model(module, "GrantValid", "tests", runtime=True)
+    donor = _source_model(module, "GrantInvalid", "tests", extends="tests.GrantValid", rebac_grantable=invalid)
+    with pytest.raises(ImproperlyConfigured, match="rebac_grantable"):
+        ModelComposition({"tests": (source,)}, {"tests.grantvalid": (donor,)})
+
+
 def test_runtime_honors_explicit_label_when_module_terminal_differs(
     tmp_path: Path,
 ) -> None:

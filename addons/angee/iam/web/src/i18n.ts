@@ -8,6 +8,22 @@ import { createNamespaceT } from "@angee/ui";
 export const enIamMessages: Record<string, string> = {
   // Shared action labels.
   "revoke": "Revoke",
+  "recordAccess.unavailable": "Access settings are unavailable for this record.",
+  "recordAccess.description": "Manage direct access to {target}. Inherited access is controlled by its owner.",
+  "recordAccess.grant": "Grant access",
+  "recordAccess.recipient": "Person or group",
+  "recordAccess.role": "Access role",
+  "recordAccess.chooseRecipient": "Choose a person or group.",
+  "recordAccess.failed": "Access could not be granted.",
+  "recordAccess.recipientsUnavailable": "People and groups could not be loaded.",
+  "recordAccess.revokeTitle": "Revoke access",
+  "recordAccess.revokeBody": "Remove {role} access for {recipient} on {target}?",
+
+  // Typed assignment subjects shared by workflow and approval controls.
+  "assignmentSubjects.users": "Users",
+  "assignmentSubjects.groups": "Groups",
+  "assignmentSubjects.loading": "Loading people and groups",
+  "assignmentSubjects.placeholder": "Select a person or group",
 
   // Users page — form-section labels and actions.
   "users.group.profile": "Profile",

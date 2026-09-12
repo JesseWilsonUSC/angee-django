@@ -81,6 +81,8 @@ export interface ActionScalarArg extends ActionArgBase {
 /** A single relation-picker arg naming the target resource its options list. */
 export interface ActionRelationArg extends ActionArgBase {
   argKind: "relation";
+  /** Seed the saved relation from the invoking record when the dialog opens. */
+  fromContext?: (context: ActionFormContext) => unknown;
   /** Target model label the picker lists (as `useModelMetadata` resolves it). */
   resource: string;
   /** Server-side filters narrowing the relation rows offered by the picker. */

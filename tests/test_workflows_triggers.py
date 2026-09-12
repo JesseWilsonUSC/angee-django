@@ -12,12 +12,13 @@ from typing import Any
 import pytest
 import strawberry
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import close_old_connections, connection, connections, models, transaction
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
-from rebac import actor_context, app_settings, system_context
+from rebac import SubjectRef, actor_context, app_settings, system_context
 from rebac.errors import MissingActorError
 from rebac.errors import PermissionDenied as RebacPermissionDenied
 from rebac.roles import grant
@@ -380,6 +381,68 @@ def test_event_trigger_each_change_uses_publisher_occurrence_identity(
     assert occurrences == ["change-1", "change-2"]
     trigger.refresh_from_db()
     assert trigger.hourly_fire_count == 2
+
+
+def test_manual_event_fire_is_idempotent_and_reprocesses_with_lineage(
+    workflow_trigger_tables: None,
+    no_workflow_queue: None,
+) -> None:
+    """Existing records use trigger admission and native whole-run reprocessing."""
+
+    del workflow_trigger_tables, no_workflow_queue
+    admin = _platform_admin("workflow-manual-event-admin")
+    trigger = _event_trigger(
+        condition={"state": "ready"}, model=SecuredTriggerSubject,
+        config={"admission_policy": "each_change"},
+    )
+    with system_context(reason="manual event subject fixture"):
+        subject = SecuredTriggerSubject.objects.create(name="existing", state="draft")
+        SecuredTriggerSubject.objects.filter(pk=subject.pk).update(state="ready")
+        subject.refresh_from_db()
+
+    first = Trigger.objects.fire_event(trigger, subject=subject, actor=admin, request_key="process-1")
+    duplicate = Trigger.objects.fire_event(trigger, subject=subject, actor=admin, request_key="process-1")
+
+    assert duplicate.pk == first.pk
+    assert first.trigger_id == trigger.pk
+    assert first.subject == subject
+    workflows_schema = importlib.import_module("angee.workflows.schema")
+    runs, pending_decisions = workflows_schema._workflow_subject_history(
+        workflows_schema.WorkflowObjectRefInput(
+            subject_declaration=subject._meta.label, id=str(subject.sqid),
+        ),
+        actor=admin,
+    )
+    assert list(runs) == [first]
+    assert list(pending_decisions) == []
+    run_to_terminal(first)
+    reprocessed = WorkflowRun.objects.reprocess(first, actor=admin, request_key="reprocess-1")
+    assert reprocessed.reprocessed_from_id == first.pk
+    assert reprocessed.subject == subject
+    assert reprocessed.input_present == first.input_present
+    assert reprocessed.input == first.input
+
+
+def test_manual_event_fire_rejects_disabled_mismatched_and_unauthorized_targets(
+    workflow_trigger_tables: None,
+    no_workflow_queue: None,
+) -> None:
+    """Manual admission cannot bypass trigger state, declaration, or REBAC."""
+
+    del workflow_trigger_tables, no_workflow_queue
+    admin = _platform_admin("workflow-manual-event-guard-admin")
+    outsider = User.objects.create_user(username="workflow-manual-event-outsider")
+    with system_context(reason="manual event guard subject fixture"):
+        subject = SecuredTriggerSubject.objects.create(name="guarded", state="ready")
+    disabled = _event_trigger(condition={"state": "ready"}, enabled=False, model=SecuredTriggerSubject)
+    mismatched = _event_trigger(condition={"state": "ready"}, model=TriggerSubject)
+
+    with pytest.raises(ValidationError, match="enabled event trigger"):
+        Trigger.objects.fire_event(disabled, subject=subject, actor=admin, request_key="disabled")
+    with pytest.raises(ValidationError, match="does not match"):
+        Trigger.objects.fire_event(mismatched, subject=subject, actor=admin, request_key="mismatch")
+    with pytest.raises((RebacPermissionDenied, ValidationError)):
+        Trigger.objects.fire_event(disabled, subject=subject, actor=outsider, request_key="unauthorized")
 
 
 def test_event_trigger_each_change_declines_unidentified_legacy_payload(
@@ -1106,6 +1169,39 @@ def test_trigger_activation_preserves_caller_authorization_and_rejects_stale_lin
         models.QuerySet.update(Trigger.objects.filter(pk=trigger.pk), workflow_id=replacement.pk)
         with pytest.raises(ValidationError, match="lineage changed"):
             trigger.enable()
+
+
+def test_workflow_head_shares_reach_publications_and_versions_reject_direct_management(
+    workflow_trigger_tables: None,
+) -> None:
+    """Head user/group grants reach immutable versions through published lineage."""
+
+    del workflow_trigger_tables
+    admin = _platform_admin("workflow-share-admin")
+    reader = User.objects.create_user(username="workflow-share-reader")
+    group_reader = User.objects.create_user(username="workflow-share-group-reader")
+    group = Group.objects.create(name="workflow-share-group")
+    group.user_set.add(group_reader)
+    with actor_context(admin):
+        head = Workflow.objects.create(name="Shared workflow")
+        Step.objects.create(workflow=head, key="start", name="Start", is_entry=True)
+        published = head.publish()
+        head.grant_record_access("viewer", reader)
+        head.grant_record_access("viewer", SubjectRef.of("auth/group", str(group.pk), "member"))
+
+    assert Workflow.objects.with_actor(reader).filter(pk=published.pk).exists()
+    assert Workflow.objects.with_actor(group_reader).filter(pk=published.pk).exists()
+
+    from angee.graphql.sharing import _require_shareable_head
+
+    with pytest.raises(ValueError, match="lineage head"):
+        _require_shareable_head(published)
+
+    with actor_context(admin):
+        head.revoke_record_access("viewer", reader)
+        head.revoke_record_access("viewer", SubjectRef.of("auth/group", str(group.pk), "member"))
+    assert not Workflow.objects.with_actor(reader).filter(pk=published.pk).exists()
+    assert not Workflow.objects.with_actor(group_reader).filter(pk=published.pk).exists()
 
 
 @pytest.mark.parametrize(

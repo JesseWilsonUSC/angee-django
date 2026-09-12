@@ -95,6 +95,20 @@ class OcrEngine(ImplBase):
     pipeline_version: ClassVar[str] = "page-v1"
     document_engine: ClassVar[bool] = False
 
+    def validate_model(self, model: Any | None, *, role: Literal["mapping", "recognition"]) -> None:
+        """Validate a configured model using the same contract as extraction.
+
+        This checks declared capability, not provider connectivity. Engines add
+        their provider restrictions here so configuration and execution agree.
+        """
+
+        if model is None:
+            raise ValueError(f"Select a {role} model.")
+        if str(model.status) in {"deprecated", "retired"}:
+            raise ValueError("Select an available document model.")
+        if role == "recognition" and str(model.model_use) not in {"multimodal", "image"}:
+            raise ValueError("Recognition requires an image-capable model.")
+
     def extract_document(
         self,
         sources: Sequence[DocumentSource],

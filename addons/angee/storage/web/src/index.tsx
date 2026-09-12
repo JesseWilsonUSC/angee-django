@@ -8,6 +8,7 @@ import { ArchiveRestore, Download, HardDrive, Image, Pencil } from "lucide-react
 
 import { enStorageMessages } from "./i18n";
 import { storagePreviews } from "./previews";
+import { folderForm } from "./views/folder-form";
 
 const STORAGE_ID = "storage";
 
@@ -47,6 +48,7 @@ const storage = defineBaseAddon({
   id: STORAGE_ID,
   routes: storageRoutes,
   menus: storageMenu,
+  forms: { "storage.Folder": folderForm },
   i18n: { storage: enStorageMessages },
   icons: {
     drive: HardDrive,

@@ -1808,29 +1808,69 @@ class WorkflowSubjectDeclarationQuery:
     ) -> list[WorkflowRunType]:
         """Return actor-readable native run history for one readable record."""
 
-        actor = session_user(info)
-        try:
-            model = cast(type[models.Model], apps.get_model(subject.subject_declaration))
-        except (LookupError, ValueError):
-            return []
-        target_scope = read_scoped_queryset(model, actor)
-        if target_scope is None:
-            return []
-        target = instance_for_id(model, subject.id, queryset=target_scope)
-        if target is None:
-            return []
-        content_type = ContentType.objects.get_for_model(target, for_concrete_model=False)
-        runs = read_scoped_queryset(cast(type[models.Model], WorkflowRun), actor)
-        if runs is None:
-            return []
-        artifact_content_type, artifact_object_id = canonical_record_target(target)
-        artifact_runs = apps.get_model("workflows", "StepArtifact")._base_manager.filter(
-            target_content_type=artifact_content_type, target_object_id=artifact_object_id,
-        ).values("attempt__step_run__run_id")
-        return cast(list[WorkflowRunType], runs.filter(
-            models.Q(subject_content_type=content_type, subject_object_id=target.pk)
-            | models.Q(pk__in=models.Subquery(artifact_runs)),
-        ).select_related("workflow").distinct().order_by("-created_at", "-pk"))
+        runs, _decisions = _workflow_subject_history(subject, actor=session_user(info))
+        return cast(list[WorkflowRunType], runs)
+
+    @strawberry.field
+    def workflow_subject_history(
+        self, info: strawberry.Info, subject: WorkflowObjectRefInput,
+    ) -> "WorkflowSubjectHistory":
+        """Return runs and pending targeted decisions for one readable record."""
+
+        runs, decisions = _workflow_subject_history(subject, actor=session_user(info))
+        return WorkflowSubjectHistory(
+            runs=cast(list[WorkflowRunType], runs),
+            pending_decisions=cast(list[DecisionType], decisions),
+        )
+
+
+@strawberry.type
+class WorkflowSubjectHistory:
+    """Actor-readable workflow history composed without per-run query fanout."""
+
+    runs: list[WorkflowRunType]
+    pending_decisions: list[DecisionType]
+
+
+def _workflow_subject_history(
+    subject: WorkflowObjectRefInput, *, actor: Any,
+) -> tuple[models.QuerySet[Any], models.QuerySet[Any]]:
+    """Resolve shared subject/artifact run scope and its pending target actions."""
+
+    empty_runs = WorkflowRun.objects.none()
+    empty_decisions = Decision.objects.none()
+    try:
+        model = cast(type[models.Model], apps.get_model(subject.subject_declaration))
+    except (LookupError, ValueError):
+        return empty_runs, empty_decisions
+    target_scope = read_scoped_queryset(model, actor)
+    if target_scope is None:
+        return empty_runs, empty_decisions
+    target = instance_for_id(model, subject.id, queryset=target_scope)
+    if target is None:
+        return empty_runs, empty_decisions
+    content_type = ContentType.objects.get_for_model(target, for_concrete_model=False)
+    readable_runs = read_scoped_queryset(cast(type[models.Model], WorkflowRun), actor)
+    readable_decisions = read_scoped_queryset(cast(type[models.Model], Decision), actor)
+    if readable_runs is None:
+        return empty_runs, empty_decisions
+    artifact_content_type, artifact_object_id = canonical_record_target(target)
+    artifact_runs = apps.get_model("workflows", "StepArtifact")._base_manager.filter(
+        target_content_type=artifact_content_type, target_object_id=artifact_object_id,
+    ).values("attempt__step_run__run_id")
+    runs = readable_runs.filter(
+        models.Q(subject_content_type=content_type, subject_object_id=target.pk)
+        | models.Q(pk__in=models.Subquery(artifact_runs)),
+    ).select_related("workflow").distinct().order_by("-created_at", "-pk")
+    if readable_decisions is None:
+        return runs, empty_decisions
+    decisions = readable_decisions.filter(
+        step_run__run_id__in=models.Subquery(runs.order_by().values("pk")),
+        verdict="pending",
+    ).exclude(target_model="").exclude(target_id="").select_related(
+        "step_run__run",
+    ).order_by("priority", "created_at", "pk")
+    return runs, decisions
 
 
 @strawberry.type
@@ -2458,6 +2498,22 @@ class WorkflowRunActionMutation:
         return ActionResult(ok=True, message=f"Started workflow run {run.sqid}.", id=run.sqid)
 
     @strawberry.mutation
+    @action_guard("Process record with event trigger failed.")
+    def fire_event_trigger(
+        self, info: strawberry.Info, trigger: PublicID, subject: WorkflowObjectRefInput,
+        request_key: str,
+    ) -> ActionResult:
+        """Process an existing readable record through an enabled event trigger."""
+
+        actor = session_user(info)
+        target = authorized_action_target(info, Trigger, trigger, "write")
+        record = _resolve_subject(subject, actor=actor, action="read")
+        if record is None:
+            raise ValidationError({"subject": "An event-trigger subject is required."})
+        run = Trigger.objects.fire_event(target, subject=record, actor=actor, request_key=request_key)
+        return ActionResult(ok=True, message=f"Started workflow run {run.sqid}.", id=run.sqid)
+
+    @strawberry.mutation
     @action_guard("Reprocess workflow run failed.")
     def reprocess_workflow_run(
         self, info: strawberry.Info, run: PublicID, request_key: str
@@ -2684,12 +2740,15 @@ schemas = {
 """GraphQL contributions installed by the workflows addon."""
 
 
-def _resolve_subject(ref: WorkflowObjectRefInput | None, *, actor: Any) -> models.Model | None:
-    """Resolve an optional run subject through the actor's write scope.
+def _resolve_subject(
+    ref: WorkflowObjectRefInput | None, *, actor: Any, action: str = "write",
+) -> models.Model | None:
+    """Resolve an optional run subject through the requested actor scope.
 
-    Starting a workflow operates on the record — its steps may mutate the
-    subject elevated — so the subject requires ``write``, matching the
-    decision-resolution relation re-check (`engine._relation_error`).
+    Manual workflow starts use the default ``write`` action because steps may
+    mutate their subject elevated. Event-trigger firing requests ``read`` here;
+    the trigger owner separately requires trigger write authority and captures
+    the donor's authorized immutable input before execution.
     """
 
     if ref is None:
@@ -2698,7 +2757,7 @@ def _resolve_subject(ref: WorkflowObjectRefInput | None, *, actor: Any) -> model
         model = cast(type[models.Model], apps.get_model(ref.subject_declaration))
     except (LookupError, ValueError) as error:
         raise ValidationError({"subject": "Run workflow subject declaration is not installed."}) from error
-    queryset = read_scoped_queryset(model, actor, action="write")
+    queryset = read_scoped_queryset(model, actor, action=action)
     if queryset is None:
         queryset = model._default_manager.all()
     subject = instance_for_id(model, ref.id, queryset=queryset)
