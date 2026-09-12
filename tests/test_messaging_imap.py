@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import ssl
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import connection
 from imapclient.exceptions import LoginError
@@ -651,6 +652,60 @@ def _drain(backend: ImapChannelBackend) -> list[Any]:
     while batch := backend.fetch_messages():
         collected.extend(batch)
     return collected
+
+
+def test_sample_preview_is_bounded_readonly_and_keeps_cursor(monkeypatch: pytest.MonkeyPatch) -> None:
+    account = FakeImapAccount({"INBOX": _folder(_eml(subject="A"), _eml(subject="B"), _eml(subject="C"))})
+    backend = _backend(monkeypatch, account)
+    backend.bridge.cursor = {"mailboxes": {"INBOX": {"uidvalidity": 100, "last_uid": 1}}}
+
+    result = backend.preview_sample(mailbox="INBOX", since=date(2026, 7, 1), before=date(2026, 8, 1), limit=2)
+
+    assert [message.uid for message in result.messages] == [3, 2]
+    assert result.truncated and result.uidvalidity == 100
+    assert account.searches == [("INBOX", ["SINCE", date(2026, 7, 1), "BEFORE", date(2026, 8, 1)])]
+    assert all(b"BODY.PEEK[]" not in fields for _, _, fields in account.fetches)
+    assert backend.bridge.cursor == {"mailboxes": {"INBOX": {"uidvalidity": 100, "last_uid": 1}}}
+    assert len(account.logins) == account.logouts == 1
+
+
+def test_sample_fetch_pins_uids_and_preserves_unread_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    folder = _folder(_eml(message_id="a@sample", subject="A"), _eml(message_id="b@sample", subject="B"))
+    folder["messages"][2]["flags"] = ()
+    account = FakeImapAccount({"INBOX": folder})
+    backend = _backend(monkeypatch, account)
+
+    messages, imported, unchanged = backend.fetch_sample(mailbox="INBOX", uidvalidity=100, uids=[2, 99])
+
+    assert [message.subject for message in messages] == ["B"]
+    assert imported == [2] and unchanged
+    assert folder["messages"][2]["flags"] == ()
+    assert backend.bridge.cursor == {}
+    assert account.searches == []
+    assert all(set(uids) <= {2, 99} for _, uids, _ in account.fetches)
+    assert len(account.logins) == account.logouts == 1
+
+
+def test_sample_rejects_changed_mailbox_epoch_before_body_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    account = FakeImapAccount({"INBOX": _folder(_eml(), uidvalidity=200)})
+    backend = _backend(monkeypatch, account)
+    with pytest.raises(ValidationError, match="UID identity changed"):
+        backend.fetch_sample(mailbox="INBOX", uidvalidity=100, uids=[1])
+    assert account.fetches == []
+    assert backend.bridge.cursor == {}
+    assert account.logouts == 1
+
+
+def test_sample_rejects_unbounded_requests_before_connect(monkeypatch: pytest.MonkeyPatch) -> None:
+    account = FakeImapAccount({"INBOX": _folder(_eml())})
+    backend = _backend(monkeypatch, account)
+    with pytest.raises(ValidationError, match="sample limit"):
+        backend.preview_sample(mailbox="INBOX", since=date(2026, 7, 1), before=date(2026, 8, 1), limit=51)
+    with pytest.raises(ValidationError, match="one year"):
+        backend.preview_sample(mailbox="INBOX", since=date(2024, 7, 1), before=date(2026, 8, 1))
+    with pytest.raises(ValidationError, match="positive message UIDs"):
+        backend.fetch_sample(mailbox="INBOX", uidvalidity=100, uids=list(range(1, 52)))
+    assert account.logins == []
 
 
 def test_backfill_pages_in_batches_and_sets_the_cursor(monkeypatch: pytest.MonkeyPatch) -> None:

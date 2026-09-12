@@ -37,12 +37,16 @@ import ssl
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
+from email import policy
+from email.parser import BytesHeaderParser
 from functools import partial
 from typing import Any, TypeVar
 
 from django.core.exceptions import ValidationError
 from imapclient import IMAPClient
 from imapclient.exceptions import IMAPClientAbortError, LoginError
+from pydantic import BaseModel, ConfigDict
 
 from angee.integrate.credentials import CredentialKind
 from angee.integrate.errors import IntegrationError
@@ -61,6 +65,8 @@ _DEFAULT_BATCH_SIZE = 200
 _DEFAULT_MAX_MESSAGE_BYTES = 50_000_000
 _DEFAULT_MAX_BATCH_BYTES = 64_000_000
 _DEFAULT_TIMEOUT_SECONDS = 60
+MAX_SAMPLE_MESSAGES = 50
+MAX_SAMPLE_BYTES = 64_000_000
 # Folders never worth syncing by default; SPECIAL-USE flags are authoritative,
 # these casefolded names are the fallback for servers that do not advertise them.
 _SKIP_SPECIAL_USE = frozenset({"\\junk", "\\trash", "\\drafts"})
@@ -75,6 +81,39 @@ class ImapError(IntegrationError):
     payload, so sync telemetry and the connection test may
     show it verbatim.
     """
+
+
+class ImapSampleMessage(BaseModel):
+    """Bounded header preview; a UID is meaningful only within its mailbox epoch."""
+
+    model_config = ConfigDict(frozen=True)
+    uid: int
+    subject: str
+    sender: str
+    sent_at: str
+    size: int
+    flags: list[str]
+
+
+class ImapSamplePreview(BaseModel):
+    """Explicit remote selection; previewing does not move the sync cursor."""
+
+    model_config = ConfigDict(frozen=True)
+    mailbox: str
+    uidvalidity: int
+    messages: list[ImapSampleMessage]
+    truncated: bool
+
+
+class ImapSampleImport(BaseModel):
+    """Local landing receipt for a bounded, historical import."""
+
+    model_config = ConfigDict(frozen=True)
+    message_ids: list[str]
+    requested_uids: list[int]
+    imported_uids: list[int]
+    missing_uids: list[int]
+    flags_unchanged: bool
 
 
 @dataclass
@@ -147,6 +186,82 @@ class ImapChannelBackend(AnymailEmailChannelBackend):
                 return messages
         self.close()
         return []
+
+    def _sample_mailbox(self, mailbox: str, *, uidvalidity: int | None = None) -> int:
+        """Open an explicitly selected configured folder read-only and pin its epoch."""
+
+        client = self._client if self._client is not None else self._connect()
+        if not mailbox or mailbox not in self._select_mailboxes(client):
+            raise ValidationError("Choose a mailbox included in this channel's configuration.")
+        self._select(mailbox)
+        current = int(client.folder_status(mailbox, [b"UIDVALIDITY"])[b"UIDVALIDITY"])
+        if uidvalidity is not None and current != uidvalidity:
+            raise ValidationError("The mailbox UID identity changed. Preview the messages again.")
+        return current
+
+    def preview_sample(self, *, mailbox: str, since: date, before: date, limit: int = 20) -> ImapSamplePreview:
+        """Read headers for at most fifty messages in an explicit one-year window."""
+
+        if not 1 <= limit <= MAX_SAMPLE_MESSAGES:
+            raise ValidationError(f"Choose a sample limit between 1 and {MAX_SAMPLE_MESSAGES}.")
+        if not 0 < (before - since).days <= 366:
+            raise ValidationError("Choose a positive date window of at most one year.")
+        try:
+            uidvalidity = self._sample_mailbox(mailbox)
+            client = self._client_or_fail()
+            found = sorted((int(uid) for uid in client.search(["SINCE", since, "BEFORE", before])), reverse=True)
+            chosen = found[:limit]
+            rows = client.fetch(chosen, [b"BODY.PEEK[HEADER]", b"FLAGS", b"RFC822.SIZE"]) if chosen else {}
+            messages = []
+            for uid in chosen:
+                item = rows.get(uid)
+                if item is None or b"BODY[HEADER]" not in item:
+                    continue
+                raw = bytes(item[b"BODY[HEADER]"])
+                if len(raw) > 1_000_000:
+                    raise ValidationError("A message header is too large to preview safely.")
+                header = BytesHeaderParser(policy=policy.default).parsebytes(raw)
+                messages.append(ImapSampleMessage(
+                    uid=uid, subject=str(header.get("Subject", "")), sender=str(header.get("From", "")),
+                    sent_at=str(header.get("Date", "")), size=int(item.get(b"RFC822.SIZE", 0)),
+                    flags=sorted(_text(flag) for flag in item.get(b"FLAGS", ())),
+                ))
+            self._sample_mailbox(mailbox, uidvalidity=uidvalidity)
+            return ImapSamplePreview(mailbox=mailbox, uidvalidity=uidvalidity,
+                                     messages=messages, truncated=len(found) > limit)
+        finally:
+            self.close()
+
+    def fetch_sample(
+        self, *, mailbox: str, uidvalidity: int, uids: list[int],
+    ) -> tuple[list[ParsedMessage], list[int], bool]:
+        """Fetch the explicit UID set without touching the regular discovery/cursor path."""
+
+        if type(uidvalidity) is not int or uidvalidity <= 0:
+            raise ValidationError("Preview the mailbox before importing its messages.")
+        if not uids or len(uids) > MAX_SAMPLE_MESSAGES or any(type(uid) is not int or uid <= 0 for uid in uids):
+            raise ValidationError(f"Select between 1 and {MAX_SAMPLE_MESSAGES} positive message UIDs.")
+        if len(set(uids)) != len(uids):
+            raise ValidationError("Select each message UID once.")
+        requested = sorted(uids)
+        try:
+            self._sample_mailbox(mailbox, uidvalidity=uidvalidity)
+            self._own_addresses = self._resolve_own_addresses()
+            client = self._client_or_fail()
+            prior = client.fetch(requested, [b"FLAGS", b"RFC822.SIZE"])
+            if sum(int(item.get(b"RFC822.SIZE", 0)) for item in prior.values()) > MAX_SAMPLE_BYTES:
+                raise ValidationError("The selected messages exceed 64 MB. Select a smaller sample.")
+            work = _MailboxWork(name=mailbox, uidvalidity=uidvalidity)
+            messages = self._fetch_chunk(work, requested)
+            self._sample_mailbox(mailbox, uidvalidity=uidvalidity)
+            after = self._client_or_fail().fetch(requested, [b"FLAGS"])
+            unchanged = set(prior) == set(after) and all(
+                set(prior[uid].get(b"FLAGS", ())) == set(after[uid].get(b"FLAGS", ())) for uid in prior
+            )
+            imported = sorted(int(message.metadata["uid"]) for message in messages)
+            return messages, imported, unchanged
+        finally:
+            self.close()
 
     def sync_partitions(self) -> tuple[str, ...]:
         """Return the channel's selected mailbox names — one drainable partition each.
