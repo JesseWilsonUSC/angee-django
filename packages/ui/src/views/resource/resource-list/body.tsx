@@ -1,4 +1,6 @@
 import * as React from "react";
+
+import { d5Write } from "../surface/d5-diagnostic";
 import { rowPublicId, type Row } from "@angee/metadata";
 import { stableSerialize } from "@angee/refine";
 import { ControlBandProvider } from "../../../layouts/ControlBand";
@@ -149,6 +151,7 @@ export function ResourceListBody<TRow extends Row = Row>({
   });
   React.useEffect(() => {
     if (open) return;
+    d5Write("body quickCreateDefaults", quickCreateDefaults, undefined);
     setQuickCreateDefaults(undefined);
   }, [open]);
 

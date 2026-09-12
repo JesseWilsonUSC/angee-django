@@ -1,4 +1,10 @@
 import * as React from "react";
+
+import { d5Write } from "./surface/d5-diagnostic";
+
+// TEMPORARY D5 DIAGNOSTIC -- not for merge.
+const d5Lane = <T,>(previous: T, next: T): T =>
+  d5Write("board optimistic lane entries", previous, next);
 import {
   fieldUpdatable,
   refineResourceName,
@@ -142,7 +148,7 @@ export function useBoardLaneState<TRow extends Row>({
 
   React.useEffect(() => {
     if (!source || optimisticLaneEntryByRowId.size === 0) return;
-    setOptimisticLaneEntryByRowId((current) => {
+    setOptimisticLaneEntryByRowId((current) => d5Lane(current, (() => {
       let changed = false;
       const next = new Map(current);
       for (const row of rows) {
@@ -170,7 +176,7 @@ export function useBoardLaneState<TRow extends Row>({
         }
       }
       return changed ? next : current;
-    });
+    })()));
   }, [optimisticLaneEntryByRowId, rows, source]);
 
   const onCardMove = React.useCallback(

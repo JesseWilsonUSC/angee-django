@@ -1,4 +1,10 @@
 import * as React from "react";
+
+import { d5Write } from "./surface/d5-diagnostic";
+
+// TEMPORARY D5 DIAGNOSTIC -- not for merge.
+const d5Local = <T,>(previous: T, next: T): T =>
+  d5Write("nav setLocal [local branch]", previous, next);
 import { rowPublicId, useModelMetadata, isClientRowModel, type Row } from "@angee/metadata";
 import { stableSerialize } from "@angee/refine";
 import { useResourceViewMaybe } from "./resource-view-context";
@@ -71,20 +77,21 @@ export function useListRecordNavigation<TRow extends Row>({
 
   const onListStateChange = React.useCallback((state: ResourceListSnapshot<TRow>) => {
     if (state.navigationScope) {
+      d5Write("nav setLocal(null) [scope branch]", local, null);
       setLocal(null);
       scopeRef.current = { binding, scope: state.navigationScope };
       // A mounted drawer's collection cannot replace the record's independent page.
-      if (!recordId) setCaptured((previous) => previous?.binding === binding && stableSerialize(previous.scope) === stableSerialize(state.navigationScope) ? previous : { binding, scope: state.navigationScope! });
+      if (!recordId) setCaptured((previous) => d5Write("nav setCaptured [scope branch]", previous, previous?.binding === binding && stableSerialize(previous.scope) === stableSerialize(state.navigationScope) ? previous : { binding, scope: state.navigationScope! }));
     } else {
       scopeRef.current = null;
       if (!recordId) setCaptured((previous) => previous?.scope ? { binding, scope: null } : previous);
-      setLocal((previous) => {
+      setLocal((previous) => d5Local(previous, (() => {
         const snapshot = previous?.binding === binding && state.fetching && !state.rows.some((row) => readId(row) === recordId)
           && previous.snapshot.rows.some((row) => readId(row) === recordId)
           ? { ...previous.snapshot, fetching: true }
           : state;
         return previous?.binding === binding && stableSerialize(previous.snapshot) === stableSerialize(snapshot) ? previous : { binding, snapshot };
-      });
+      })()));
     }
     if (selectFirstRecord && !state.fetching) {
       const selectedStillExists = recordId

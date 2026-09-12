@@ -1,4 +1,6 @@
 import * as React from "react";
+
+import { d5Write } from "./d5-diagnostic";
 import { type ResourceQuery, type ModelMetadata, type Row } from "@angee/metadata";
 import { functionalUpdate, type ColumnDef, type OnChangeFn, type PaginationState, type RowSelectionState, type SortingState, type Table, type VisibilityState } from "@tanstack/react-table";
 import { queryForColumns } from "../resource-query";
@@ -212,6 +214,7 @@ export function useResourceViewTableState<TRow extends Row>({
     [boundedPageSize, statePagination],
   );
   React.useEffect(() => {
+    d5Write("table-state pagination", statePagination, pagination);
     if (pagination !== statePagination) resourceView.setPagination(pagination);
   }, [pagination, resourceView.setPagination, statePagination]);
   const sorting = React.useMemo<SortingState>(() => {
