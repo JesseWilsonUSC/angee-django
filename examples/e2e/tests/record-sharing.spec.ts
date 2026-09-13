@@ -23,9 +23,14 @@ test.describe("shared record access", () => {
     await expect(dialog).toContainText(
       "Manage direct access to the selected records.",
     );
-    await expect(
-      dialog.getByRole("combobox", { name: "Access" }),
-    ).toBeEnabled({ timeout: 20_000 });
+    const access = dialog.getByRole("combobox", { name: "Access" });
+    await expect(access).toBeEnabled({ timeout: 20_000 });
+    await access.click();
+    await expect(page.locator(".z-popover:visible")).toHaveCSS(
+      "z-index",
+      "110",
+    );
+    await expect(dialog).toHaveCSS("z-index", "101");
   });
 
   test("record chrome shows one shared action and offers agent service users", async ({

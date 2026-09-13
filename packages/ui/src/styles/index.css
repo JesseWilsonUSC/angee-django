@@ -257,10 +257,10 @@
    *  Three notes:
    *    - Base UI internal stacking variables such as --toast-index may use
    *      calculated z-index values inside a named page-level layer.
-   *    - tooltip and modal-backdrop sit at the same numeric level (100);
-   *      separate concepts that never co-render in practice.
    *    - modal is one tick above its own backdrop so the backdrop click
    *      handler still resolves before the popup paints.
+   *    - portaled controls sit above a modal so selects, menus, and date
+   *      pickers opened inside a dialog remain interactive and visible.
    * ---------------------------------------------------------------- */
   --z-index-sticky-cell:     5;     /* ListView sticky header */
   --z-index-sticky-col:      10;    /* sticky first column */
@@ -268,11 +268,11 @@
   --z-index-topbar:          30;    /* Top menu bar */
   --z-index-rail:            32;    /* Left app rail (slightly above topbar) */
   --z-index-drawer:          40;    /* Non-modal edge drawers + their stripe-tabs (above chrome, below popovers/modals) */
-  --z-index-popover:         60;    /* Combobox, date picker, menus, fields chooser */
-  --z-index-toast:           80;    /* Transient toast / banner layer (above popovers) */
-  --z-index-tooltip:         100;   /* AppRail hover tooltip */
   --z-index-modal-backdrop:  100;   /* Modal dim layer */
   --z-index-modal:           101;   /* Modal popup */
+  --z-index-popover:         110;   /* Portaled controls, including controls opened from a modal */
+  --z-index-toast:           120;   /* Transient toast / banner layer (above popovers) */
+  --z-index-tooltip:         130;   /* AppRail and control tooltips */
 
   /* ----------------------------------------------------------------
    *  RADII — emit `rounded-2`, `rounded-4`, etc.

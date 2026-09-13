@@ -7,7 +7,7 @@ const menu: ResourceProps[] = [
   { name: "menu:nexus.inbox", list: "/nexus/inbox", meta: { menuId: "nexus.inbox", label: "Inbox", icon: "comments", parent: "menu:nexus" } },
   { name: "menu:files", list: "/files", meta: { menuId: "files", label: "Files", icon: "files" } },
   { name: "menu:notes", list: "/notes", meta: { menuId: "notes", label: "Notes", icon: "notes" } },
-  { name: "menu:iam", list: "/iam", meta: { menuId: "iam", label: "Permissions", icon: "auth", group: "platform" } },
+  { name: "menu:iam", list: "/iam", meta: { menuId: "iam", label: "IAM", icon: "auth" } },
 ];
 
 const meta = {

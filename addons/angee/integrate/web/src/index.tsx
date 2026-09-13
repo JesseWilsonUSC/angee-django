@@ -76,8 +76,7 @@ const integrateMenu: readonly BaseMenuItem[] = [
     // child (Integrations), avoiding a duplicate route reference.
     id: INTEGRATE_ID,
     label: "Integrations",
-    icon: "integrate",
-    group: "platform",
+    icon: "connect",
     children: [
       {
         // Product connection records and their supporting catalogue.
@@ -146,7 +145,7 @@ const integrate = defineBaseAddon({
     },
   ],
   icons: {
-    integrate: Cable,
+    connect: Cable,
     integration: Link2,
     vendor: Store,
     webhook: Webhook,
