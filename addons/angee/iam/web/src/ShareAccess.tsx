@@ -34,6 +34,13 @@ export function ShareRecordChrome(): React.ReactElement {
 
 export function ShareListChrome(): React.ReactElement {
   const list = useResourceViewActionContext();
+  if (list.record) {
+    return <ShareAccess
+      resource={list.record.resource}
+      targetIds={[list.record.recordId]}
+      record={list.record.record}
+    />;
+  }
   return <ShareAccess
     resource={list.resource}
     targetIds={[...(list.selectedIds ?? [])].sort()}
@@ -131,8 +138,14 @@ function BoundShareAccess({ resource, targetIds, record, label: suppliedLabel }:
   return <ManageAccessDialog
     open={open}
     onOpenChange={setOpen}
-    trigger={<Button type="button" variant="ghost" size="sm" disabled={stableTargetIds.length === 0}>
-      <Glyph name="share" />{t("access.share")}
+    trigger={<Button
+      type="button"
+      variant="icon"
+      size="iconMd"
+      aria-label={t("access.share")}
+      disabled={stableTargetIds.length === 0}
+    >
+      <Glyph name="share" />
     </Button>}
     label={label}
     targetIds={stableTargetIds}

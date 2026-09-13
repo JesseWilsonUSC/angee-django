@@ -40,6 +40,7 @@ class NotesAuthorizationTests(TransactionTestCase):
 
     def test_note_is_a_rebac_resource(self) -> None:
         self.assertEqual(model_resource_type(Note), "notes/note")
+        self.assertEqual(Note.get_rebac_grantable(), {"reader": "share", "editor": "share"})
 
     def test_scoped_for_aggregate_is_actor_scoped_and_fails_closed(self) -> None:
         # Aggregates compile through .values()/.aggregate() (no field redaction),

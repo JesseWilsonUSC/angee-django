@@ -27,11 +27,12 @@ const notes = defineBaseAddon({
   ],
   menus: [{ id: "notes", label: "Notes", route: "notes.home", icon: "notes" }],
   i18n: { notes: enNotesMessages },
-  // The record-form star/share chrome is host-provided, not baked into base.
+  // Notes contributes only its star; IAM contributes Share globally.
   slots: [
     {
       slot: FORM_VIEW_RECORD_CHROME_SLOT,
       id: "notes.record-chrome",
+      sequence: 10,
       content: <RecordChrome />,
     },
     // Example-only login help: the seeded demo credentials surface on the host's

@@ -1,7 +1,13 @@
 import { AUTH_LOGIN_METHOD_SLOT } from "@angee/app/auth";
 import { expectValidBaseAddon } from "@angee/app/testing";
 import {
-  formViewSectionsSlot, MenuTree, type BaseMenuItem, type ChromeMenuItem } from "@angee/ui";
+  FORM_VIEW_RECORD_CHROME_SLOT,
+  RESOURCE_VIEW_ACTIONS_SLOT,
+  formViewSectionsSlot,
+  MenuTree,
+  type BaseMenuItem,
+  type ChromeMenuItem,
+} from "@angee/ui";
 import { describe, expect, test } from "vitest";
 
 import iam, { IAM_LOGIN_BACKGROUND_IMAGE_URLS } from "./index";
@@ -90,16 +96,25 @@ describe("iam addon manifest", () => {
     expect(tree.itemsForRoute("iam.overview")).toHaveLength(1);
   });
 
+  test("contributes one shared access action to record and collection toolbars", () => {
+    const record = iam.slots?.find((slot) => slot.id === "iam.share-record");
+    expect(record?.slot).toBe(FORM_VIEW_RECORD_CHROME_SLOT);
+    expect(record?.sequence).toBe(20);
+    expect(record?.content).toBeDefined();
+    const list = iam.slots?.find((slot) => slot.id === "iam.share-list");
+    expect(list?.slot).toBe(RESOURCE_VIEW_ACTIONS_SLOT);
+    expect(list?.sequence).toBe(20);
+    expect(list?.content).toBeDefined();
+  });
+
   test("contributes the login methods and the OIDC tab on the OAuth client form", () => {
-    expect(iam.slots).toHaveLength(2);
-    const login = iam.slots?.[0];
+    expect(iam.slots).toHaveLength(4);
+    const login = iam.slots?.find((slot) => slot.id === "iam.oauth-login");
     expect(login?.slot).toBe(AUTH_LOGIN_METHOD_SLOT);
-    expect(login?.id).toBe("iam.oauth-login");
     expect(login?.content).toBeDefined();
     // The OIDC login tab the iam addon adds to integrate's OAuth client form.
-    const oidc = iam.slots?.[1];
+    const oidc = iam.slots?.find((slot) => slot.id === "iam.oidc-login");
     expect(oidc).toMatchObject(formViewSectionsSlot("integrate.OAuthClient"));
-    expect(oidc?.id).toBe("iam.oidc-login");
     expect(oidc?.content).toBeDefined();
   });
 

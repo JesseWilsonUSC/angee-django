@@ -82,8 +82,8 @@ const iam = defineBaseAddon({
   menus: identityMenu,
   i18n: { iam: enIamMessages },
   slots: [
-    { slot: FORM_VIEW_RECORD_CHROME_SLOT, id: "iam.share-record", content: createElement(ShareRecordChrome) },
-    { slot: RESOURCE_VIEW_ACTIONS_SLOT, id: "iam.share-list", content: createElement(ShareListChrome) },
+    { slot: FORM_VIEW_RECORD_CHROME_SLOT, id: "iam.share-record", sequence: 20, content: createElement(ShareRecordChrome) },
+    { slot: RESOURCE_VIEW_ACTIONS_SLOT, id: "iam.share-list", sequence: 20, content: createElement(ShareListChrome) },
     {
       slot: AUTH_LOGIN_METHOD_SLOT,
       id: "iam.oauth-login",

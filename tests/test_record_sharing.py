@@ -11,6 +11,7 @@ from rebac import SubjectRef
 from rebac.resources import model_for_resource_type
 from rebac.schema.parser import parse_zed
 
+from angee.agents.models import Agent as AbstractAgent
 from angee.base import models as base_models
 from angee.base.identity import public_id_for
 from angee.graphql import sharing
@@ -37,6 +38,7 @@ def test_group_access_projects_canonical_subject_identity() -> None:
 
 
 def test_share_declarations_and_lineage_head_guard() -> None:
+    assert AbstractAgent.get_rebac_grantable() == {"reader": "share", "editor": "share"}
     assert Drive.get_rebac_grantable() == {"editor": "write", "viewer": "write"}
     assert Workflow.get_rebac_grantable() == {"editor": "write", "viewer": "write"}
     Workflow.validate_record_access_target(SimpleNamespace(published_from_id=None))

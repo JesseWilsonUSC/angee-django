@@ -22,6 +22,12 @@ class NotesSchemaMetadataTests(SimpleTestCase):
         }["notes.Note"]
         fields = {field["name"]: field for field in note["fields"]}
 
+        self.assertEqual(note["resourceType"], "notes/note")
+        self.assertEqual(
+            [(item["relation"], item["permission"]) for item in note["grantable"]],
+            [("editor", "share"), ("reader", "share")],
+        )
+
         self.assertEqual(
             note["subtitle"],
             {

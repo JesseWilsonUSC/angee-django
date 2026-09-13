@@ -15,7 +15,6 @@ export const enNotesMessages: Record<string, string> = {
   "record.activity": "Activity",
   "record.versions": "Versions",
   "record.star": "Star",
-  "record.share": "Share",
   "status.synced": "Synced",
   "status.new": "New note",
   "status.editing": "Editing note",

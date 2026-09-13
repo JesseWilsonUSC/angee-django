@@ -703,6 +703,7 @@ class Agent(SqidMixin, AuditMixin, AngeeModel):
     """
 
     runtime = True
+    rebac_grantable = {"reader": "share", "editor": "share"}
 
     sqid_prefix = "agt_"
     name = models.CharField(max_length=200)
