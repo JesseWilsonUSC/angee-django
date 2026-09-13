@@ -168,6 +168,7 @@ test("a run history link renders one completed Decision outside the pending coll
 });
 
 test("a selected target distinguishes query failure from a permission-masked unavailable result", async () => {
+  const onDecisionChange = vi.fn();
   const provider = {
     getApiUrl: () => "test://workflows",
     getList: vi.fn(), getOne: vi.fn(), create: vi.fn(), update: vi.fn(), deleteOne: vi.fn(),
@@ -178,7 +179,7 @@ test("a selected target distinguishes query failure from a permission-masked una
     return <Refine resources={[...refineResourcesFromDataResources([resource])]} dataProvider={{ default: provider, public: provider }} options={{ disableTelemetry: true }}>
       <RouterContextProvider router={router}><ModelMetadataProvider metadata={schemaFieldMetadataFromDataResources([resource])}>
         <ModalsHost><ToastProvider><AppRuntimeProvider runtime={{ widgets: defaultWidgets }}>
-          <WorkflowApprovals target={{ model: "parties.Party", id: "party-7", tab: "accounting" }} decisionId={decisionId} selectedTaskOnly />
+          <WorkflowApprovals target={{ model: "parties.Party", id: "party-7", tab: "accounting" }} decisionId={decisionId} selectedTaskOnly onDecisionChange={onDecisionChange} />
         </AppRuntimeProvider></ToastProvider></ModalsHost>
       </ModelMetadataProvider></RouterContextProvider>
     </Refine>;
@@ -189,10 +190,15 @@ test("a selected target distinguishes query failure from a permission-masked una
   rendered.rerender(view("error", "decision-2"));
   expect(await screen.findByText("Decision query failed")).toBeTruthy();
   expect(screen.queryByText("Approve tool")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Back to approvals" }));
+  await waitFor(() => expect(onDecisionChange).toHaveBeenCalledWith(null));
+  onDecisionChange.mockClear();
   rendered.unmount();
   render(view("empty"));
   expect(await screen.findByText("This approval is unavailable or you no longer have access.")).toBeTruthy();
   expect(screen.queryByText(/does not exist/i)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Back to approvals" }));
+  await waitFor(() => expect(onDecisionChange).toHaveBeenCalledWith(null));
 });
 
 test("dirty approval values use the shared leave guard before changing selection", async () => {

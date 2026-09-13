@@ -1,11 +1,13 @@
 import * as React from "react";
 import { useAuthoredQuery } from "@angee/refine";
 import {
+  Button,
   Column,
   EmptyState,
   ErrorBanner,
   Field,
   Form,
+  Glyph,
   List,
   LoadingPanel,
   ResourceList,
@@ -228,9 +230,17 @@ function DecisionTaskResult({ context, approval, fetching, error, refetch, onDir
     if (approval) setRetained(approval);
   }, [approval]);
   if (fetching && !retained) return <LoadingPanel message={t("inbox.loading")} />;
-  if (error && !retained) return <ErrorBanner description={errorMessage(error, t("inbox.decisionUnavailable"))} />;
+  if (error && !retained) return (
+    <UnavailableDecisionTask onBack={onBack}>
+      <ErrorBanner description={errorMessage(error, t("inbox.decisionUnavailable"))} />
+    </UnavailableDecisionTask>
+  );
   if (!retained) {
-    return <EmptyState icon="workflow-inbox" title={t("inbox.decisionUnavailable")} />;
+    return (
+      <UnavailableDecisionTask onBack={onBack}>
+        <EmptyState icon="workflow-inbox" title={t("inbox.decisionUnavailable")} />
+      </UnavailableDecisionTask>
+    );
   }
   return (
     <ApprovalTask
@@ -245,5 +255,23 @@ function DecisionTaskResult({ context, approval, fetching, error, refetch, onDir
       }}
       reconcile={refetch}
     />
+  );
+}
+
+function UnavailableDecisionTask({ onBack, children }: {
+  onBack?: () => void;
+  children: React.ReactNode;
+}): React.ReactElement {
+  const t = useWorkflowsT();
+  return (
+    <section className="h-full overflow-auto bg-sheet-1 p-4">
+      {onBack ? (
+        <Button type="button" variant="ghost" onClick={onBack}>
+          <Glyph name="chevron-left" />
+          {t("inbox.back")}
+        </Button>
+      ) : null}
+      <div className={onBack ? "mt-4" : undefined}>{children}</div>
+    </section>
   );
 }
