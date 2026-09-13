@@ -18,6 +18,7 @@ import re
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 from itertools import combinations
 from typing import TYPE_CHECKING, Any, Self, cast
 
@@ -33,6 +34,7 @@ from angee.base.identity import public_id_for
 from angee.base.mixins import HierarchyQuerySet
 from angee.base.models import AngeeManager, AngeeQuerySet
 from angee.base.refs import canonical_record_target
+from angee.base.scoping import read_scoped_queryset
 from angee.parties.domains import GENERIC_EMAIL_DOMAINS
 from angee.parties.mixins import LinkSource
 
@@ -41,6 +43,25 @@ if TYPE_CHECKING:
 
 
 _SIGNATURE_PHONE_CANDIDATE = re.compile(r"(?<!\w)\+?\d(?:[\d \t()./\-]*\d)?(?!\w)")
+
+
+class HandleAssociationStatus(StrEnum):
+    """Nondisclosing assessment of one claimed Handle for a candidate Party."""
+
+    SAME_CONFIRMED = "same_confirmed"
+    SAME_DISMISSED = "same_dismissed"
+    CONFIRMED_OTHER = "confirmed_other"
+    WEAK_SAME = "weak_same"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class HandleAssociationAssessment:
+    """Closed risk status plus association rows already readable by the actor."""
+
+    status: HandleAssociationStatus
+    readable_links: tuple[Any, ...]
+    conflict_evidence_readable: bool
 
 
 class CircleQuerySet(HierarchyQuerySet, AngeeQuerySet):
@@ -311,6 +332,67 @@ class HandleManager(AngeeManager.from_queryset(HandleQuerySet)):  # type: ignore
 
 class PartyHandleManager(AngeeManager):
     """Owns the confidence link between a party and a handle, and the resolution."""
+
+    def has_confirmed_association(self, handle: Any, *, actor: Any) -> bool:
+        """Return whether this readable Handle has any confirmed owner, without disclosing it."""
+
+        if actor is None:
+            raise PermissionDenied("an actor is required to assess a party-handle association")
+        handle.with_actor(actor)._require_record_access("read")
+        with system_context(reason="parties.party_handle.has_confirmed_association"):
+            return self.filter(
+                handle_id=handle.pk, is_confirmed=True, is_dismissed=False,
+            ).exists()
+
+    def assess_claimed_handle(self, party: Any, handle: Any, *, actor: Any) -> HandleAssociationAssessment:
+        """Assess a claimed Handle without disclosing inaccessible Party associations."""
+
+        if actor is None:
+            raise PermissionDenied("an actor is required to assess a party-handle association")
+        party.with_actor(actor)._require_record_access("read")
+        handle.with_actor(actor)._require_record_access("read")
+        with system_context(reason="parties.party_handle.assess_claimed_handle"):
+            authoritative = tuple(
+                self.filter(handle_id=handle.pk)
+                .only("party_id", "is_confirmed", "is_dismissed")
+                .order_by("pk")
+            )
+        same = tuple(link for link in authoritative if link.party_id == party.pk)
+        if any(link.is_dismissed for link in same):
+            status = HandleAssociationStatus.SAME_DISMISSED
+        elif any(
+            link.is_confirmed and not link.is_dismissed and link.party_id != party.pk
+            for link in authoritative
+        ):
+            status = HandleAssociationStatus.CONFIRMED_OTHER
+        elif any(link.is_confirmed and not link.is_dismissed for link in same):
+            status = HandleAssociationStatus.SAME_CONFIRMED
+        elif any(not link.is_dismissed for link in same):
+            status = HandleAssociationStatus.WEAK_SAME
+        else:
+            status = HandleAssociationStatus.UNKNOWN
+        visible = read_scoped_queryset(self.model, actor)
+        readable = (
+            tuple(visible.filter(handle_id=handle.pk).select_related("party").order_by("pk"))
+            if visible is not None else ()
+        )
+        readable_ids = {link.pk for link in readable}
+        conflict_ids = {
+            link.pk for link in authoritative
+            if (
+                (link.party_id == party.pk and link.is_dismissed)
+                or (
+                    link.party_id != party.pk
+                    and link.is_confirmed
+                    and not link.is_dismissed
+                )
+            )
+        }
+        return HandleAssociationAssessment(
+            status=status,
+            readable_links=readable,
+            conflict_evidence_readable=conflict_ids.issubset(readable_ids),
+        )
 
     def propose_claimed_handle(
         self,

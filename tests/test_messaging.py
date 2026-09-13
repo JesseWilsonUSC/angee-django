@@ -64,6 +64,7 @@ from angee.messaging.models import ThreadedModelMixin
 from angee.messaging.models import ThreadFollower as AbstractThreadFollower
 from angee.messaging.models import ThreadNotification as AbstractThreadNotification
 from angee.messaging.models import TrackingValue as AbstractTrackingValue
+from angee.parties.managers import HandleAssociationStatus
 from angee.parties.mixins import LinkSource
 from angee.parties.models import Address as AbstractAddress
 from angee.parties.models import Circle as AbstractCircle
@@ -2032,6 +2033,37 @@ def test_claimed_sender_proposal_accumulates_evidence_without_demoting_confirmat
     ]
     assert all(item.id != str(foreign_party.sqid) for item in page.items)
     assert link.evidence_page(None).items == ()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_claimed_sender_assessment_reports_hidden_confirmed_other_without_disclosure(channel: Any) -> None:
+    """A private conflicting owner blocks association without revealing its identity."""
+
+    actor = channel.owner
+    foreign = get_user_model().objects.create_user(
+        username="foreign-handle-owner", email="foreign-handle-owner@example.test",
+    )
+    with system_context(reason="test hidden sender association fixtures"):
+        candidate = Party._base_manager.create(display_name="Candidate supplier", created_by=actor)
+        other = Party._base_manager.create(display_name="Private supplier", created_by=foreign)
+        handle = Handle._base_manager.create(
+            platform=Handle.Platform.EMAIL, value="private-owner@example.test", created_by=actor,
+        )
+        PartyHandle._base_manager.create(
+            party=other, handle=handle, confidence=1.0, source=LinkSource.MANUAL,
+            is_confirmed=True, created_by=foreign,
+        )
+        visible = PartyHandle._base_manager.create(
+            party=candidate, handle=handle, confidence=0.4, source=LinkSource.EMAIL_MATCH,
+            created_by=actor,
+        )
+
+    assessment = PartyHandle.objects.assess_claimed_handle(candidate, handle, actor=actor)
+
+    assert PartyHandle.objects.has_confirmed_association(handle, actor=actor)
+    assert assessment.status is HandleAssociationStatus.CONFIRMED_OTHER
+    assert assessment.readable_links == (visible,)
+    assert not assessment.conflict_evidence_readable
 
 
 @pytest.mark.django_db(transaction=True)
