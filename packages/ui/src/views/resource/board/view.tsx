@@ -57,6 +57,19 @@ export interface BoardViewProps<TRow extends Row = Row> {
   renderCard?: (row: TRow) => React.ReactNode;
 }
 
+/**
+ * Cancel the click the browser fires right after a drop. dnd-kit stops that
+ * click from propagating once a drag activates, so no React handler sees it,
+ * but its default action survives: on a card whose body is a record link the
+ * browser follows the href and reloads into the record. The drop and its click
+ * are dispatched in one task, so the guard is gone by the next one.
+ */
+function cancelTrailingClick(): void {
+  const cancel = (event: MouseEvent): void => event.preventDefault();
+  window.addEventListener("click", cancel, { capture: true, once: true });
+  window.setTimeout(() => window.removeEventListener("click", cancel, { capture: true }), 0);
+}
+
 export function BoardView<TRow extends Row = Row>(
   props: BoardViewProps<TRow>,
 ): React.ReactElement {
@@ -170,6 +183,7 @@ function BoardRows<TRow extends Row>({
   );
   const handleDragEnd = React.useCallback(
     (event: DragEndEvent) => {
+      cancelTrailingClick();
       const active = boardDragData<TRow>(event);
       const target = boardDropTarget(event, leaves);
       if (!active || !target) return;

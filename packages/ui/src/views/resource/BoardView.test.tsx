@@ -361,54 +361,30 @@ describe("BoardView", () => {
     expect(card?.querySelector("a")?.getAttribute("draggable")).toBe("false");
   });
 
-  test("a drop inside its own lane does not open the dragged card's record", () => {
-    const sortable = (isDragging: boolean) => ({
-      attributes: { "data-sortable": "true" },
-      listeners: {
-        onPointerDown: (event: unknown) => dndMocks.onDragPointerDown(event),
-        onKeyDown: (event: unknown) => dndMocks.onDragKeyDown(event),
-      },
-      setNodeRef: vi.fn(),
-      setActivatorNodeRef: vi.fn((node) => dndMocks.setActivatorNodeRef(node)),
-      transform: null,
-      transition: undefined,
-      isDragging,
-    });
-    const props = {
+  test("the click a drop leaves behind does not follow the card link", async () => {
+    renderBoard({
       groups: [lane([{ id: "1", label: "First", sort_order: 1024 }])],
       dragEnabled: true,
       rankField: "sort_order",
       onCardMove: vi.fn(),
       rowHref: () => "/records/1",
-    };
-    const original = dndMocks.useSortable.getMockImplementation();
-    try {
-      dndMocks.useSortable.mockImplementation(() => sortable(true));
-      const view = renderBoard(props);
-      dndMocks.useSortable.mockImplementation(() => sortable(false));
-      view.rerender(
-        <BoardView<DemoRow>
-          columns={COLUMNS}
-          resourceView={RESOURCE_VIEW}
-          selectedIds={new Set()}
-          interactive={false}
-          emptyContent="empty"
-          {...props}
-        />,
-      );
+    });
+    const link = screen.getByRole("link");
 
-      // A drop that stays in its lane ends with a pointerup over the same card
-      // link, which the browser turns into a click: that click is the drag's.
-      fireEvent.click(screen.getByRole("link"));
-      expect(dndMocks.navigate).not.toHaveBeenCalled();
+    // dnd-kit stops an activated drag's trailing click from propagating, so only
+    // its default action is left, and on a card link that default follows href.
+    act(() => {
+      dndMocks.contextProps?.onDragEnd?.({ active: { id: "1", data: { current: undefined } }, over: null });
+    });
+    const trailing = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    link.dispatchEvent(trailing);
+    expect(trailing.defaultPrevented).toBe(true);
+    expect(dndMocks.navigate).not.toHaveBeenCalled();
 
-      // The next press starts clean, so a plain click still opens the record.
-      fireEvent.pointerDown(document.querySelector("article") as Element);
-      fireEvent.click(screen.getByRole("link"));
-      expect(dndMocks.navigate).toHaveBeenCalledWith({ to: "/records/1" });
-    } finally {
-      if (original) dndMocks.useSortable.mockImplementation(original);
-    }
+    // The guard lasts one turn: a later click opens the record.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.click(link);
+    expect(dndMocks.navigate).toHaveBeenCalledWith({ to: "/records/1" });
   });
 
   test("wires a card drag handle as the keyboard activator", () => {
