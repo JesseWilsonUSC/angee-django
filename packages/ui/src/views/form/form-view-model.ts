@@ -179,14 +179,23 @@ export function recordRepresentationValue(
   record: Row | null | undefined,
   metadata: ModelMetadata | null,
 ): unknown {
-  const field = metadata?.resource.recordRepresentation;
-  if (!record || !field) return undefined;
-  return (record as Record<string, unknown>)[field];
+  if (!record || !metadata) return undefined;
+  const values = record as Record<string, unknown>;
+  const representation = metadata.resource.recordRepresentation;
+  const value = representation ? values[representation] : undefined;
+  if (scalarTitleText(value)) return value;
+  return values[metadata.resource.query.identity.field];
 }
 
 export function titleText(value: unknown, fallback: string): string {
-  const text = String(value ?? "").trim();
+  const text = scalarTitleText(value);
   return text || fallback;
+}
+
+function scalarTitleText(value: unknown): string {
+  return typeof value === "string" || typeof value === "number"
+    ? String(value).trim()
+    : "";
 }
 
 export function addFieldSelection(

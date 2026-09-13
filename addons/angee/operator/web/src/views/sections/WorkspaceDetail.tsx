@@ -30,6 +30,7 @@ export function WorkspaceDetail(): ReactElement {
 
   return (
     <DetailSurface
+      publishBreadcrumbLabel
       loading={result.fetching && !snapshot}
       loadingMessage={t("workspaces.loading")}
       empty={

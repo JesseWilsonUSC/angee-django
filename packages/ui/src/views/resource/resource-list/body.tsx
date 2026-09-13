@@ -33,6 +33,7 @@ export function ResourceListBody<TRow extends Row = Row>({
   form,
   declarations,
   recordController,
+  routed = false,
   placement = "inline",
   renderRecord,
   selectFirstRecord = false,
@@ -291,6 +292,7 @@ export function ResourceListBody<TRow extends Row = Row>({
       toolbarStart={formRenderProps.toolbarStart}
       toolbar={composeNodes(formRenderProps.toolbar, recordHeaderActions)}
       deleteAction={recordDeleteAction}
+      publishBreadcrumbLabel={routed && !resolvedCreating}
     />
   ) : null;
   const recordContent = renderRecord && !resolvedCreating

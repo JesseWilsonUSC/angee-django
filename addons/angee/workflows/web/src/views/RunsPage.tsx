@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   Column,
+  cn,
   EmptyState,
   errorMessage,
   ErrorBanner,
@@ -16,8 +17,9 @@ import {
   GraphView,
   Group,
   List,
-  LoadingPanel,
   ResourceList,
+  Skeleton,
+  SkeletonStatus,
   statusTone,
   TextLink,
   TopMenuTabs,
@@ -352,7 +354,7 @@ export function RunTimelinePanel({ runId, onReprocess }: { runId: string; onRepr
     });
   }, [candidateQuery.data?.workflow_step_runs, executionId, navigate, showingExecutionHistory]);
 
-  if (runQuery.isFetching && !runQuery.data) return <LoadingPanel message={t("runs.loading")} />;
+  if (runQuery.isFetching && !runQuery.data) return <RunInspectorSkeleton label={t("runs.loading")} />;
   if (runQuery.error && !runQuery.data) return <ErrorBanner description={errorMessage(runQuery.error, t("runs.unavailable"))} />;
   const run = runQuery.data?.workflow_runs_by_pk;
   if (!run) return <EmptyState fill icon="workflow-run" title={t("runs.unavailable")} />;
@@ -383,7 +385,7 @@ export function RunTimelinePanel({ runId, onReprocess }: { runId: string; onRepr
     </ResourceList>
   );
   const attemptList = selectionQuery.error ? <ErrorBanner description={errorMessage(selectionQuery.error, t("runs.unavailable"))} />
-    : selectionQuery.isFetching && !selectionQuery.data ? <LoadingPanel message={t("runs.loading")} />
+    : selectionQuery.isFetching && !selectionQuery.data ? <RunListSkeleton label={t("runs.loading")} />
     : executionId && !validExecution ? <EmptyState fill icon="workflow-run" title={t("runs.unavailable")} />
     : attemptId && !validAttempt ? <EmptyState fill icon="workflow-run" title={t("runs.unavailable")} />
     : legacyExecution ? (
@@ -506,7 +508,7 @@ function LegacyExecutionData({ runId, executionId, pane, onPane }: {
         <h3 className="text-sm font-semibold text-fg">{t("runs.executionData")}</h3>
         <p className="mt-1 text-13 text-fg-muted">{t("runs.executionDataDescription")}</p>
         <div className="mt-4">
-          {query.isFetching && !query.data ? <LoadingPanel message={t("runs.loading")} />
+          {query.isFetching && !query.data ? <RunPayloadSkeleton label={t("runs.loading")} />
             : query.error ? <ErrorBanner description={errorMessage(query.error, t("runs.unavailable"))} />
               : <LegacyExecutionPane row={query.data?.workflow_step_runs[0]} pane={pane} labels={labels} />}
         </div>
@@ -568,7 +570,7 @@ function AttemptArtifactsPanel({ attemptId }: { attemptId: string }): React.Reac
     { attempt: attemptId },
     { models: [ARTIFACT_MODEL] },
   );
-  if (query.isFetching && !query.data) return <LoadingPanel message={t("runs.loading")} />;
+  if (query.isFetching && !query.data) return <RunListSkeleton label={t("runs.loading")} />;
   if (query.error) return <ErrorBanner description={errorMessage(query.error, t("runs.unavailable"))} />;
   if (!query.data?.workflow_step_attempts[0]?.artifacts_present) {
     return <EmptyState icon="workflow-run" title={t("runs.artifactsNotRecorded")} />;
@@ -651,7 +653,7 @@ export function AttemptRecoveryPanel({ attemptId }: { attemptId: string }): Reac
       if (currentAttempt.current === attemptId) setPending(false);
     }
   };
-  if ((plan.isFetching && !plan.data) || (repair.isFetching && !repair.data)) return <LoadingPanel message={t("runs.loading")} />;
+  if ((plan.isFetching && !plan.data) || (repair.isFetching && !repair.data)) return <RunRecoverySkeleton label={t("runs.loading")} />;
   if (plan.error && !plan.data) return <ErrorBanner description={errorMessage(plan.error, t("runs.unavailable"))} />;
   return <div className="space-y-4 overflow-auto p-4">
     <div>
@@ -689,7 +691,7 @@ export function AttemptPayloadPanel({ attemptId, stepRunId, pane }: { attemptId:
     includeCheckpoint: pane === "checkpoint",
     includeFailure: pane === "failure",
   }, { enabled: Boolean(stepRunId), models: [STEP_ATTEMPT_MODEL] });
-  if (query.isFetching && !query.data) return <LoadingPanel message={t("runs.loading")} />;
+  if (query.isFetching && !query.data) return <RunPayloadSkeleton label={t("runs.loading")} />;
   if (query.error) return <ErrorBanner description={errorMessage(query.error, t("runs.unavailable"))} />;
   const attempt = query.data?.workflow_step_attempts[0];
   if (!attempt) return <EmptyState fill icon="workflow-run" title={t("runs.unavailable")} />;
@@ -748,6 +750,93 @@ export function runOriginLabel(origin: unknown, t: ReturnType<typeof useWorkflow
 
 export function mapItemLabel(index: unknown, t: ReturnType<typeof useWorkflowsT>): string {
   return typeof index === "number" && index >= 0 ? t("runs.mapItem", { index }) : "—";
+}
+
+function RunInspectorSkeleton({ label }: { label: string }): React.ReactElement {
+  return (
+    <SkeletonStatus label={label} className="flex h-full min-h-0 flex-col bg-canvas">
+      <div aria-hidden="true" className="flex-none border-b border-border-subtle bg-sheet px-4 py-3">
+        <Skeleton shape="text" size="sm" className="w-80 max-w-4/5" />
+      </div>
+      <div aria-hidden="true" className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_minmax(20rem,42%)]">
+        <div className="relative min-h-72 overflow-hidden border-r border-border-subtle bg-inset p-5">
+          <div className="grid h-full grid-cols-2 content-center gap-x-12 gap-y-8 lg:grid-cols-3">
+            {Array.from({ length: 6 }, (_, index) => (
+              <div key={index} className="rounded-8 border border-border-subtle bg-sheet p-3 shadow-xs">
+                <Skeleton shape="text" size="md" className={index % 2 === 0 ? "w-4/5" : "w-2/3"} />
+                <Skeleton shape="text" size="sm" className="mt-3 w-1/2" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <RunListSkeletonShape />
+      </div>
+    </SkeletonStatus>
+  );
+}
+
+function RunListSkeleton({ label }: { label: string }): React.ReactElement {
+  return (
+    <SkeletonStatus label={label}>
+      <RunListSkeletonShape />
+    </SkeletonStatus>
+  );
+}
+
+function RunListSkeletonShape(): React.ReactElement {
+  return (
+    <div aria-hidden="true" className="h-full min-h-0 overflow-hidden bg-sheet">
+      <div className="flex items-center gap-3 border-b border-border-subtle px-3 py-3">
+        <Skeleton className="h-btn-sm w-24" />
+        <Skeleton className="h-btn-sm w-20" />
+        <Skeleton shape="text" size="sm" className="ml-auto w-16" />
+      </div>
+      {Array.from({ length: 7 }, (_, index) => (
+        <div key={index} className="grid grid-cols-[minmax(5rem,1fr)_minmax(4rem,.7fr)_minmax(5rem,.8fr)] gap-4 border-b border-border-subtle px-3 py-3">
+          <Skeleton shape="text" size="sm" className={index % 2 === 0 ? "w-4/5" : "w-2/3"} />
+          <Skeleton shape="text" size="sm" className="w-3/4" />
+          <Skeleton shape="text" size="sm" className="ml-auto w-4/5" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RunPayloadSkeleton({ label }: { label: string }): React.ReactElement {
+  return (
+    <SkeletonStatus label={label} className="h-full min-h-40 overflow-hidden p-4">
+      <div aria-hidden="true" className="space-y-3">
+        <Skeleton shape="text" size="md" className="w-28" />
+        <div className="rounded-8 border border-border-subtle bg-inset p-4">
+          {Array.from({ length: 8 }, (_, index) => (
+            <Skeleton
+              key={index}
+              shape="text"
+              size="sm"
+              className={cn("mb-3", index % 3 === 0 ? "w-4/5" : index % 3 === 1 ? "ml-4 w-2/3" : "ml-8 w-1/2")}
+            />
+          ))}
+        </div>
+      </div>
+    </SkeletonStatus>
+  );
+}
+
+function RunRecoverySkeleton({ label }: { label: string }): React.ReactElement {
+  return (
+    <SkeletonStatus label={label} className="space-y-4 overflow-hidden p-4">
+      <div aria-hidden="true" className="space-y-3">
+        <Skeleton shape="text" size="md" className="w-32" />
+        <Skeleton shape="text" size="sm" className="w-4/5" />
+        <Skeleton shape="text" size="sm" className="w-2/3" />
+        <Skeleton className="h-btn-sm w-28" />
+        <div className="border-t border-border-subtle pt-4">
+          <Skeleton shape="text" size="md" className="w-36" />
+          <Skeleton shape="text" size="sm" className="mt-3 w-3/4" />
+        </div>
+      </div>
+    </SkeletonStatus>
+  );
 }
 
 export function waitLabel(

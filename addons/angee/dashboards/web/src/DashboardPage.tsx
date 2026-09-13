@@ -13,6 +13,7 @@ import {
   readRuntimeRouteShortcuts,
   ROUTE_SHORTCUTS_PREFERENCE_KEY,
   Select,
+  useBreadcrumbLeafLabel,
   useDashboardRegistry,
   useRouteParam,
   useRouteHref,
@@ -52,6 +53,7 @@ function StoredDashboardPage({ target, store }: {
   const routeHref = useRouteHref();
   const t = useDashboardsT();
   const state = binding.state;
+  useBreadcrumbLeafLabel(state.status === "ready" ? state.name : null);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<Error | null>(null);
   const [sharing, setSharing] = React.useState(false);

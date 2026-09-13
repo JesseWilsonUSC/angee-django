@@ -123,7 +123,6 @@ export const SkeletonStatus = React.forwardRef<
     <div
       ref={ref}
       {...props}
-      aria-busy={props["aria-busy"] ?? true}
       aria-live={props["aria-live"] ?? "polite"}
       className={className}
       role={props.role ?? "status"}

@@ -192,8 +192,7 @@ export interface ListViewProps<TRow extends Row = Row> {
   emptyContent?: ListEmptyContent;
   /** Class name applied to the collection renderer root. */
   className?: string;
-  /** Use a local resource-view state (not URL-synced) even when rendered inside
-   * another data view — for an embedded related list on a detail panel. Defaults
-   * to inheriting the surrounding route data view (the routed-page behaviour). */
+  /** Override collection-state ownership. Embedded collections default to local
+   * state; page/workspace collections inherit an ambient view or own route state. */
   scope?: "inherit" | "local";
 }

@@ -214,9 +214,10 @@ history uses native Query pages with domain-owned
   "Page")` (the stack-native helper from `@tanstack/react-router`, already a
   direct addon dep) — never an eager `import { Page }` + `component: Page`, which
   pulls every page into the entry graph. The router owns the route-loading
-  fallback *once*: `createApp` sets `defaultPendingComponent` (a `LoadingPanel`),
-  which wraps every non-root match in Suspense inside its layout's `<Outlet/>`, so
-  the chrome stays mounted. Do not hand-roll `React.lazy` + a manual `<Suspense>`
+  fallback *once*: `createApp` sets `defaultPendingComponent` (the unboxed,
+  indeterminate `LoadingPanel`), which wraps every non-root match in Suspense
+  inside its layout's `<Outlet/>`, so the chrome stays mounted. Do not hand-roll
+  `React.lazy` + a manual `<Suspense>`
   around a route's `<Outlet/>`. Split only routed pages — lighter manifest content
   (slot/section content, forms, glyphs) stays eager. A transport or context shared
   by pages and shell contributions declares
@@ -368,9 +369,12 @@ history uses native Query pages with domain-owned
   `{title, description, icon?, actions?}` vocabulary; the single-line ones keep
   their own slot (`InlineEmpty` `label`, `LoadingPanel` `message`). For a
   full-height empty panel pass `EmptyState fill` (it centers an intrinsic-size
-  card) instead of wrapping it in a `grid place-content-center` div; `LoadingPanel`
-  already self-centers. A renderer owns its own loading/error so callers describe
-  only the happy path (cf. `preview/builtins.tsx` `FileText`).
+  card) instead of wrapping it in a `grid place-content-center` div. Use the
+  unboxed `LoadingPanel` only when the final geometry is unknowable, such as the
+  router's code-split boundary. A renderer that knows its final geometry owns a
+  shape-preserving skeleton built from `Skeleton` and one `SkeletonStatus`; retain
+  settled content during background refresh. The renderer owns loading/error so
+  callers describe only the happy path (cf. `preview/builtins.tsx` `FileText`).
 - Forms are declarative even when they branch: a `<Field showWhen={(values) => …}>`
   predicate (mirroring `Action.visibleWhen`) drives a discriminated form — a `kind`
   select that swaps the body — and a hidden field is never submitted. Reach for a
@@ -384,8 +388,10 @@ history uses native Query pages with domain-owned
   refine resource on the route — `{ name, path, component, resource:
   "integrate.OAuthClient" }` (one route per resource, build-time fail-fast) — and the
   relation widget resolves it through `useResourceRoute(resource)` to show a
-  "follow" arrow to the selected record's detail page (breadcrumbs come from
-  refine). A resource with no routed page simply shows no arrow.
+  "follow" arrow to the selected record's detail page. Refine owns the route
+  trail, while the routed record surface replaces the generic action leaf with
+  the model's `recordRepresentation`. A resource with no routed page simply shows
+  no arrow.
 - Register a resource's create form once via `defineAddon`'s
   `forms: { "integrate.OAuthClient": <…Field/Group children…> }`; the standard renderer uses it
   wherever that resource is created, including the relation-picker inline create. Use
@@ -460,7 +466,14 @@ Hard-won traps — the wise learn from others' mistakes
 - **Server preference writes are live but not transactional across tabs:** each delivered `changes()` event rebases later patches immediately, while whole-document writes already in flight can still be accepted in server order and the last accepted write wins.
 - **Effect cleanup must not permanently kill a memoized resource:** StrictMode's simulated mount → cleanup → remount leaves it dead; own the resource inside the effect or explicitly re-arm it on mount, as the preference patch queue does.
 - **A render callback may only read fields some column declares or the `ListView fields={[…]}` extras name:** the selection owner (`requestedFieldPaths`) fetches column-declared paths plus those extras and nothing else — an undeclared read is `undefined` on every row (a link built from it throws, a caption silently blanks). Still null-guard values a row may legitimately lack.
-- **A nested list must pass `scope="local"` to keep its own `pageSize` and view;** the default inherited scope intentionally reuses the ambient resource-view state.
+- **Collection state follows the surface owner.** An unrouted `List`,
+  `RowsListView`, or `ResourceList` explicitly passed `presentation="embedded"`
+  defaults to local `pageSize`, sorting, grouping, filtering, and view state;
+  nesting alone does not infer that presentation. `DrawerResourceList` is always
+  local by contract. Routed and page/workspace collections inherit their ambient
+  state or own the unnamespaced route query; a page with multiple route-backed
+  collections must give each an explicit state owner rather than sharing those
+  keys.
 - **Generated documents are an explicit prerequisite for addon checks.** Neither
   root nor package typecheck/test scripts regenerate them automatically. After a
   schema change, refresh the host's SDL and codegen before checking consumers;

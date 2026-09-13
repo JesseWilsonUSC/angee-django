@@ -18,6 +18,7 @@ export function SourceDetail(): ReactElement {
 
   return (
     <DetailSurface
+      publishBreadcrumbLabel
       loading={result.fetching && !snapshot}
       loadingMessage={t("sources.loading")}
       empty={

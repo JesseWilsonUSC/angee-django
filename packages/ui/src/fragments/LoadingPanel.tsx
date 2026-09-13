@@ -2,8 +2,8 @@ import * as React from "react";
 
 import { useUiT } from "../i18n";
 import { cn } from "../lib/cn";
-import { Card } from "../ui/card";
-import { Skeleton, SkeletonText } from "../ui/skeleton";
+import { SkeletonStatus } from "../ui/skeleton";
+import { Spinner } from "../ui/spinner";
 import { textRoleVariants } from "../ui/text";
 
 export interface LoadingPanelProps {
@@ -11,6 +11,7 @@ export interface LoadingPanelProps {
   density?: "page" | "inline";
 }
 
+/** Unboxed pending status for boundaries that cannot know the final layout. */
 export function LoadingPanel({
   message,
   density = "page",
@@ -20,33 +21,23 @@ export function LoadingPanel({
   const inline = density === "inline";
 
   return (
-    <div
-      className={
-        inline
-          ? "grid min-h-24 place-content-center p-3"
-          : "grid h-full place-content-center p-8"
-      }
+    <SkeletonStatus
+      label={label}
+      className={cn(
+        "grid place-content-center",
+        inline ? "min-h-16 p-3" : "h-full min-h-32 p-8",
+      )}
     >
-      <Card
-        aria-live="polite"
-        className={
-          inline
-            ? "w-full px-4 py-3 shadow-none"
-            : "w-72 px-6 py-5 shadow-none"
-        }
-        role="status"
+      <span
+        aria-hidden="true"
+        className={cn(
+          textRoleVariants({ role: "meta" }),
+          "inline-flex items-center gap-2",
+        )}
       >
-        <Skeleton className={inline ? "h-4 w-24" : "h-5 w-32"} />
-        <SkeletonText className={inline ? "mt-3" : "mt-4"} lines={inline ? 2 : 3} />
-        <p
-          className={cn(
-            textRoleVariants({ role: "meta" }),
-            inline ? "mt-3" : "mt-4",
-          )}
-        >
-          {label}
-        </p>
-      </Card>
-    </div>
+        <Spinner size="sm" tone="muted" />
+        {label}
+      </span>
+    </SkeletonStatus>
   );
 }
