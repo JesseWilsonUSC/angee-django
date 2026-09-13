@@ -635,13 +635,15 @@ def test_local_stack_renders_single_caddy_frontend_ingress() -> None:
 
     caddy = stack["services"]["caddy"]
     assert caddy["ports"] == ["5173:80"]
-    assert caddy["after"] == ["django", "frontend-build"]
+    assert caddy["after"] == ["frontend-build"]
+    assert stack["services"]["django"]["after"] == ["provision", "caddy"]
+    assert caddy["ready"] == {"http": {"port": 80, "path": "/"}}
     assert set(caddy["after"]) <= set(stack["services"]) | set(stack["jobs"])
     caddyfile_command = caddy["command"][-1]
     assert caddyfile_command.startswith("cat >/etc/caddy/Caddyfile")
     assert "reverse_proxy django:8000" in caddyfile_command
     assert "uri strip_prefix /operator" in caddyfile_command
-    assert "reverse_proxy host.docker.internal:${ports.operator}" in caddyfile_command
+    assert "reverse_proxy operator:9000" in caddyfile_command
     assert "root * /srv/project/web/dist" in caddyfile_command
     assert "try_files {path} /index.html" in caddyfile_command
 
@@ -1111,13 +1113,14 @@ def test_readiness_is_owned_by_long_running_http_and_django_services() -> None:
             command_text = command if isinstance(command, str) else " ".join(map(str, command))
             assert "django_migrations" not in command_text
 
-    assert process["services"]["django"]["ready"] == {"tcp": {"port": 8000}}
+    assert process["services"]["django"]["ready"]["tcp"] == {"port": 8000}
     assert {name for name, service in framework["services"].items() if "ready" in service} == {
         "django",
         "frontend",
     }
     assert {name for name, service in instance["services"].items() if "ready" in service} == {
         "django",
+        "caddy",
     }
 
     assert framework["services"]["django"]["ready"] == DJANGO_READY
@@ -1131,7 +1134,8 @@ def test_readiness_is_owned_by_long_running_http_and_django_services() -> None:
     for name in ("storybook", "playwright-server", "playwright-mcp"):
         assert framework["services"][name]["after"] == ["frontend"]
     assert instance["jobs"]["frontend-build"]["depends_on"] == ["provision", "operator-schema"]
-    assert instance["services"]["caddy"]["after"] == ["django", "frontend-build"]
+    assert instance["services"]["caddy"]["after"] == ["frontend-build"]
+    assert instance["services"]["django"]["after"] == ["provision", "caddy"]
 
 
 def test_dev_stack_hostname_mode_secures_the_ux_ingress() -> None:

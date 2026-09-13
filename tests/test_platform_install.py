@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -32,6 +33,7 @@ from rebac import app_settings, system_context
 from rebac.roles import grant
 
 from angee.graphql.schema import SCHEMA_PART_KEYS, GraphQLSchemas
+from angee.platform import models as platform_models
 from angee.platform.models import _preview_revision
 from tests.conftest import PLATFORM_TEST_MODELS, SchemaAddon, execute_schema
 from tests.conftest import _create_missing_tables as _create_tables
@@ -214,6 +216,31 @@ def test_preview_revision_binds_every_change_decision() -> None:
 
     assert all(candidate != baseline for candidate in alternatives)
     assert len(set(alternatives)) == len(alternatives)
+
+
+def test_data_inventory_lists_donor_fields_separately(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A disabled donor reports copied fields without claiming ownership of the target model."""
+
+    config = SimpleNamespace(name="example.donor")
+    monkeypatch.setattr(platform_models.composed, "addons", lambda: [config])
+    monkeypatch.setattr(platform_models.composed, "data_models", lambda owner: [])
+    monkeypatch.setattr(
+        platform_models.composed,
+        "contributed_fields",
+        lambda owner: [
+            SimpleNamespace(
+                model_label="example_owner.record",
+                field_name="external_id",
+                verbose_name="External ID",
+            )
+        ],
+    )
+
+    inventory = Addon.objects._data_inventory((config.name,))
+
+    assert inventory[0].models == ()
+    assert inventory[0].contributed_fields[0].model_label == "example_owner.record"
+    assert inventory[0].contributed_fields[0].field_name == "external_id"
 
 
 def test_disable_removes_the_root(

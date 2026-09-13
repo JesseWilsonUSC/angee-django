@@ -36,6 +36,9 @@ export function AddonChangeDialog({
   const inventoryModels = preview?.data_inventory.flatMap((inventory) =>
     inventory.models.map((model) => ({ ...model, addon: inventory.addon })),
   ) ?? [];
+  const contributedFields = preview?.data_inventory.flatMap((inventory) =>
+    inventory.contributed_fields.map((field) => ({ ...field, addon: inventory.addon })),
+  ) ?? [];
   return (
     <Dialog.Root open onOpenChange={(open) => { if (!open && !applying) onCancel(); }}>
       <Dialog.Portal>
@@ -82,6 +85,21 @@ export function AddonChangeDialog({
                         </li>
                     ))}
                 </PreviewSection>
+                {contributedFields.length ? (
+                  <section className="space-y-2">
+                    <h3 className="text-13 font-semibold text-fg">{t("apps.preview.contributedFields")}</h3>
+                    <p className="text-13 text-fg-muted">{t("apps.preview.contributedFieldsDescription")}</p>
+                    <ul className="space-y-2">
+                      {contributedFields.map((field) => (
+                        <li key={`${field.addon}:${field.model_label}:${field.field_name}`} className="rounded-6 border border-border-subtle px-3 py-2">
+                          <span className="block text-fg">{field.verbose_name}</span>
+                          <span className="block break-all text-12 text-fg-muted">{field.model_label}.{field.field_name}</span>
+                          <span className="block text-12 text-fg-muted">{field.addon}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
               </>
             ) : null}
           </Dialog.Body>

@@ -64,11 +64,21 @@ class AddonModelInventory:
 
 
 @dataclass(frozen=True, slots=True)
+class AddonContributedFieldInventory:
+    """A loaded field supplied by this addon to another addon's concrete model."""
+
+    model_label: str
+    field_name: str
+    verbose_name: str
+
+
+@dataclass(frozen=True, slots=True)
 class AddonDataInventory:
     """Loaded model inventory for one addon leaving the graph."""
 
     addon: str
     models: tuple[AddonModelInventory, ...]
+    contributed_fields: tuple[AddonContributedFieldInventory, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,7 +241,11 @@ class AddonManager(AngeeManager):
                 models_inventory.append(
                     AddonModelInventory(model._meta.label_lower, str(model._meta.verbose_name_plural), count)
                 )
-            inventories.append(AddonDataInventory(name, tuple(models_inventory)))
+            contributed = tuple(
+                AddonContributedFieldInventory(row.model_label, row.field_name, row.verbose_name)
+                for row in composed.contributed_fields(config)
+            )
+            inventories.append(AddonDataInventory(name, tuple(models_inventory), contributed))
         return tuple(inventories)
 
     def reconcile_loaded_registry(self, using: str) -> None:

@@ -53,9 +53,17 @@ class AddonModelInventory:
 
 
 @strawberry.type
+class AddonContributedFieldInventory:
+    model_label: str
+    field_name: str
+    verbose_name: str
+
+
+@strawberry.type
 class AddonDataInventory:
     addon: str
     models: list[AddonModelInventory]
+    contributed_fields: list[AddonContributedFieldInventory]
 
 
 @strawberry.type

@@ -53,6 +53,8 @@ export const enPlatformMessages: Record<string, string> = {
   "apps.preview.dependency": "Dependency",
   "apps.preview.requires": "Requires: {addons}",
   "apps.preview.dataInventory": "Current data inventory",
+  "apps.preview.contributedFields": "Contributed fields",
+  "apps.preview.contributedFieldsDescription": "Fields supplied by these addons on other models. Migration planning determines their data impact.",
   "apps.preview.noDataInventory": "No loaded model data found for this change.",
   "apps.preview.rowCountUnknown": "Row count unavailable",
   "apps.preview.rows": "{count} rows",

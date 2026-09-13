@@ -51,9 +51,9 @@ the chain instead of restarting against incomplete generated state.
   services run the deps-only base image and link the framework editable from a local
   `sources/angee` checkout at container start; `framework=baked` runs a
   code-baked runtime image instead. Provision and operator-schema are completed jobs;
-  the frontend build is another real job, and Caddy starts only after Django and that
-  build succeed. This
-  is how you run your own Angee app locally on a real (Postgres + pgvector) database.
+  the frontend build is another real job. Caddy starts after that build, then Django
+  starts once its named trusted proxy is ready. This avoids a proxy DNS startup
+  cycle. This runs your own Angee app locally on a real (Postgres + pgvector) database.
 
 Before initializing either layout, check for an existing current or ancestor
 `angee.yaml`. If one exists, it owns the checkout; never initialize a stack

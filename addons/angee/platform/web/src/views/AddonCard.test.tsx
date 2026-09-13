@@ -53,7 +53,11 @@ vi.mock("@angee/refine", async (importOriginal) => ({
         roots_after: ["angee.notes", "angee.tags"],
         addons_to_enable: [{ name: "angee.tags", label: "Tags", root: false, depends_on: [] }],
         addons_to_disable: [{ name: "angee.legacy", label: "Legacy", root: true, depends_on: ["angee.notes"] }],
-        data_inventory: [{ addon: "angee.legacy", models: [{ label: "legacy.Entry", verbose_name: "entry", row_count: 3 }] }],
+        data_inventory: [{
+          addon: "angee.legacy",
+          models: [{ label: "legacy.Entry", verbose_name: "entry", row_count: 3 }],
+          contributed_fields: [{ model_label: "notes.note", field_name: "legacy_code", verbose_name: "Legacy code" }],
+        }],
         migration_warning: "Migration effects require planning.",
       },
     },
@@ -150,6 +154,8 @@ describe("AddonCardActions", () => {
     expect(screen.getByText("Tags")).toBeTruthy();
     expect(screen.getByText("Legacy")).toBeTruthy();
     expect(screen.getByText("3 rows")).toBeTruthy();
+    expect(screen.getByText("Contributed fields")).toBeTruthy();
+    expect(screen.getByText("notes.note.legacy_code")).toBeTruthy();
     const confirmation = screen.getAllByRole("button", { name: "Disable" }).at(-1);
     if (!confirmation) throw new Error("Disable confirmation is missing.");
     fireEvent.click(confirmation);

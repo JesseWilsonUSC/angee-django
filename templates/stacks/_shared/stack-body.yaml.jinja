@@ -381,7 +381,7 @@ services:
       timeout: 3s
       start_period: 30s
       retries: 180
-    after: [provision]
+    after: [provision{% if stack_flavor == "instance" %}, caddy{% endif %}]
 
 {# pongo2 has no list literals and takes Django-style filter args; split a string. #}
 {# Core roles plus one dedicated `celery-<queue>` worker per `celery_queues` entry: a #}
@@ -556,7 +556,11 @@ services:
         }
         CADDY
         exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
-    after: [django, frontend-build]
+    # Django resolves this named trusted proxy at boot. Caddy can start first:
+    # reverse_proxy resolves the Django upstream when handling a request.
+    after: [frontend-build]
+    ready:
+      http: { port: 80, path: / }
     ports:
       - "{{ ui_port }}:80"
 {% endif %}{% endif %}

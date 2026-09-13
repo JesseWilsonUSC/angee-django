@@ -54,6 +54,12 @@ def render_models(composition: ModelComposition, label: str, *, runtime_module: 
             if value is not None:
                 meta_lines.append(f"        {option} = {value!r}")
         body_lines: list[str] = []
+        body_lines.extend(
+            [
+                f"    angee_contributed_field_origins = {composition.contributed_field_origins(source)!r}",
+                "",
+            ]
+        )
         if source.__dict__.get("catalogue", False):
             body_lines.extend(
                 [

@@ -112,6 +112,11 @@ export const AddonChangePreview = graphql(`
           verbose_name
           row_count
         }
+        contributed_fields {
+          model_label
+          field_name
+          verbose_name
+        }
       }
       migration_warning
     }
