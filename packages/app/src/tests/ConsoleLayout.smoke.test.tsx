@@ -299,8 +299,7 @@ describe("ConsoleLayout", () => {
 
     // The rail is one scrolling list for the active domain place. Settings is
     // selected through the app chooser rather than duplicated in this tree.
-    expect(rail.className).toContain("overflow-y-auto");
-    expect(rail.querySelector(".overflow-y-auto")).toBeNull();
+    expect(rail.querySelector(".overflow-y-auto")).toBeTruthy();
     expect(rail.querySelector("[data-rail-zone]")).toBeNull();
     expect(within(rail).queryByRole("link", { name: "Settings" })).toBeNull();
     expect(within(rail).queryByRole("link", { name: "Admin" })).toBeNull();

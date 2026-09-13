@@ -141,7 +141,7 @@ export const IamGrantRole = graphql(`
 `);
 
 export const IamGroupAccess = graphql(`
-  query IamGroupAccess($id: ID!) {
+  query IamGroupAccess($id: String!) {
     groups_by_pk(id: $id) {
       id
       members { id subject subject_type subject_id label caveat_name }

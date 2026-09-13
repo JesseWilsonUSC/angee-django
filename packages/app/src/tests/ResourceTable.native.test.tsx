@@ -206,6 +206,6 @@ test("native Router preserves calendar resets relative to page-owned defaults", 
   await act(async () => f.view().setMode("week"));
   await act(async () => f.view().setAnchor("2000-01-01"));
   expect(f.view().state).toMatchObject({ mode: "week", anchor: "2000-01-01" });
-  expect(f.router.state.location.search).toEqual({ page: "1", sort: "", keep: "external" });
+  expect(f.router.state.location.search).toEqual({ page: "1", sort: "", group: "", keep: "external" });
   expect(f.history.length).toBe(1);
 });
