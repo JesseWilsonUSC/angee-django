@@ -64,6 +64,7 @@ export {
   type MutationDialogParseValues,
   type MutationDialogProps,
   type MutationDialogRelation,
+  type MutationDialogValidationResult,
   type MutationDialogValues,
   mutationDialogValueCodecs,
 } from "./form/MutationDialog";
@@ -273,6 +274,12 @@ export {
   useBulkDelete,
   type UseBulkDeleteResult,
 } from "./resource/useBulkDelete";
+export {
+  useDeletePreviewOperation,
+  useDeleteWithPreview,
+  type ResourceOperation,
+  type UseDeleteWithPreviewResult,
+} from "./resource/resource-operations";
 export {
   recordActionId,
   useActionOutcomeMutation,

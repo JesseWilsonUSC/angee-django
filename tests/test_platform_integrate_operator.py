@@ -1,8 +1,8 @@
 """Tests for the operator AddonInstaller backend (the platform_integrate_operator bridge).
 
 The bridge contributes the ``operator`` backend into platform's installer registry. It
-routes the AddonInstaller's read/write/rebuild transport through the operator daemon
-(the file API + ``/stack/build``), carrying the read ``etag`` to the write so a
+routes the AddonInstaller's read/write transport through the operator daemon's
+file API, carrying the read ``etag`` to the write so a
 concurrent edit fails rather than clobbering.
 """
 
@@ -30,9 +30,6 @@ class _FakeDaemon:
         self.writes.append((source, path, content, etag))
         return "etag-2"
 
-    def stack_build(self) -> str:
-        return "rebuilding"
-
 
 def _backend_with(daemon: object) -> OperatorInstallerBackend:
     """Build the backend (which resolves a daemon from settings) and swap in ``daemon``."""
@@ -43,7 +40,7 @@ def _backend_with(daemon: object) -> OperatorInstallerBackend:
 
 
 def test_operator_backend_round_trips_settings_through_the_daemon() -> None:
-    """read seeds the etag; write echoes it back for the app source; rebuild calls stack_build."""
+    """Read seeds the etag and write echoes it back for the app source."""
 
     daemon = _FakeDaemon()
     backend = _backend_with(daemon)
@@ -56,8 +53,6 @@ def test_operator_backend_round_trips_settings_through_the_daemon() -> None:
     # the write carries the read's etag (optimistic concurrency) for the app source
     assert daemon.writes == [("app", "settings.yaml", "INSTALLED_APPS:\n  - angee.iam\n  - x\n", "etag-1")]
     assert backend._etag == "etag-2"  # the write returns the new etag
-
-    assert backend.request_rebuild() == "rebuilding"
 
 
 def test_operator_backend_read_failure_becomes_a_refusal() -> None:

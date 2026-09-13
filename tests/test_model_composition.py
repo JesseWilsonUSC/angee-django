@@ -134,6 +134,48 @@ def test_native_donor_and_child_mro_fields_managers_and_meta(modules):
 
 
 @isolate_apps()
+def test_rendered_model_exports_donor_field_provenance(modules):
+    """Runtime metadata retains the composer-owned addon origin of copied fields."""
+
+    create, emit = modules
+    owner_config, owner_module = create("native_owner")
+    donor_config, donor_module = create("native_donor")
+    Root = source(
+        owner_module,
+        "Root",
+        owner_config.label,
+        runtime=True,
+        title=models.CharField(max_length=32),
+    )
+    source(
+        donor_module,
+        "RootExtension",
+        donor_config.label,
+        extends=f"{owner_config.label}.Root",
+        external_id=models.CharField(max_length=32, verbose_name="External ID"),
+    )
+
+    composition = ModelComposition.discover((owner_config, donor_config))
+    concrete = emit(composition)[owner_config.label].Root
+
+    assert composition.contributed_field_origins(Root) == (("external_id", donor_config.name),)
+    assert concrete.angee_contributed_field_origins == (("external_id", donor_config.name),)
+
+
+@isolate_apps()
+def test_direct_composition_requires_extension_donor_owners(modules):
+    """Direct callers cannot emit donor provenance without canonical addon identity."""
+
+    create, _emit = modules
+    config, module = create("native_direct_owner")
+    Root = source(module, "Root", config.label, runtime=True)
+    Donor = source(module, "Donor", config.label, extends=f"{config.label}.Root")
+
+    with pytest.raises(ImproperlyConfigured, match="Addon ownership is required"):
+        ModelComposition({config.label: (Root,)}, {Root._meta.label_lower: (Donor,)})
+
+
+@isolate_apps()
 def test_plain_abstract_declarations_are_selected_without_inherited_markers(modules):
     create, _emit = modules
     config, module = create("native_select")

@@ -41,7 +41,6 @@ function ListViewFrame<TRow extends Row = Row>(
   const resourceView = useResourceViewMaybe();
   const metadata = useModelMetadata(props.source ? "" : props.resource);
   const modelMetadata = props.source ? null : metadata;
-  const scope = props.scope ?? "inherit";
   const initial = React.useMemo(() => {
     try {
       return {
@@ -64,7 +63,8 @@ function ListViewFrame<TRow extends Row = Row>(
   return withResourceViewScope({
     ambient: resourceView,
     resource: props.source ? undefined : props.resource,
-    scope,
+    scope: props.scope,
+    presentation: props.presentation,
     initialState: initial.state,
     children: (scopedResourceView) => (
       <ValidatedListViewBody {...props} resourceView={scopedResourceView} />
@@ -142,6 +142,9 @@ function ListViewBody<TRow extends Row = Row>({
   textFilterField,
   maxGroupDepth,
   toolbarWrap,
+  tableLayout,
+  headerVisibility,
+  selectable,
   renderGroupLabel,
   columns,
   fields,
@@ -170,6 +173,7 @@ function ListViewBody<TRow extends Row = Row>({
   renderCard,
   emptyContent,
   className,
+  presentation = "page",
   resourceView,
 }: ListViewProps<TRow> & {
   resourceView: ResourceViewContextValue;
@@ -184,7 +188,17 @@ function ListViewBody<TRow extends Row = Row>({
   // effect settle after a single dispatch.
   const laneSource = useValueStable(laneSourceInput);
   const rowActionSurface = useRowActionsSurface(rowActions);
-  const resolvedEmptyContent = emptyContent ?? t("list.empty");
+  const filtered = Object.keys(resourceView.state.filter).length > 0;
+  const resolvedEmptyContent = filtered
+    ? {
+        title: t("list.noMatchingRecords"),
+        description: t("list.noMatchingRecordsHint"),
+        action: {
+          label: t("resourceToolbar.clearQuery"),
+          onClick: resourceView.resetQuery,
+        },
+      }
+    : emptyContent ?? t("list.empty");
   const discoveredMetadata = useModelMetadata(source ? "" : resource);
   const modelMetadata = source ? null : discoveredMetadata;
   // The Calendar kind is offered only where the page declares occurrence sources;
@@ -324,6 +338,9 @@ function ListViewBody<TRow extends Row = Row>({
       textFilterField={textFilterField}
       maxGroupDepth={maxGroupDepth}
       toolbarWrap={toolbarWrap}
+      tableLayout={tableLayout}
+      headerVisibility={headerVisibility}
+      selectable={selectable}
       renderGroupLabel={renderGroupLabel}
       resolvedColumns={resolvedColumns}
       modelMetadata={modelMetadata}
@@ -357,6 +374,7 @@ function ListViewBody<TRow extends Row = Row>({
       renderCard={renderCard}
       emptyContent={resolvedEmptyContent}
       className={className}
+      presentation={presentation}
     />
   );
   if (resourceView.state.view === "dashboard") {

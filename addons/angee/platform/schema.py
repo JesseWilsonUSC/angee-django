@@ -1,24 +1,25 @@
 """GraphQL introspection surface for the Angee platform console.
 
-One read-only console query reflects the composed runtime back to platform
-admins: ``platformExplorer`` walks the Django app registry for the composed
-addons, their concrete models, fields, and relation edges, and rolls up each
-addon's import-ledger count. The ledger *listing* itself is owned by the
+One read-only console query reflects the runtime back to platform admins:
+``platformExplorer`` reads addon detail from the persistent catalogue and walks
+the Django app registry for concrete models, fields, and relation edges. It rolls
+up each addon's import-ledger count. The ledger *listing* itself is owned by the
 ``resources`` addon (``resources.resourceLedger``), which contributes its own
 section into the platform console. Reads here are gated on ``read`` over the
 table-less ``platform/explorer`` anchor (``permissions.zed``). The platform addon
-owns no data — it asks the owners (the app registry for schema shape, the resource
-ledger for the per-addon count) and projects their answers.
+owns the persisted lifecycle catalogue and asks the app registry and resource
+ledger for the runtime facts projected alongside it.
 """
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any, cast
 
 import strawberry
 import strawberry_django
 from django.apps import apps
-from rebac import ObjectRef
+from rebac import ObjectRef, system_context
 from strawberry import auto
 
 from angee.graphql.access import actor_can_read
@@ -28,6 +29,56 @@ from angee.iam.permissions import ADMIN_PERMISSION_CLASSES as _ADMIN_PERMISSION_
 from angee.platform import composed
 
 _EXPLORER = ObjectRef("platform/explorer", "default")
+
+
+@strawberry.enum
+class AddonChangeAction(StrEnum):
+    INSTALL = "install"
+    DISABLE = "disable"
+
+
+@strawberry.type
+class AddonChangeImpact:
+    name: str
+    label: str
+    root: bool
+    depends_on: list[str]
+
+
+@strawberry.type
+class AddonModelInventory:
+    label: str
+    verbose_name: str
+    row_count: int | None
+
+
+@strawberry.type
+class AddonContributedFieldInventory:
+    model_label: str
+    field_name: str
+    verbose_name: str
+
+
+@strawberry.type
+class AddonDataInventory:
+    addon: str
+    models: list[AddonModelInventory]
+    contributed_fields: list[AddonContributedFieldInventory]
+
+
+@strawberry.type
+class AddonChangePreview:
+    action: str
+    addon: str
+    revision: str
+    can_apply: bool
+    refusal: str | None
+    roots_before: list[str]
+    roots_after: list[str]
+    addons_to_enable: list[AddonChangeImpact]
+    addons_to_disable: list[AddonChangeImpact]
+    data_inventory: list[AddonDataInventory]
+    migration_warning: str | None
 
 
 @strawberry.type
@@ -78,14 +129,14 @@ class PlatformEdge:
 
 
 def _addon_id(root: Any) -> str:
-    """Return the addon's native composed name as the explorer identity."""
+    """Return the catalogue addon's native name as the explorer identity."""
 
-    return cast(composed.AddonRollup, root).name
+    return root.name
 
 
 @strawberry.type
 class PlatformAddon:
-    """Direct binding over the composed addon's live rollup."""
+    """Detail projection over the persisted addon catalogue."""
 
     id: str = strawberry.field(resolver=_addon_id)
     label: str
@@ -113,9 +164,9 @@ class PlatformExplorerData:
 
     @strawberry.field
     def addons(self) -> list[PlatformAddon]:
-        """Return live addon rollups only when the client selected them."""
+        """Return persisted catalogue rows, including disabled and historical addons."""
 
-        return cast(list[PlatformAddon], composed.addon_rollups())
+        return cast(list[PlatformAddon], _Addon.objects.all())
 
     @strawberry.field
     def models(self) -> list[PlatformModel]:
@@ -129,6 +180,12 @@ class PlatformExplorerData:
 
         return _edge_rows(self.model_rows())
 
+    @strawberry.field
+    def pending_addon_changes(self) -> bool | None:
+        """Return whether a verified settings edit still awaits graph reload."""
+
+        return _Addon.objects.pending_changes()
+
 
 @strawberry.type
 class PlatformQuery:
@@ -141,6 +198,18 @@ class PlatformQuery:
         if not platform_can_read():
             return None
         return PlatformExplorerData()
+
+    @strawberry.field(permission_classes=_ADMIN_PERMISSION_CLASSES)
+    def addon_change_preview(
+        self, addon: str, action: AddonChangeAction
+    ) -> AddonChangePreview:
+        """Return the manager-owned dependency and data inventory forecast."""
+
+        with system_context(reason="platform.addon.change_preview"):
+            return cast(
+                AddonChangePreview,
+                _Addon.objects.change_preview(addon, action.value),
+            )
 
 
 def platform_can_read() -> bool:
@@ -319,12 +388,13 @@ _FIELD_RESOURCE = hasura_pydantic_resource(
         "addon",
     ],
     rows=_field_rows_for,
+    frontend_row_model="server",
 )
 
 
 @strawberry.type
 class AddonInstallMutation:
-    """Install/uninstall an addon by editing ``settings.yaml``'s ``INSTALLED_APPS``.
+    """Install/disable an addon by editing ``settings.yaml``'s ``INSTALLED_APPS``.
 
     Thin admin-gated edge over :class:`~angee.platform.models.AddonManager`, which owns
     the whole flow — validate the target, edit the one install source (``settings.yaml``)
@@ -335,17 +405,24 @@ class AddonInstallMutation:
     """
 
     @strawberry.mutation(permission_classes=_ADMIN_PERMISSION_CLASSES)
-    def install(self, addon: str) -> ActionResult:
+    def install(self, addon: str, revision: str | None = None) -> ActionResult:
         """Install an addon root and report the manager's outcome."""
 
-        result = _Addon.objects.install(addon)
+        result = _Addon.objects.install(addon, revision)
         return ActionResult(ok=result.ok, message=result.summary)
 
     @strawberry.mutation(permission_classes=_ADMIN_PERMISSION_CLASSES)
-    def uninstall(self, addon: str) -> ActionResult:
-        """Uninstall an addon root and report the manager's outcome."""
+    def disable(self, addon: str, revision: str | None = None) -> ActionResult:
+        """Disable an addon root and report the manager's outcome."""
 
-        result = _Addon.objects.uninstall(addon)
+        result = _Addon.objects.disable(addon, revision)
+        return ActionResult(ok=result.ok, message=result.summary)
+
+    @strawberry.mutation(permission_classes=_ADMIN_PERMISSION_CLASSES)
+    def uninstall(self, addon: str, revision: str | None = None) -> ActionResult:
+        """Compatibility alias for the canonical disable mutation."""
+
+        result = _Addon.objects.uninstall(addon, revision)
         return ActionResult(ok=result.ok, message=result.summary)
 
 
@@ -360,6 +437,7 @@ schemas = {
         "mutation": [AddonInstallMutation],
         "types": [
             PlatformExplorerData,
+            AddonChangePreview,
             *_ADDON_RESOURCE.types,
             *_MODEL_RESOURCE.types,
             *_FIELD_RESOURCE.types,

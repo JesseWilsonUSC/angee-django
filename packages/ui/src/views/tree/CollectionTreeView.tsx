@@ -5,7 +5,7 @@ import { Pager } from "../../ui/pager";
 import { Button } from "../../ui/button";
 import { useUiT } from "../../i18n";
 import { LoadingPanel } from "../../fragments/LoadingPanel";
-import { Spinner } from "../../ui/spinner";
+import { Skeleton, SkeletonStatus } from "../../ui/skeleton";
 import { TreeView } from "./TreeView";
 import { ResourceListFrame } from "../resource/ResourceListFrame";
 import { useResourceView } from "../resource/resource-view-context";
@@ -21,6 +21,7 @@ import type { ListViewProps } from "../resource/resource-view-types";
 export interface CollectionTreeViewProps<TRow extends Row> extends Pick<
   ListViewProps<TRow>,
   | "resource"
+  | "presentation"
   | "columns"
   | "filterOptions"
   | "customFilterFields"
@@ -137,6 +138,7 @@ export function CollectionTreeView<TRow extends Row>(
   return (
     <ResourceListFrame
       toolbar={toolbar}
+      presentation={props.presentation}
       error={surface.list.error}
       onRetry={() => void surface.list.refetch()}
       summary={surface.list.summary}
@@ -144,6 +146,7 @@ export function CollectionTreeView<TRow extends Row>(
     >
       {surface.list.fetching && surface.rows.length === 0 ? <LoadingPanel /> : <TreeView
         key={queryKey}
+        className="resource-tree-scroll min-h-0 flex-1"
         rows={rows}
         rowKey={props.rowKey}
         parent={props.parent}
@@ -174,7 +177,7 @@ export function CollectionTreeView<TRow extends Row>(
               <span className="min-w-0 flex-1 truncate">
                 {props.renderRow?.(row) ?? String(row[props.label])}
               </span>
-              {branch?.fetching ? <Spinner size="sm" /> : null}
+              {branch?.fetching ? <SkeletonStatus label={t("list.loading")} className="shrink-0"><Skeleton className="size-3.5 rounded-full" /></SkeletonStatus> : null}
               {branch?.error ? (
                 <Button
                   size="sm"

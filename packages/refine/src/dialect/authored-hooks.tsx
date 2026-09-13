@@ -60,6 +60,8 @@ export interface AuthoredQueryOptions extends AuthoredOperationOptions {
   records?: readonly { model: string; id: string }[];
   /** Models whose changes match only through their event's related records. */
   relatedModels?: readonly string[];
+  /** Native TanStack Query polling policy for durable external operations. */
+  refetchInterval?: number | false;
   /**
    * Exact canonical model labels this bespoke read depends on; local writes and
    * live changes refetch it. This metadata-free package does no alias resolution:
@@ -95,7 +97,9 @@ export function useAuthoredQuery<TDocument extends AuthoredDocument>(
     client, dataProvider, provider, document, variables, models, records, relatedModels,
   );
   const result = useQuery({
-    ...configured, enabled: options.enabled ?? true,
+    ...configured,
+    enabled: options.enabled ?? true,
+    refetchInterval: options.refetchInterval,
   });
   useAuthoredLiveInterest(options.enabled ?? true, models);
   useAuthoredErrorPolicy([configured.queryKey]);

@@ -27,6 +27,7 @@ export function ServiceDetail(): ReactElement {
 
   return (
     <DetailSurface
+      publishBreadcrumbLabel
       loading={result.fetching && !snapshot}
       loadingMessage={t("services.loading")}
       empty={

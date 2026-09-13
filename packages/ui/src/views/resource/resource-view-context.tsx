@@ -15,6 +15,7 @@ import { Filter, ResourceQuery, useModelMetadata } from "@angee/metadata";
 import { validateResourceViewState } from "./model/state";
 import { normaliseGroupStack } from "./model/search";
 import { normalisePageSize } from "./page-size";
+import type { ResourceCollectionPresentation } from "./resource-view-types";
 
 import {
   createResourceViewState,
@@ -101,7 +102,10 @@ export type ResourceViewProviderScope = "route" | "local";
 export interface ResourceViewScopeMountOptions {
   ambient: ResourceViewContextValue | null;
   resource?: string;
-  scope: "inherit" | "local";
+  scope?: "inherit" | "local";
+  /** Embedded collections own local state unless the caller explicitly opts in
+   * to an ambient or route-owned view. */
+  presentation?: ResourceCollectionPresentation;
   initialState?: ResourceViewInitialState;
   isolated?: boolean;
   providerKey?: Key;
@@ -150,18 +154,20 @@ export function withResourceViewScope({
   ambient,
   resource,
   scope,
+  presentation,
   initialState,
   isolated = false,
   providerKey,
   children,
 }: ResourceViewScopeMountOptions): ReactElement {
-  if (!isolated && scope !== "local" && ambient) return children(ambient);
+  const resolvedScope = scope ?? (presentation === "embedded" ? "local" : "inherit");
+  if (!isolated && resolvedScope !== "local" && ambient) return children(ambient);
   return (
     <ResourceViewProvider
       key={providerKey}
       initialState={initialState}
       resource={resource}
-      scope={isolated || scope === "local" ? "local" : "route"}
+      scope={isolated || resolvedScope === "local" ? "local" : "route"}
     >
       <ResourceViewScopeBound>{children}</ResourceViewScopeBound>
     </ResourceViewProvider>
@@ -418,6 +424,7 @@ function useResourceViewContextValue({
         ...current,
         group: groupStack[0] ?? null,
         groupStack,
+        groupDefaultCleared: groupStack.length === 0,
       }));
     },
     [resetScope],
@@ -448,6 +455,7 @@ function useResourceViewContextValue({
           sorting: [],
           group: null,
           groupStack: [],
+          groupDefaultCleared: true,
           queryError: null,
         })),
       setGroup: (group: ResourceViewGroup | null) =>
@@ -460,7 +468,12 @@ function useResourceViewContextValue({
         })),
       clearSelectedIds,
       setView: (view: ResourceViewKind) =>
-        updateState((current) => ({ ...current, view })),
+        updateState((current) => ({
+          ...current,
+          view,
+          groupDefaultCleared:
+            view === current.view ? current.groupDefaultCleared : false,
+        })),
       setMode: (mode: CalendarViewMode) =>
         updateState((current) => ({ ...current, mode })),
       setAnchor: (anchor: string) =>
@@ -468,16 +481,18 @@ function useResourceViewContextValue({
       applyFavorite: (favorite: ResourceViewFavorite) =>
         resetScope((current) => {
           try {
+            const favoriteState = createResourceViewState({
+              ...favorite,
+              filter: Filter.from(favorite.filter).value,
+              groupStack: normaliseGroupStack(favorite.groupStack ?? []),
+              sort: favorite.sort ?? null,
+              mode: current.mode,
+              anchor: current.anchor,
+            });
             return {
               ...current,
-              ...createResourceViewState({
-                ...favorite,
-                filter: Filter.from(favorite.filter).value,
-                groupStack: normaliseGroupStack(favorite.groupStack ?? []),
-                sort: favorite.sort ?? null,
-                mode: current.mode,
-                anchor: current.anchor,
-              }),
+              ...favoriteState,
+              groupDefaultCleared: favoriteState.groupStack.length === 0,
               queryError: null,
             };
           } catch (error) {

@@ -1,9 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { print } from "graphql";
-import { Alert, EmptyState, LoadingPanel, errorMessage } from "@angee/ui";
+import { errorMessage } from "@angee/ui";
 import {
   useAuthoredMutation,
   useAuthoredQuery,
+  useStableVariables,
   type DocumentData,
   type DocumentVariables,
 } from "@angee/refine";
@@ -14,6 +15,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
   type ReactNode,
 } from "react";
 
@@ -74,7 +76,7 @@ function wantVariable(section: keyof OperatorSnapshotSections): WantVariable {
 /** The snapshot query's `@include` toggles — one per pane (`$wantOverview`…). */
 type SnapshotVariables = OperatorSnapshotQueryVariables;
 
-type ConnectionState =
+export type OperatorConnectionState =
   | { kind: "loading" }
   | { kind: "not-configured" }
   | { kind: "error"; message: string }
@@ -84,8 +86,10 @@ type ConnectionState =
 export interface OperatorConnection {
   endpoint: string;
   token: string;
+  restartJob: string | null;
 }
 const OperatorConnectionContext = createContext<OperatorConnection | null>(null);
+const OperatorConnectionStateContext = createContext<OperatorConnectionState>({ kind: "loading" });
 
 export interface OperatorTransportProviderProps {
   children: ReactNode;
@@ -98,18 +102,10 @@ export function OperatorTransportProvider({
   const queryClient = useQueryClient();
   const connectionQuery = useAuthoredQuery(OperatorConnectionQuery, undefined, {
     dataProviderName: CONSOLE_SCHEMA,
+    refetchInterval: CONNECTION_REFRESH_MS,
   });
 
-  useEffect(() => {
-    const intervalId = globalThis.setInterval(() => {
-      connectionQuery.refetch();
-    }, CONNECTION_REFRESH_MS);
-    return () => {
-      globalThis.clearInterval(intervalId);
-    };
-  }, [connectionQuery.refetch]);
-
-  const state = useMemo<ConnectionState>(() => {
+  const state = useMemo<OperatorConnectionState>(() => {
     if (!connectionQuery.data && connectionQuery.isFetching) {
       return { kind: "loading" };
     }
@@ -127,18 +123,17 @@ export function OperatorTransportProvider({
     }
   }, [connectionQuery.data, connectionQuery.error, connectionQuery.isFetching, t]);
 
-  const endpoint = state.kind === "ready" ? state.connection.endpoint : null;
-  const token = state.kind === "ready" ? state.connection.token : null;
-  // Publish the live bearer to the module store the `operator` refine provider
-  // reads per request (via `bearerAuthFromGetter`). This MUST run during render,
-  // not in an effect: a child pane's first request fires in the child's mount
-  // effect, which React runs before this parent's effects — an effect-time set
-  // would race that request to a 401. Writing here each render also covers token
-  // rotation. We do not null on unmount: only this gate's own subtree calls the
-  // operator provider, so a lingering token is never read after the gate leaves,
-  // and a null-on-unmount cleanup would be fired spuriously by StrictMode's
-  // mount/unmount probe (leaving the store null for the real render in dev).
-  operatorToken.set(token);
+  const [committedState, setCommittedState] = useState<OperatorConnectionState>({ kind: "loading" });
+  useEffect(() => {
+    const token = state.kind === "ready" ? state.connection.token : null;
+    operatorToken.set(token);
+    setCommittedState(state);
+    return () => {
+      if (operatorToken.get() === token) operatorToken.set(null);
+    };
+  }, [state]);
+  const endpoint = committedState.kind === "ready" ? committedState.connection.endpoint : null;
+  const token = committedState.kind === "ready" ? committedState.connection.token : null;
   // The daemon graphql-ws client for live subscriptions. Rebuilt on token
   // rotation (graphql-ws captures the bearer in connectionParams at connect, so a
   // new token needs a fresh socket) and absent without a WebSocket (SSR/test).
@@ -149,8 +144,8 @@ export function OperatorTransportProvider({
   // Stable connection value for non-GraphQL transports; non-null exactly when
   // `daemonClient` is, so the `!daemonClient` guard below makes it present.
   const connection = useMemo<OperatorConnection | null>(
-    () => (endpoint && token ? { endpoint, token } : null),
-    [endpoint, token],
+    () => (endpoint && token ? { endpoint, token, restartJob: committedState.kind === "ready" ? committedState.connection.restartJob ?? null : null } : null),
+    [committedState, endpoint, token],
   );
 
   // One subscription for this transport. Native Query entries own every pane's
@@ -171,42 +166,24 @@ export function OperatorTransportProvider({
     );
   }, [daemonClient, queryClient]);
 
-  if (state.kind === "loading") {
-    return <LoadingPanel message={t("transport.connecting")} />;
-  }
-
-  if (state.kind === "error") {
-    return <Alert tone="danger">{state.message}</Alert>;
-  }
-
-  if (state.kind === "not-configured" || !daemonClient) {
-    return (
-      <EmptyState
-        icon="operator"
-        title={t("transport.unavailable.title")}
-        description={t("transport.unavailable.description")}
-      />
-    );
-  }
-
   return (
     <OperatorWsClientProvider value={daemonClient}>
       <OperatorConnectionContext.Provider value={connection}>
-        {children}
+        <OperatorConnectionStateContext.Provider value={committedState}>
+          {children}
+        </OperatorConnectionStateContext.Provider>
       </OperatorConnectionContext.Provider>
     </OperatorWsClientProvider>
   );
 }
 
+export function useOperatorConnectionState(): OperatorConnectionState {
+  return useContext(OperatorConnectionStateContext);
+}
+
 /** The daemon connection (endpoint + bearer) for non-GraphQL transports (log sockets). */
-export function useOperatorConnection(): OperatorConnection {
-  const connection = useContext(OperatorConnectionContext);
-  if (!connection) {
-    throw new Error(
-      "useOperatorConnection must be used inside OperatorTransportProvider.",
-    );
-  }
-  return connection;
+export function useOperatorConnection(): OperatorConnection | null {
+  return useContext(OperatorConnectionContext);
 }
 
 export interface OperatorSnapshotResult {
@@ -218,23 +195,17 @@ export interface OperatorSnapshotResult {
 export function useOperatorSnapshot(
   sections: OperatorSnapshotSections = { overview: true },
 ): OperatorSnapshotResult {
-  // One signature over the requested panes keys the memo, so the variables
-  // object stays referentially stable while the same panes are requested.
-  const sectionsKey = SNAPSHOT_SECTIONS.map((section) =>
-    sections[section] ? "1" : "0",
-  ).join("");
-  const variables = useMemo<SnapshotVariables>(
-    () =>
-      // Complete by construction — SNAPSHOT_SECTIONS is pinned to every pane key,
-      // so the derived object carries every `WantVariable` the query requires.
-      Object.fromEntries(
-        SNAPSHOT_SECTIONS.map((section) => [
-          wantVariable(section),
-          sections[section] ?? false,
-        ]),
-      ) as SnapshotVariables,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sectionsKey],
+  const connectionState = useOperatorConnectionState();
+  // Complete by construction — SNAPSHOT_SECTIONS is pinned to every pane key,
+  // so the derived object carries every `WantVariable` the query requires. The
+  // shared structural owner keeps the query variables stable across renders.
+  const variables = useStableVariables(
+    Object.fromEntries(
+      SNAPSHOT_SECTIONS.map((section) => [
+        wantVariable(section),
+        sections[section] ?? false,
+      ]),
+    ) as SnapshotVariables,
   );
 
   // The one-shot query owns first paint: the daemon emits no snapshot on connect,
@@ -243,12 +214,20 @@ export function useOperatorSnapshot(
   // see docs/frontend/guidelines.md).
   const query = useAuthoredQuery(SNAPSHOT_QUERY, variables, {
     dataProviderName: OPERATOR_PROVIDER,
+    enabled: connectionState.kind === "ready",
   });
 
   const snapshot = useMemo(() => snapshotFromQueryData(query.data), [query.data]);
 
   return {
-    result: { fetching: query.isFetching, error: query.error },
+    result: {
+      fetching: connectionState.kind === "loading" || query.isFetching,
+      error: query.error ?? (connectionState.kind === "error"
+        ? new Error(connectionState.message)
+        : connectionState.kind === "not-configured"
+          ? new Error("Operator daemon is unavailable.")
+          : null),
+    },
     snapshot,
     refetch: query.refetch,
   };
@@ -351,7 +330,11 @@ function parseOperatorConnection(value: unknown): OperatorConnectionInfo | null 
   if (typeof endpoint !== "string" || typeof token !== "string") {
     throw new Error("operatorConnection is missing endpoint or token.");
   }
-  return { endpoint, token };
+  const restartJob = value.restart_job;
+  if (restartJob != null && typeof restartJob !== "string") {
+    throw new Error("operatorConnection returned an invalid restart job.");
+  }
+  return { endpoint, token, restartJob };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

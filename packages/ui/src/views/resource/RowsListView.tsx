@@ -29,7 +29,12 @@ import {
   type ListColumn,
 } from "./resource-view-list-body";
 import { ResourceListFrame } from "./ResourceListFrame";
-import type { ListEmptyContent } from "./resource-view-types";
+import type {
+  ListEmptyContent,
+  ResourceCollectionPresentation,
+  ResourceTableHeaderVisibility,
+  ResourceTableLayout,
+} from "./resource-view-types";
 import { useResourceToolbarProps } from "./resource-toolbar-props";
 import {
   useResourceViewToolbarInputs,
@@ -60,6 +65,9 @@ export interface RowsListViewProps<TRow extends StringIdRow = StringIdRow> {
   rowActions?: readonly RowActionDeclaration<TRow>[];
   emptyContent?: ListEmptyContent;
   className?: string;
+  presentation?: ResourceCollectionPresentation;
+  tableLayout?: ResourceTableLayout;
+  headerVisibility?: ResourceTableHeaderVisibility;
   selectable?: boolean;
   /** Controls rendered in the toolbar's leading slot, beside the filter. */
   toolbarActions?: React.ReactNode;
@@ -76,7 +84,8 @@ export interface RowsListViewProps<TRow extends StringIdRow = StringIdRow> {
   ) => React.ReactNode;
   /** Make each row/card draggable by returning its dnd payload, or `null`. */
   draggableRow?: (row: TRow) => DndPayload | null;
-  /** Use local resource-view state even when rendered inside another data view. */
+  /** Override collection-state ownership. Embedded collections default to local;
+   * page/workspace collections default to inherited/route state. */
   scope?: "inherit" | "local";
 }
 
@@ -94,7 +103,6 @@ export function RowsListView<TRow extends StringIdRow = StringIdRow>(
   props: RowsListViewProps<TRow>,
 ): React.ReactElement {
   const resourceView = useResourceViewMaybe();
-  const scope = props.scope ?? "inherit";
   const initialState = React.useMemo(
     () => ({
       pageSize: props.pageSize,
@@ -103,7 +111,8 @@ export function RowsListView<TRow extends StringIdRow = StringIdRow>(
   );
   return withResourceViewScope({
     ambient: resourceView,
-    scope,
+    scope: props.scope,
+    presentation: props.presentation,
     initialState,
     children: (scopedResourceView) => (
       <ValidatedRowsListView {...props} resourceView={scopedResourceView} />
@@ -150,6 +159,9 @@ function RowsListViewBody<TRow extends StringIdRow = StringIdRow>({
   rowActions,
   emptyContent,
   className,
+  presentation = "page",
+  tableLayout = "auto",
+  headerVisibility = "visible",
   selectable = false,
   toolbarActions,
   gallery,
@@ -194,7 +206,17 @@ function RowsListViewBody<TRow extends StringIdRow = StringIdRow>({
     groupStack: effectiveGroupStack,
   });
   const interactive = Boolean(onRowClick || rowHref);
-  const resolvedEmptyContent = emptyContent ?? t("list.empty");
+  const filtered = Object.keys(resourceView.state.filter).length > 0;
+  const resolvedEmptyContent = filtered
+    ? {
+        title: t("list.noMatchingRecords"),
+        description: t("list.noMatchingRecordsHint"),
+        action: {
+          label: t("resourceToolbar.clearQuery"),
+          onClick: resourceView.resetQuery,
+        },
+      }
+    : emptyContent ?? t("list.empty");
   const toolbar = useResourceToolbarProps({
     actions: toolbarActions,
     viewSwitcher: gallery ? (
@@ -221,6 +243,7 @@ function RowsListViewBody<TRow extends StringIdRow = StringIdRow>({
   return (
     <ResourceListFrame
       className={className}
+      presentation={presentation}
       toolbar={toolbar}
       selection={
         selectable
@@ -256,6 +279,8 @@ function RowsListViewBody<TRow extends StringIdRow = StringIdRow>({
         />
       ) : (
         <FlatListBody
+          tableLayout={tableLayout}
+          headerVisibility={headerVisibility}
           columns={columns}
           table={surface.table}
           rowModels={surface.rowModels}

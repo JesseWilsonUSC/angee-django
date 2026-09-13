@@ -11,7 +11,12 @@ export const THEME_TOKEN_NAMES = Object.freeze([
   "--brand-active", "--brand-soft", "--brand-soft-text", "--accent",
   "--accent-soft", "--accent-soft-text", "--success-soft", "--success-text",
   "--warning-soft", "--warning-text", "--danger-soft", "--danger-text",
-  "--info-soft", "--info-text", "--ring", "--ring-danger", "--font-family-sans",
+  "--info-soft", "--info-text", "--success", "--on-success", "--success-line",
+  "--success-tint", "--warning", "--on-warning", "--warning-line", "--warning-tint",
+  "--danger", "--danger-hover", "--danger-active", "--on-danger", "--danger-line",
+  "--danger-tint", "--info", "--on-info", "--info-line", "--info-tint",
+  "--on-accent", "--accent-line", "--accent-tint", "--brand-line", "--brand-tint",
+  "--ring", "--ring-danger", "--font-family-sans",
   "--font-family-mono", "--elevation-xs", "--elevation-sm", "--elevation-md",
   "--elevation-lg", "--elevation-popover", "--r-2", "--r-4", "--r-6", "--r-8", "--r-10", "--r-12",
   "--r-full", "--rail-w", "--topbar-h", "--controlpanel-h", "--chatter-w",
@@ -30,6 +35,16 @@ export function assertThemeDefinition(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Theme definition must be an object.");
   if (value.contractVersion !== THEME_CONTRACT_VERSION) throw new TypeError(`Theme ${String(value.id ?? "<unknown>")} uses an unsupported contractVersion.`);
   if (typeof value.id !== "string" || !THEME_ID_PATTERN.test(value.id)) throw new TypeError(`Theme id ${JSON.stringify(value.id)} is invalid.`);
+  if (value.legacyIds !== undefined) {
+    if (!Array.isArray(value.legacyIds) || value.legacyIds.length > 16) throw new TypeError(`Theme ${value.id} legacyIds must be a bounded array.`);
+    const legacyIds = new Set();
+    for (const legacyId of value.legacyIds) {
+      if (typeof legacyId !== "string" || !THEME_ID_PATTERN.test(legacyId) || legacyId === value.id || legacyIds.has(legacyId)) {
+        throw new TypeError(`Theme ${value.id} legacy id ${JSON.stringify(legacyId)} is invalid or duplicated.`);
+      }
+      legacyIds.add(legacyId);
+    }
+  }
   for (const field of ["labelKey", "descriptionKey"]) {
     if (typeof value[field] !== "string" || value[field].length === 0 || value[field].length > 160) throw new TypeError(`Theme ${value.id} must declare a bounded ${field}.`);
   }
@@ -48,11 +63,14 @@ export function assertThemeDefinition(value) {
 
 export function assertThemeCatalogue(definitions) {
   if (!Array.isArray(definitions)) throw new TypeError("Theme catalogue must be an array.");
-  const seen = new Set();
+  const seen = new Map();
   for (const definition of definitions) {
     assertThemeDefinition(definition);
-    if (seen.has(definition.id)) throw new TypeError(`Duplicate installed theme id ${JSON.stringify(definition.id)}.`);
-    seen.add(definition.id);
+    for (const id of [definition.id, ...(definition.legacyIds ?? [])]) {
+      const previous = seen.get(id);
+      if (previous) throw new TypeError(`Theme id or legacy alias ${JSON.stringify(id)} is claimed by both ${previous} and ${definition.id}.`);
+      seen.set(id, definition.id);
+    }
   }
   return [...definitions].sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
 }
@@ -90,14 +108,20 @@ export function serializableThemeMetadata(definition) {
   assertThemeDefinition(definition);
   return {
     contractVersion: definition.contractVersion, id: definition.id,
+    legacyIds: definition.legacyIds ?? [],
     labelKey: definition.labelKey, descriptionKey: definition.descriptionKey,
     revision: definition.revision, optionsVersion: definition.options?.version ?? null,
     optionDefaults: definition.options?.defaults ?? null,
+    optionsCapability: definition.options?.capability ?? null,
   };
 }
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
-const CUSTOMIZATION_KEYS = Object.freeze(["brand", "accent", "neutral", "font", "radius", "density", "elevation"]);
+const CUSTOMIZATION_KEYS = Object.freeze([
+  "brand", "accent", "neutral", "canvas", "surface", "rail",
+  "success", "warning", "danger", "info",
+  "font", "radius", "density", "elevation", "logo",
+]);
 const CUSTOMIZATION_KEY_SET = new Set(CUSTOMIZATION_KEYS);
 const FONT_STACKS = Object.freeze({
   system: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -142,6 +166,7 @@ const FONT_KEYS = new Set(["theme", ...Object.keys(FONT_STACKS)]);
 const RADIUS_KEYS = new Set(["theme", ...Object.keys(RADIUS_TOKENS)]);
 const DENSITY_KEYS = new Set(["theme", ...Object.keys(DENSITY_TOKENS)]);
 const ELEVATION_KEYS = new Set(["theme", ...Object.keys(ELEVATION_TOKENS)]);
+const LOGO_KEYS = new Set(["theme", "brand", "accent", "mono", "star", "corner"]);
 
 /**
  * Build the bounded option contract shared by customizable theme addons.
@@ -156,6 +181,7 @@ export function createThemeCustomizationOptions(defaults, configuration = {}) {
   return {
     version,
     defaults: normalizedDefaults,
+    capability: "palette-customization",
     parse: parseThemeCustomization,
     ...(configuration.migrate ? {
       migrate(value, fromVersion) {
@@ -168,6 +194,25 @@ export function createThemeCustomizationOptions(defaults, configuration = {}) {
   };
 }
 
+export function isThemeCustomizationOptions(options) {
+  return options?.capability === "palette-customization";
+}
+
+/** Fill fields introduced by a newer shared customization schema from a base theme. */
+export function migrateThemeCustomization(value, defaults) {
+  const normalizedDefaults = parseThemeCustomization(defaults);
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Legacy theme customization must be an object.");
+  const keys = Object.keys(value);
+  if (keys.some((key) => !CUSTOMIZATION_KEY_SET.has(key))) throw new TypeError("Legacy theme customization contains unsupported fields.");
+  return parseThemeCustomization({ ...normalizedDefaults, ...value });
+}
+
+/** Standard migration for a customization contract with one version-1 predecessor. */
+export function migrateThemeCustomizationFromV1(value, fromVersion, defaults) {
+  if (fromVersion !== 1) throw new TypeError(`Theme customization options version ${fromVersion} cannot be migrated.`);
+  return migrateThemeCustomization(value, defaults);
+}
+
 export function parseThemeCustomization(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Theme customization must be an object.");
   const keys = Object.keys(value);
@@ -177,11 +222,24 @@ export function parseThemeCustomization(value) {
   const brand = normalizedHex(value.brand, "brand");
   const accent = normalizedHex(value.accent, "accent");
   const neutral = normalizedHex(value.neutral, "neutral");
+  const canvas = normalizedHex(value.canvas, "canvas");
+  const surface = normalizedHex(value.surface, "surface");
+  const rail = normalizedHex(value.rail, "rail");
+  const success = normalizedHex(value.success, "success");
+  const warning = normalizedHex(value.warning, "warning");
+  const danger = normalizedHex(value.danger, "danger");
+  const info = normalizedHex(value.info, "info");
   if (!FONT_KEYS.has(value.font)) throw new TypeError("Theme customization font is unsupported.");
   if (!RADIUS_KEYS.has(value.radius)) throw new TypeError("Theme customization radius is unsupported.");
   if (!DENSITY_KEYS.has(value.density)) throw new TypeError("Theme customization density is unsupported.");
   if (!ELEVATION_KEYS.has(value.elevation)) throw new TypeError("Theme customization elevation is unsupported.");
-  return { brand, accent, neutral, font: value.font, radius: value.radius, density: value.density, elevation: value.elevation };
+  if (!LOGO_KEYS.has(value.logo)) throw new TypeError("Theme customization logo is unsupported.");
+  return {
+    brand, accent, neutral, canvas, surface, rail,
+    success, warning, danger, info,
+    font: value.font, radius: value.radius, density: value.density,
+    elevation: value.elevation, logo: value.logo,
+  };
 }
 
 function resolveThemeCustomization(value, defaults) {
@@ -191,6 +249,12 @@ function resolveThemeCustomization(value, defaults) {
   if (value.brand !== defaults.brand) applyBrandPalette(value.brand, light, dark);
   if (value.accent !== defaults.accent) applyAccentPalette(value.accent, light, dark);
   if (value.neutral !== defaults.neutral) applyNeutralPalette(value.neutral, light, dark);
+  if (value.canvas !== defaults.canvas) applyCanvasPalette(value.canvas, light, dark);
+  if (value.surface !== defaults.surface) applySurfacePalette(value.surface, light, dark);
+  if (value.rail !== defaults.rail) applyRailPalette(value.rail, light, dark);
+  for (const role of ["success", "warning", "danger", "info"]) {
+    if (value[role] !== defaults[role]) applyStatusPalette(role, value[role], light, dark);
+  }
   if (value.font !== defaults.font && value.font !== "theme") shared["--font-family-sans"] = FONT_STACKS[value.font];
   if (value.radius !== defaults.radius && value.radius !== "theme") assignScale(shared, ["--r-2", "--r-4", "--r-6", "--r-8", "--r-10", "--r-12"], RADIUS_TOKENS[value.radius]);
   if (value.density !== defaults.density && value.density !== "theme") assignScale(shared, ["--control-h-sm", "--control-h-md", "--control-h-lg"], DENSITY_TOKENS[value.density]);
@@ -214,6 +278,8 @@ function applyBrandPalette(color, light, dark) {
     "--brand-soft": lightSoft,
     "--brand-soft-text": readableTintText(color, lightSoft),
     "--text-on-brand": readableText(color),
+    "--brand-line": mixHex(color, "#ffffff", 0.48),
+    "--brand-tint": mixHex(color, "#ffffff", 0.94),
     "--text-link": readableTintText(color, "#ffffff"),
     "--border-focus": color,
     "--ring": `0 0 0 3px ${withAlpha(color, 0.30)}`,
@@ -225,6 +291,8 @@ function applyBrandPalette(color, light, dark) {
     "--brand-soft": darkSoft,
     "--brand-soft-text": readableTintText(darkBrand, darkSoft),
     "--text-on-brand": readableText(darkBrand),
+    "--brand-line": withAlpha(darkBrand, 0.40),
+    "--brand-tint": mixHex(darkBrand, "#0b0f14", 0.82),
     "--text-link": readableTintText(darkBrand, "#11141a"),
     "--border-focus": darkBrand,
     "--ring": `0 0 0 3px ${withAlpha(darkBrand, 0.35)}`,
@@ -237,14 +305,90 @@ function applyAccentPalette(color, light, dark) {
   const darkSoft = mixHex(color, "#0b0f14", 0.76);
   Object.assign(light, {
     "--accent": color,
+    "--on-accent": readableText(color),
     "--accent-soft": lightSoft,
     "--accent-soft-text": readableTintText(color, lightSoft),
+    "--accent-line": mixHex(color, "#ffffff", 0.48),
+    "--accent-tint": mixHex(color, "#ffffff", 0.94),
   });
   Object.assign(dark, {
     "--accent": darkAccent,
+    "--on-accent": readableText(darkAccent),
     "--accent-soft": darkSoft,
     "--accent-soft-text": readableTintText(darkAccent, darkSoft),
+    "--accent-line": withAlpha(darkAccent, 0.40),
+    "--accent-tint": mixHex(darkAccent, "#0b0f14", 0.82),
   });
+}
+
+function applyCanvasPalette(color, light, dark) {
+  light["--surface-canvas"] = color;
+  dark["--surface-canvas"] = mixHex(color, "#000000", 0.94);
+}
+
+function applySurfacePalette(color, light, dark) {
+  const lightInset = mixHex(color, "#000000", 0.06);
+  const darkSurface = mixHex(color, "#000000", 0.88);
+  Object.assign(light, {
+    "--surface-sheet": color,
+    "--surface-sheet-2": mixHex(color, "#000000", 0.025),
+    "--surface-popover": color,
+    "--surface-inset": lightInset,
+  });
+  Object.assign(dark, {
+    "--surface-sheet": darkSurface,
+    "--surface-sheet-2": mixHex(darkSurface, "#ffffff", 0.055),
+    "--surface-popover": mixHex(darkSurface, "#ffffff", 0.055),
+    "--surface-inset": mixHex(darkSurface, "#ffffff", 0.035),
+  });
+}
+
+function applyRailPalette(color, light, dark) {
+  assignRailPalette(light, color);
+  assignRailPalette(dark, mixHex(color, "#000000", 0.18));
+}
+
+function assignRailPalette(target, color) {
+  const foreground = readableText(color);
+  const highlightTarget = foreground === "#ffffff" ? "#ffffff" : "#000000";
+  Object.assign(target, {
+    "--surface-rail": color,
+    "--surface-rail-hi": mixHex(color, highlightTarget, 0.12),
+    "--text-on-rail": mixHex(foreground, color, 0.16),
+    "--text-on-rail-mut": mixHex(foreground, color, 0.40),
+    "--text-on-rail-hi": foreground,
+    "--border-on-rail": mixHex(foreground, color, 0.82),
+  });
+}
+
+function applyStatusPalette(role, color, light, dark) {
+  const darkColor = mixHex(color, "#ffffff", 0.14);
+  const lightSoft = mixHex(color, "#ffffff", 0.86);
+  const darkSoft = mixHex(color, "#0b0f14", 0.76);
+  Object.assign(light, {
+    [`--${role}`]: color,
+    [`--on-${role}`]: readableText(color),
+    [`--${role}-soft`]: lightSoft,
+    [`--${role}-text`]: readableTintText(color, lightSoft),
+    [`--${role}-line`]: mixHex(color, "#ffffff", 0.48),
+    [`--${role}-tint`]: mixHex(color, "#ffffff", 0.94),
+  });
+  Object.assign(dark, {
+    [`--${role}`]: darkColor,
+    [`--on-${role}`]: readableText(darkColor),
+    [`--${role}-soft`]: darkSoft,
+    [`--${role}-text`]: readableTintText(darkColor, darkSoft),
+    [`--${role}-line`]: withAlpha(darkColor, 0.40),
+    [`--${role}-tint`]: mixHex(darkColor, "#0b0f14", 0.82),
+  });
+  if (role === "danger") {
+    light["--danger-hover"] = mixHex(color, "#000000", 0.14);
+    light["--danger-active"] = mixHex(color, "#000000", 0.28);
+    light["--ring-danger"] = `0 0 0 3px ${withAlpha(color, 0.30)}`;
+    dark["--danger-hover"] = mixHex(color, "#ffffff", 0.30);
+    dark["--danger-active"] = mixHex(color, "#ffffff", 0.44);
+    dark["--ring-danger"] = `0 0 0 3px ${withAlpha(darkColor, 0.35)}`;
+  }
 }
 
 function applyNeutralPalette(color, light, dark) {
@@ -358,6 +502,7 @@ function assertTokenLayer(layer, owner) {
 function assertThemeOptions(id, options) {
   if (!options || typeof options !== "object" || Array.isArray(options)) throw new TypeError(`Theme ${id} options must be an object.`);
   if (!Number.isSafeInteger(options.version) || options.version < 1) throw new TypeError(`Theme ${id} options version must be a positive integer.`);
+  if (options.capability !== undefined && options.capability !== "palette-customization") throw new TypeError(`Theme ${id} options capability is unsupported.`);
   if (typeof options.parse !== "function" || typeof options.resolve !== "function") throw new TypeError(`Theme ${id} options must provide parse and resolve functions.`);
   options.parse(options.defaults);
 }

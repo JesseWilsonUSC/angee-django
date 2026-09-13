@@ -126,7 +126,9 @@ function parseLogFrame(data: unknown): string | null {
  * down the live socket and wiping the on-screen buffer.
  */
 export function useServiceLogStream(name: string | undefined): DaemonLogStream {
-  const { endpoint, token } = useOperatorConnection();
+  const connection = useOperatorConnection();
+  const endpoint = connection?.endpoint ?? "";
+  const token = connection?.token ?? "";
   const tokenRef = useRef(token);
   useEffect(() => {
     tokenRef.current = token;
@@ -137,10 +139,15 @@ export function useServiceLogStream(name: string | undefined): DaemonLogStream {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (!name) return;
     setLines([]);
     setStatus("connecting");
     setError(null);
+    if (!name) return;
+    if (!endpoint) {
+      setStatus("error");
+      setError(new Error("Operator daemon is unavailable."));
+      return;
+    }
 
     let disposed = false;
     let socket: WebSocket | null = null;

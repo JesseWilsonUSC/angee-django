@@ -5,6 +5,7 @@
 // no module-global registry, no import side-effect.
 
 export { PreviewPane, type PreviewPaneProps } from "./PreviewPane";
+export { PreviewSkeleton, type PreviewSkeletonProps } from "./PreviewSkeleton";
 export { builtinPreviewProviders } from "./builtins";
 export {
   resolvePreviewProvider,

@@ -1,15 +1,15 @@
-"""Install/uninstall console mutations — ``settings.yaml`` is the install source.
+"""Install/disable console mutations — ``settings.yaml`` is the install source.
 
-``install``/``uninstall`` are thin admin-gated edges over the ``AddonInstaller``
-(the one writer of ``settings.yaml``'s ``INSTALLED_APPS``, edited comment-preserving
-via ``ruamel``). These drive the resolvers over the concrete ``platform.Addon``
+``install``/``disable`` are thin admin-gated edges over the addon manager, which
+uses ``AddonInstaller`` to edit ``settings.yaml`` while preserving comments.
+These drive the resolvers over the concrete ``platform.Addon``
 reflection table the way the composed console does:
 
 - install appends an available addon's root to a temp ``settings.yaml`` (it would
   compose on the next boot) and the in-process reconcile flips its reflected row to
   ``pending``;
-- uninstall removes the root;
-- a ``forced`` (depended-on) addon refuses uninstall, leaving the file untouched;
+- disable removes the root;
+- a ``forced`` (depended-on) addon refuses disable, leaving the file untouched;
 - a non-admin actor is denied by the REBAC gate.
 """
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -27,10 +28,13 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.management import call_command
 from django.db import connection
 from django.test import RequestFactory
+from hatch_angee import AddonManifest
 from rebac import app_settings, system_context
 from rebac.roles import grant
 
 from angee.graphql.schema import SCHEMA_PART_KEYS, GraphQLSchemas
+from angee.platform import models as platform_models
+from angee.platform.models import _preview_revision
 from tests.conftest import PLATFORM_TEST_MODELS, SchemaAddon, execute_schema
 from tests.conftest import _create_missing_tables as _create_tables
 from tests.conftest import result_data as _data
@@ -53,7 +57,7 @@ ANGEE_RUNTIME_DIR: "{BASE_DIR}/runtime"
 """
 
 _INSTALL = "mutation($addon: String!){ install(addon: $addon){ ok message } }"
-_UNINSTALL = "mutation($addon: String!){ uninstall(addon: $addon){ ok message } }"
+_DISABLE = "mutation($addon: String!){ disable(addon: $addon){ ok message } }"
 
 
 @pytest.fixture()
@@ -79,6 +83,7 @@ def project_settings_yaml(tmp_path: Path, settings: Any) -> Path:
     path = tmp_path / "settings.yaml"
     path.write_text(_SETTINGS_YAML, encoding="utf-8")
     settings.BASE_DIR = tmp_path
+    settings.ANGEE_PROJECT_YAML_SETTINGS = frozenset({"INSTALLED_APPS"})
     return path
 
 
@@ -145,29 +150,123 @@ def test_install_refuses_a_non_materialised_addon(
     assert project_settings_yaml.read_text(encoding="utf-8") == before  # refusal never edits
 
 
-def test_uninstall_removes_the_root(
+def test_disable_preview_refuses_an_unknown_addon(
     platform_tables: None,
     project_settings_yaml: Path,
 ) -> None:
-    """Uninstall drops the root from ``settings.yaml`` (it leaves on the next boot)."""
+    """A crafted Disable target is a refusal rather than a successful no-op."""
+
+    del platform_tables, project_settings_yaml
+    with system_context(reason="test.platform.disable-preview.unknown"):
+        preview = Addon.objects.change_preview("not.a.real.addon", "disable")
+
+    assert preview.can_apply is False
+    assert preview.refusal
+    assert preview.roots_after == preview.roots_before
+
+
+def test_preview_revision_binds_every_change_decision() -> None:
+    """A confirmation receipt cannot authorize another action, target, or snapshot."""
+
+    revision = _preview_revision
+    manifest = AddonManifest(name="example.demo", description="original")
+    baseline = revision(
+        "INSTALLED_APPS: []\n",
+        (manifest,),
+        action="install",
+        addon="example.demo",
+        roots_after=("example.demo",),
+    )
+    alternatives = (
+        revision(
+            "INSTALLED_APPS: []\n",
+            (manifest,),
+            action="disable",
+            addon="example.demo",
+            roots_after=("example.demo",),
+        ),
+        revision(
+            "INSTALLED_APPS: []\n",
+            (manifest,),
+            action="install",
+            addon="example.other",
+            roots_after=("example.demo",),
+        ),
+        revision(
+            "INSTALLED_APPS:\n  - angee.platform\n",
+            (manifest,),
+            action="install",
+            addon="example.demo",
+            roots_after=("example.demo",),
+        ),
+        revision(
+            "INSTALLED_APPS: []\n",
+            (AddonManifest(name="example.demo", description="changed"),),
+            action="install",
+            addon="example.demo",
+            roots_after=("example.demo",),
+        ),
+        revision(
+            "INSTALLED_APPS: []\n",
+            (manifest,),
+            action="install",
+            addon="example.demo",
+            roots_after=("example.demo", "example.other"),
+        ),
+    )
+
+    assert all(candidate != baseline for candidate in alternatives)
+    assert len(set(alternatives)) == len(alternatives)
+
+
+def test_data_inventory_lists_donor_fields_separately(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A disabled donor reports copied fields without claiming ownership of the target model."""
+
+    config = SimpleNamespace(name="example.donor")
+    monkeypatch.setattr(platform_models.composed, "addons", lambda: [config])
+    monkeypatch.setattr(platform_models.composed, "data_models", lambda owner: [])
+    monkeypatch.setattr(
+        platform_models.composed,
+        "contributed_fields",
+        lambda owner: [
+            SimpleNamespace(
+                model_label="example_owner.record",
+                field_name="external_id",
+                verbose_name="External ID",
+            )
+        ],
+    )
+
+    inventory = Addon.objects._data_inventory((config.name,))
+
+    assert inventory[0].models == ()
+    assert inventory[0].contributed_fields[0].model_label == "example_owner.record"
+    assert inventory[0].contributed_fields[0].field_name == "external_id"
+
+
+def test_disable_removes_the_root(
+    platform_tables: None,
+    project_settings_yaml: Path,
+) -> None:
+    """Disable drops the root from ``settings.yaml`` (it leaves on the next boot)."""
 
     del platform_tables
-    # Seed an extra root so there is something uninstallable in the file.
+    # Seed an extra root so there is something to disable in the file.
     _data(_execute(_schema(), _INSTALL, {"addon": _AVAILABLE_ADDON}, user=_platform_admin("seed-admin")))
-    admin = _platform_admin("uninstall-admin")
+    admin = _platform_admin("disable-admin")
 
-    result = _data(_execute(_schema(), _UNINSTALL, {"addon": _AVAILABLE_ADDON}, user=admin))["uninstall"]
+    result = _data(_execute(_schema(), _DISABLE, {"addon": _AVAILABLE_ADDON}, user=admin))["disable"]
 
     assert result["ok"] is True
-    assert "Uninstalled" in result["message"]
+    assert "Disabled" in result["message"]
     assert _AVAILABLE_ADDON not in project_settings_yaml.read_text(encoding="utf-8")
 
 
-def test_uninstall_refuses_a_forced_addon(
+def test_disable_refuses_a_forced_addon(
     platform_tables: None,
     project_settings_yaml: Path,
 ) -> None:
-    """A forced (depended-on) reflection row refuses uninstall; the file is untouched."""
+    """A forced (depended-on) reflection row refuses disable; the file is untouched."""
 
     del platform_tables
     admin = _platform_admin("forced-admin")
@@ -180,10 +279,10 @@ def test_uninstall_refuses_a_forced_addon(
         )
     before = project_settings_yaml.read_text(encoding="utf-8")
 
-    result = _data(_execute(_schema(), _UNINSTALL, {"addon": "angee.iam"}, user=admin))["uninstall"]
+    result = _data(_execute(_schema(), _DISABLE, {"addon": "angee.iam"}, user=admin))["disable"]
 
     assert result["ok"] is False
-    assert "cannot be uninstalled" in result["message"]
+    assert "cannot be disabled" in result["message"]
     assert project_settings_yaml.read_text(encoding="utf-8") == before  # refusal never edits
 
 

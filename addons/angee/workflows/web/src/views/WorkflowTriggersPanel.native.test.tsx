@@ -254,7 +254,7 @@ test("create mode presents the canonical lowercase trigger kind without enabling
   fireEvent.click(screen.getByRole("button", { name: "Rule JSON" }));
   const raw = await screen.findByLabelText("Rule JSON");
   fireEvent.change(interval, { target: { value: "3600" } });
-  expect(raw.textContent).toContain('"interval_seconds": 3600');
+  await waitFor(() => expect(raw.textContent).toContain('"interval_seconds": 3600'));
   interval.focus();
   fireEvent.input(interval, { target: { value: "" } });
   await waitFor(() => expect(raw.textContent).toContain('"interval_seconds": ""'));

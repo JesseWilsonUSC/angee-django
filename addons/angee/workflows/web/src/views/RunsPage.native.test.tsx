@@ -246,8 +246,7 @@ test("a legacy execution shows parent-scoped recorded data instead of an empty a
 
   expect(await screen.findByText("Execution data")).toBeTruthy();
   expect(screen.getByText("No attempt history was retained for this execution.")).toBeTruthy();
-  expect(screen.getByRole("tree").textContent).toContain("legacy");
-  expect(screen.getByRole("tree").textContent).toContain("input");
+  expect(await screen.findByText(/"legacy":\s*"input"/)).toBeTruthy();
   expect(mocks.resources.some((props) => props.resource === "workflows.StepAttempt")).toBe(false);
   expect(mocks.payloadVariables.at(-1)).toEqual(expect.objectContaining({
     run: "run-1", execution: "execution-1", includeInput: true,

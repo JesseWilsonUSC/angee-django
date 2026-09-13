@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from importlib import metadata
@@ -64,6 +65,7 @@ class AvailableAddon:
     name: str
     source: str
     anchor: str
+    manifest: AddonManifest
 
 
 def available_addons(addon_dirs: Iterable[Path | str] = ()) -> dict[str, AvailableAddon]:
@@ -80,15 +82,87 @@ def available_addons(addon_dirs: Iterable[Path | str] = ()) -> dict[str, Availab
 
     available: dict[str, AvailableAddon] = {}
     for entry_point in metadata.entry_points(group=ADDON_ENTRY_POINT_GROUP):
+        try:
+            spec = importlib.util.find_spec(entry_point.module)
+        except (ImportError, AttributeError, ValueError) as error:
+            raise ImproperlyConfigured(f"Cannot resolve addon entry point {entry_point.value!r}") from error
+        roots = tuple(Path(path) for path in spec.submodule_search_locations or ()) if spec else ()
+        if not roots and spec is not None and spec.origin:
+            roots = (Path(spec.origin).parent,)
+        markers = tuple(root / "addon.toml" for root in roots if (root / "addon.toml").is_file())
+        if len(markers) != 1:
+            raise ImproperlyConfigured(
+                f"{entry_point.value}: expected one import-package addon.toml, found {len(markers)}"
+            )
+        marker = markers[0]
+        try:
+            manifest = parse_manifest(marker)
+        except (ManifestError, OSError) as error:
+            raise ImproperlyConfigured(str(error)) from error
+        if manifest.name != entry_point.name:
+            raise ImproperlyConfigured(
+                f"{marker}: addon.name {manifest.name!r} disagrees with entry point {entry_point.name!r}"
+            )
         available[entry_point.name] = AvailableAddon(
-            name=entry_point.name, source="installed", anchor=entry_point.value
+            name=entry_point.name,
+            source="installed",
+            anchor=entry_point.value,
+            manifest=manifest,
         )
     for addon_dir, manifest in discover(addon_dirs):
         available.setdefault(
             manifest.name,
-            AvailableAddon(name=manifest.name, source="local", anchor=str(addon_dir)),
+            AvailableAddon(
+                name=manifest.name, source="local", anchor=str(addon_dir), manifest=manifest
+            ),
         )
     return dict(sorted(available.items()))
+
+
+def resolve_manifest_roots(
+    roots: Iterable[str],
+    manifests: Iterable[AddonManifest],
+    *,
+    aliases: Mapping[str, str] | None = None,
+) -> tuple[AddonManifest, ...]:
+    """Resolve manifest roots into their deterministic dependency closure.
+
+    Manifest-free Django/core roots remain outside this projection. Callers that
+    already resolved AppConfig declarations supply their exact declaration aliases;
+    this owner never guesses dotted AppConfig paths or imports disabled addons.
+    """
+
+    root_aliases = aliases or {}
+    manifests_by_name: dict[str, AddonManifest] = {}
+    for manifest in manifests:
+        manifests_by_name.setdefault(manifest.name, manifest)
+    root_names = tuple(roots)
+    if len(set(root_names)) != len(root_names):
+        duplicate = next(name for name in root_names if root_names.count(name) > 1)
+        raise RuntimeError(f"Duplicate root app {duplicate!r}")
+    ordered: list[AddonManifest] = []
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(declaration: str) -> None:
+        name = root_aliases.get(declaration, declaration)
+        manifest = manifests_by_name.get(name)
+        if manifest is None or name in visited:
+            return
+        if name in visiting:
+            raise RuntimeError(f"Cycle in app dependencies at {name}")
+        if len(set(manifest.depends_on)) != len(manifest.depends_on):
+            raise RuntimeError(f"{name} declares duplicate dependency")
+        visiting.add(name)
+        for dependency in sorted(manifest.depends_on):
+            visit(dependency)
+        visiting.remove(name)
+        visited.add(name)
+        ordered.append(manifest)
+
+    for root in root_names:
+        visit(root)
+    return tuple(ordered)
 
 
 def is_angee_addon(app_config: AppConfig) -> bool:

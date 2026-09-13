@@ -28,6 +28,10 @@ const TEXT_OPERATORS: readonly FilterOperator[] = [
 ];
 const BASIC_OPERATORS: readonly FilterOperator[] = ["exact", "ne", "inList", "notInList", "isNull"];
 const ORDER_OPERATORS: readonly FilterOperator[] = ["gt", "gte", "lt", "lte"];
+const NATURAL_TEXT_COLLATOR = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
 const WIRE_OPERATORS: Readonly<Record<FilterOperator, string>> = {
   exact: "_eq", ne: "_neq", gt: "_gt", gte: "_gte", lt: "_lt", lte: "_lte",
   inList: "_in", notInList: "_nin", isNull: "_is_null",
@@ -156,7 +160,8 @@ export class ResourceQuery {
   /** Parse every input, preserving empty membership/boolean branches and null comparisons. */
   toWhere(...values: readonly unknown[]): Record<string, unknown> {
     const parts = values.map((value) => this.where(this.filterFrom(value))).filter((value) => Object.keys(value).length > 0);
-    return parts.length === 0 ? {} : parts.length === 1 ? parts[0]! : { _and: parts };
+    const combined = parts.length === 0 ? {} : parts.length === 1 ? parts[0]! : { _and: parts };
+    return hasuraWhereRoot(combined);
   }
 
   /** Remove facet constraints while retaining the logic of every other branch. */
@@ -217,12 +222,16 @@ export class ResourceQuery {
     return value;
   }
 
-  /** Decimal strings need numeric ordering without losing their wire precision. */
+  /** Client-owned text uses natural ordering; Decimal strings retain wire precision. */
   comparator(field: string): ((leftRow: unknown, rightRow: unknown) => number) | undefined {
-    if (this.fields[field]?.scalar !== "Decimal") return undefined;
+    const scalar = this.fields[field]?.scalar;
+    if (scalar !== "Decimal" && scalar !== "String") return undefined;
     return (leftRow, rightRow) => {
       const left = this.value(field, leftRow), right = this.value(field, rightRow);
       if (left == null || right == null) return left === right ? 0 : left == null ? 1 : -1;
+      if (scalar === "String") {
+        return NATURAL_TEXT_COLLATOR.compare(String(left), String(right));
+      }
       return compareDecimal(left, right, `sort.${field}`);
     };
   }
@@ -488,6 +497,15 @@ function mergeConditions(conditions: readonly Record<string, unknown>[]): Record
     }
   }
   return merged;
+}
+/** Refine's Hasura adapter requires one Boolean operator when metadata supplies
+ * multiple root predicates. Preserve every compiled predicate while making the
+ * implicit conjunction explicit at the provider boundary. */
+function hasuraWhereRoot(where: Record<string, unknown>): Record<string, unknown> {
+  const entries = Object.entries(where);
+  return entries.length <= 1
+    ? where
+    : { _and: entries.map(([field, value]) => ({ [field]: value })) };
 }
 function wireOperand(operator: FilterOperator, value: FilterValue): FilterValue {
   if (["contains", "iContains", "startsWith", "iStartsWith", "endsWith", "iEndsWith"].includes(operator)) {

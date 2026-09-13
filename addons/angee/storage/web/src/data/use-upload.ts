@@ -18,7 +18,7 @@ const FILE_MODEL = "storage.File";
  * dedups on and finalize verifies. Reads the whole file into memory, which is
  * fine for the sizes the proxy upload accepts.
  */
-export async function sha256Hex(file: File): Promise<string> {
+async function sha256Hex(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
   return bytesToHex(sha256(new Uint8Array(buffer)));
 }

@@ -1,6 +1,6 @@
 import { createElement, type ComponentType, type SVGProps } from "react";
-import { AngeeLogo } from "@angee/logo-react";
 import { useAppRuntime } from "../runtime";
+import { ThemeLogo } from "../theme/logo";
 import {
   Activity,
   Archive,
@@ -59,6 +59,7 @@ import {
   SlidersHorizontal,
   Star,
   Sun,
+  Terminal,
   Trash2,
   TriangleAlert,
   User,
@@ -82,11 +83,9 @@ function AngeeLogoIcon({
   strokeWidth: _strokeWidth,
   ...props
 }: IconProps) {
-  return createElement(AngeeLogo, {
+  return createElement(ThemeLogo, {
     ...props,
-    bgColor: null,
     height: props.height ?? size,
-    preset: "gold",
     width: props.width ?? size,
   });
 }
@@ -154,6 +153,7 @@ export const baseIcons = {
   "sliders-horizontal": SlidersHorizontal,
   star: Star,
   sun: Sun,
+  terminal: Terminal,
   trash: Trash2,
   "triangle-alert": TriangleAlert,
   user: User,

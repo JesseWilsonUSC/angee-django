@@ -1,7 +1,7 @@
 import { parse } from "graphql";
 // @vitest-environment happy-dom
 
-import { createElement, type ReactNode } from "react";
+import { createElement, useEffect, type ReactNode } from "react";
 import { cleanup, waitFor } from "@testing-library/react";
 import { createAngeeHasuraDataProvider } from "@angee/refine";
 import { useAuthoredQuery } from "@angee/refine";
@@ -12,6 +12,7 @@ import {
   useRouteHref,
 } from "@angee/ui/runtime";
 import { useParams } from "@tanstack/react-router";
+import { resourcePageRoutes } from "./define-base-addon";
 import { afterEach, describe, expect, test } from "vitest";
 
 import {
@@ -1081,6 +1082,63 @@ describe("createApp resource route index", () => {
 });
 
 describe("createApp route tree", () => {
+  test("keeps a contributed layout provider mounted when changing pages", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    history.replaceState(null, "", "/first");
+    let mounts = 0;
+    function Provider({ children }: RefineLayoutChromeProps): ReactNode {
+      useEffect(() => { mounts += 1; }, []);
+      return children;
+    }
+    const app = createApp(testAppInput([{
+      id: "pages",
+      layoutProviders: [{ id: "session", layout: "console", component: Provider }],
+      routes: [
+        { name: "first", path: "/first", component: () => createElement("p", null, "First page") },
+        { name: "second", path: "/second", component: () => createElement("p", null, "Second page") },
+      ],
+    }]));
+    const root = app.mount(host);
+    try {
+      await waitFor(() => expect(host.textContent).toContain("First page"));
+      const initialMounts = mounts;
+      expect(initialMounts).toBeGreaterThan(0);
+      await app.router.navigate({ to: "/second" });
+      await waitFor(() => expect(host.textContent).toContain("Second page"));
+      expect(mounts).toBe(initialMounts);
+    } finally {
+      root.unmount();
+      host.remove();
+    }
+  });
+
+  test("mounts an explicit record page and returns to its list index", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    history.replaceState(null, "", "/services/django");
+    const app = createApp(testAppInput([{
+      id: "services",
+      routes: resourcePageRoutes(
+        "services", "/services",
+        () => createElement("p", null, "Service list"),
+        undefined,
+        { detailComponent: () => createElement("p", null, "Service detail") },
+      ),
+    }]));
+    const root = app.mount(host);
+    try {
+      await waitFor(() => expect(host.textContent).toContain("Service detail"));
+      expect(host.textContent).not.toContain("Service list");
+      await app.router.navigate({ to: "/services" });
+      await waitFor(() => expect(host.textContent).toContain("Service list"));
+      expect(host.textContent).not.toContain("Service detail");
+    } finally {
+      root.unmount();
+      host.remove();
+    }
+  });
+
   test("nests addon routes under layouts and declared parents", () => {
     const app = createApp(testAppInput([
       {

@@ -29,6 +29,9 @@ interface ListViewContentProps<TRow extends Row> {
   textFilterField?: string | null;
   maxGroupDepth?: number;
   toolbarWrap?: boolean;
+  tableLayout: ListViewProps<TRow>["tableLayout"];
+  headerVisibility: ListViewProps<TRow>["headerVisibility"];
+  selectable: ListViewProps<TRow>["selectable"];
   renderGroupLabel?: ListViewProps<TRow>["renderGroupLabel"];
   surface: ResourceViewSurface<TRow> | GroupedResourceViewSurface<TRow>;
   resource: string;
@@ -62,6 +65,7 @@ interface ListViewContentProps<TRow extends Row> {
   renderCard: ListViewProps<TRow>["renderCard"];
   emptyContent: ListEmptyContent;
   className: string | undefined;
+  presentation: ListViewProps<TRow>["presentation"];
 }
 
 export function ListViewContent<TRow extends Row = Row>({
@@ -69,6 +73,9 @@ export function ListViewContent<TRow extends Row = Row>({
   textFilterField: declaredTextField,
   maxGroupDepth,
   toolbarWrap,
+  tableLayout = "auto",
+  headerVisibility = "visible",
+  selectable = true,
   renderGroupLabel,
   surface,
   resource,
@@ -102,6 +109,7 @@ export function ListViewContent<TRow extends Row = Row>({
   renderCard,
   emptyContent,
   className,
+  presentation,
 }: ListViewContentProps<TRow>): React.ReactElement {
   const t = useUiT();
   const flatMeasures = React.useMemo(
@@ -209,8 +217,9 @@ export function ListViewContent<TRow extends Row = Row>({
   return (
     <ResourceListFrame
       className={className}
+      presentation={presentation}
       toolbar={toolbar}
-      selection={{
+      selection={selectable ? {
         count: surface.selectedIds.size,
         onClear: resourceView.clearSelectedIds,
         onDelete:
@@ -222,7 +231,7 @@ export function ListViewContent<TRow extends Row = Row>({
           bulkActions && surface.selectedIds.size > 0
             ? bulkActions(surface.selectedIds, resourceView.clearSelectedIds)
             : undefined,
-      }}
+      } : undefined}
       error={surface.list.error}
       onRetry={() => void surface.list.refetch()}
       summary={surface.list.summary}
@@ -269,6 +278,9 @@ export function ListViewContent<TRow extends Row = Row>({
         />
       ) : surface.kind === "grouped" ? (
         <GroupedListBody
+          tableLayout={tableLayout}
+          headerVisibility={headerVisibility}
+          selectable={selectable}
           renderGroupLabel={renderGroupLabel}
           table={surface.table}
           tableColumns={surface.tableColumns}
@@ -325,6 +337,9 @@ export function ListViewContent<TRow extends Row = Row>({
         />
       ) : flatMeasures.length > 0 && !clientRowModel ? (
         <FlatListBodyWithAggregate
+          tableLayout={tableLayout}
+          headerVisibility={headerVisibility}
+          selectable={selectable}
           resource={resource}
           filter={surface.mergedFilter}
           modelMetadata={modelMetadata}
@@ -356,6 +371,9 @@ export function ListViewContent<TRow extends Row = Row>({
         />
       ) : (
         <FlatListBody
+          tableLayout={tableLayout}
+          headerVisibility={headerVisibility}
+          selectable={selectable}
           columns={resolvedColumns}
           table={surface.table}
           rowModels={surface.rowModels}

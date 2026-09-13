@@ -60,7 +60,7 @@ Dependency changes must update this file in the same change.
 | cryptography | Encryption primitives | `EncryptedField` (Fernet at rest, secret-by-type) |
 | django-import-export >= 4.4 + tablib | Native Dataset parsing, model field coercion, instance loading, import lifecycle, row results and transactions | Source grouping/diagnostic indexes, tier/xref/adoption policy and ledger/grant hooks in the native transaction. The bounded declaration-constraint evaluator remains because Django Q.check fails open on database errors |
 | pyyaml | YAML parsing substrate | Resource loader reads `.yaml`/`.yml` resource files; django-yamlconf consumes project settings YAML |
-| ruamel.yaml | Comment/format-preserving round-trip YAML editing | The `AddonInstaller`'s `settings.yaml` `INSTALLED_APPS` install/uninstall edit — the one writer that must preserve operator comments and layout (pyyaml round-trips lose them); not used at boot |
+| ruamel.yaml | Comment/format-preserving round-trip YAML editing | The `AddonInstaller`'s `settings.yaml` `INSTALLED_APPS` install/disable edit — the one writer that must preserve operator comments and layout (pyyaml round-trips lose them); not used at boot |
 | django-yamlconf | Django settings YAML overlays | `angee.compose.settings` loads `settings.yaml` beside `manage.py`; `Composer` applies addon `autoconfig.py` fragments |
 | django-environ | Typed boot environment access and URL parsers | `angee.compose.settings` reads Angee bootstrap env vars and honors the standard service URLs a deployment injects — `DATABASE_URL`→`DATABASES`, `CACHE_URL`→`CACHES`, `EMAIL_URL`→`EMAIL_*` — override-safe (an explicit project setting wins), falling back to the SQLite/Django floor when unset |
 | django-anymail | Vendor-neutral Django email backend API across transactional ESPs, plus the deterministic test backend | `angee.messaging` renders outbound `Message` parts and envelopes into `AnymailMessage`; deployments select an ESP through `EMAIL_BACKEND` plus `ANYMAIL`/`ANYMAIL_*` environment settings, while an unconfigured stack logs and declines delivery without touching Django's implicit localhost SMTP backend |
@@ -193,7 +193,7 @@ resource transport/auth/live integration. The active frontend owners are
 | react-day-picker | Calendar | Date widgets |
 | react-resizable-panels | Split panes | Layout and inspector panes |
 | CodeMirror 6 (+ @codemirror/lang-json) | Text / Markdown / JSON editor | Markdown and JSON widget editors (shared `useCodeMirrorEditor`) |
-| react-json-view-lite | JSON value tree rendering | JSON widget read tree and debug JSON panels |
+| react-json-view-lite | Installed for compatibility with stack lockfiles; new JSON reads use the shared flat code presentation |
 | @xyflow/react | node/edge graph canvas | `@angee/ui` `GraphView` canvas |
 | @dagrejs/dagre | directed-graph layout | `@angee/ui` `GraphView` node placement |
 | FullCalendar (Standard: `@fullcalendar/react` + `@fullcalendar/daygrid` + `@fullcalendar/timegrid` + `@fullcalendar/interaction`) | Month/week/day event calendar, drag/resize/select | `@angee/ui` `CalendarView` renders server-expanded occurrences and wires interactions to auto-CRUD; code-split behind a lazy import and themed through the token set |

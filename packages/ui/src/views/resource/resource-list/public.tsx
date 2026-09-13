@@ -65,7 +65,8 @@ export interface RecordSmartButtonDescriptor {
 export interface ResourceListProps<TRow extends Row = Row> {
   /** Refine/Angee resource id, e.g. `"notes.Note"`, shared by list and form. */
   resource: string;
-  /** Use local collection state even when rendered inside another resource view. */
+  /** Override collection-state ownership. Embedded collections default to local;
+   * routed and other page collections default to inherited/route state. */
   scope?: "inherit" | "local";
   /** Columns for the list. Omit when declaring a `List` child. */
   columns?: readonly ListColumn<TRow>[];
@@ -113,6 +114,7 @@ export interface ResourceListProps<TRow extends Row = Row> {
   /** Workbench geometry for split master-detail placement. */
   splitLayout?: ResourceListSplitLayout;
   /** List options forwarded to `ListView`. */
+  presentation?: ListViewProps<TRow>["presentation"];
   baseFilter?: ListViewProps<TRow>["baseFilter"];
   filterOptions?: ListViewProps<TRow>["filterOptions"];
   facets?: ListViewProps<TRow>["facets"];
@@ -169,7 +171,7 @@ export interface ResourceListProps<TRow extends Row = Row> {
 
 export type DrawerResourceListProps<TRow extends Row = Row> = Omit<
   ResourceListProps<TRow>,
-  "creating" | "onClose" | "onSelect" | "placement" | "recordId" | "routed"
+  "creating" | "onClose" | "onSelect" | "placement" | "recordId" | "routed" | "scope"
 >;
 
 export interface ResourceListDeclarations<TRow extends Row = Row> {
@@ -209,7 +211,7 @@ export function ResourceList<TRow extends Row = Row>({
   defaultGroup,
   defaultGroups,
   children,
-  scope = "inherit",
+  scope,
   ...props
 }: ResourceListProps<TRow>): React.ReactElement {
   if (props.form && props.form.resource !== props.resource) {
@@ -244,7 +246,10 @@ export function ResourceList<TRow extends Row = Row>({
   return withResourceViewScope({
     ambient: resourceView,
     resource: props.resource,
-    scope,
+    // A routed collection owns the route query even if its visual presentation
+    // is embedded. Callers can still explicitly request local state.
+    scope: scope ?? (props.routed ? "inherit" : undefined),
+    presentation: props.presentation,
     initialState,
     children: () => props.routed ? (
       <RoutedRecordController<TRow> resource={props.resource} newRecordId={REFINE_CREATE_ID}>
@@ -274,7 +279,7 @@ export function ResourceList<TRow extends Row = Row>({
   });
 }
 
-/** A drawer-mode `ResourceList` with self-owned record state and inline controls. */
+/** A drawer-mode `ResourceList` with local query/record state and inline controls. */
 export function DrawerResourceList<TRow extends Row = Row>(
   props: DrawerResourceListProps<TRow>,
 ): React.ReactElement {
@@ -284,6 +289,7 @@ export function DrawerResourceList<TRow extends Row = Row>(
     <ControlBandProvider host={undefined}>
       <ResourceList
         {...props}
+        scope="local"
         placement="drawer"
         recordId={recordId}
         onSelect={(id) => setRecordId(id ?? REFINE_CREATE_ID)}
@@ -313,7 +319,7 @@ export function ResourceEdit({
   id,
   ...props
 }: ResourceFormActionProps): React.ReactElement {
-  return <FormView {...props} resource={resource} id={id} />;
+  return <FormView {...props} resource={resource} id={id} publishBreadcrumbLabel />;
 }
 
 /** The refine show action surface for one resource record. */
@@ -322,7 +328,7 @@ export function ResourceShow({
   id,
   ...props
 }: ResourceFormActionProps): React.ReactElement {
-  return <FormView {...props} resource={resource} id={id} readOnly />;
+  return <FormView {...props} resource={resource} id={id} readOnly publishBreadcrumbLabel />;
 }
 
 function controlledRecordController<TRow extends Row>(

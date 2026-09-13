@@ -1,8 +1,8 @@
 import { useAuthoredMutation, useAuthoredQuery } from "@angee/refine";
-import { useEffect, useId, useMemo, useState, type FormEvent, type ReactElement, } from "react";
+import { useMemo, type ReactElement, } from "react";
 
 import {
-  Alert, Button, DashboardView, FieldDescription, FieldLabel, FieldRoot, InlineEmpty, Metric, MiniCard, Select, SurfacePanel, errorMessage, textRoleVariants } from "@angee/ui";
+  Button, DashboardView, InlineEmpty, Metric, MiniCard, MutationDialog, SurfacePanel, mutationDialogValueCodecs, textRoleVariants, titleCase, type MutationDialogField } from "@angee/ui";
 
 import {
   IamGrantRole,
@@ -13,7 +13,7 @@ import {
   type IAMOverviewVariables,
   type IAMUsersVariables,
 } from "../documents";
-import { titleLabel, userLabel } from "../identity-labels";
+import { userLabel } from "../identity-labels";
 import { grantRows } from "../identity-rows";
 import { IAM_LIST_LIMIT } from "../list-config";
 import { useIamT } from "../i18n";
@@ -38,7 +38,7 @@ export function OverviewPage(): ReactElement {
   );
   const overview = useAuthoredQuery(IamOverview, overviewVars);
   const usersQuery = useAuthoredQuery(IamUsers, listVars);
-  const [grant_role, grantState] = useAuthoredMutation(IamGrantRole);
+  const [grantRole] = useAuthoredMutation(IamGrantRole);
 
   const overviewFacts = overview.data?.iam_overview;
   const roles = overview.data?.iam_roles ?? [];
@@ -73,103 +73,78 @@ export function OverviewPage(): ReactElement {
   const privilegedTotal = overviewFacts?.privileged_grant_count ?? privileged.length;
   const unassignedTotal = overviewFacts?.unassigned_user_count ?? unassigned.length;
 
-  const [principal_id, setPrincipalId] = useState("");
-  const [role, setRole] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const principal_labelId = useId();
-  const roleLabelId = useId();
-
-  useEffect(() => {
-    if (!roleOptions.some((option) => option.value === role)) {
-      setRole(roleOptions[0]?.value ?? "");
-    }
-  }, [roleOptions, role]);
-  useEffect(() => {
-    if (principal_id && !principalOptions.some((o) => o.value === principal_id)) {
-      setPrincipalId("");
-    }
-  }, [principalOptions, principal_id]);
-
-  async function handleGrant(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (!principal_id || !role) {
-      setError(t("overview.grant.chooseBoth"));
-      return;
-    }
-    setError(null);
-    try {
-      const result = await grant_role({ principal_id, role });
-      if (result?.grant_role === false) throw new Error(t("overview.grant.error"));
-      setPrincipalId("");
-      overview.refetch();
-    } catch (caught) {
-      setError(errorMessage(caught, t("overview.grant.error")));
-    }
-  }
+  const grantFields = useMemo<readonly MutationDialogField[]>(() => [
+    {
+      name: "principal_id",
+      label: t("overview.grant.principal"),
+      widget: "select",
+      options: principalOptions,
+      placeholder: usersQuery.isFetching
+        ? t("overview.grant.loadingUsers")
+        : t("overview.grant.selectUser"),
+      description: usersTruncated
+        ? t("overview.grant.truncated", {
+          shown: IAM_LIST_LIMIT.toLocaleString(),
+          total: userTotalCount.toLocaleString(),
+        })
+        : undefined,
+      required: true,
+      readOnly: usersQuery.isFetching || principalOptions.length === 0,
+    },
+    {
+      name: "role",
+      label: t("overview.grant.role"),
+      widget: "select",
+      options: roleOptions,
+      placeholder: t("overview.grant.selectRole"),
+      required: true,
+      readOnly: roleOptions.length === 0,
+    },
+  ], [principalOptions, roleOptions, t, userTotalCount, usersQuery.isFetching, usersTruncated]);
 
   const loading = overview.isFetching;
 
   return (
     <DashboardView className="p-1">
-      <Metric label={t("overview.metric.users")} value={count(overviewFacts?.user_count, loading)} icon="users" />
-      <Metric label={t("overview.metric.roles")} value={count(overviewFacts?.role_count, loading)} icon="auth" tone="brand" />
-      <Metric label={t("overview.metric.grants")} value={count(overviewFacts?.grant_count, loading)} icon="check" tone="success" />
-      <Metric label={t("overview.metric.relationships")} value={count(overviewFacts?.relationship_count, loading)} icon="share" tone="info" />
-      <Metric label={t("overview.metric.privileged")} value={count(overviewFacts?.privileged_grant_count, loading)} icon="auth" tone="warning" detail={t("overview.metric.privilegedDetail")} />
-      <Metric label={t("overview.metric.unassigned")} value={count(overviewFacts?.unassigned_user_count, loading)} icon="users" tone="danger" detail={t("overview.metric.unassignedDetail")} />
+      <Metric label={t("overview.metric.users")} value={overviewFacts?.user_count} format="count" loading={loading} icon="users" />
+      <Metric label={t("overview.metric.roles")} value={overviewFacts?.role_count} format="count" loading={loading} icon="auth" tone="brand" />
+      <Metric label={t("overview.metric.grants")} value={overviewFacts?.grant_count} format="count" loading={loading} icon="check" tone="success" />
+      <Metric label={t("overview.metric.relationships")} value={overviewFacts?.relationship_count} format="count" loading={loading} icon="share" tone="info" />
+      <Metric label={t("overview.metric.privileged")} value={overviewFacts?.privileged_grant_count} format="count" loading={loading} icon="auth" tone="warning" detail={t("overview.metric.privilegedDetail")} />
+      <Metric label={t("overview.metric.unassigned")} value={overviewFacts?.unassigned_user_count} format="count" loading={loading} icon="users" tone="danger" detail={t("overview.metric.unassignedDetail")} />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="space-y-6">
           <SurfacePanel title={t("overview.grant.title")} summary={t("overview.grant.summary")}>
             <div className="p-4">
-              <form
-                className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)_auto]"
-                onSubmit={(event) => void handleGrant(event)}
-              >
-                <FieldRoot>
-                  {/* A Select trigger is a button, not a labelable control, so the
-                      label renders as a span and associates via aria-labelledby. */}
-                  <FieldLabel id={principal_labelId} nativeLabel={false} render={<span />}>
-                    {t("overview.grant.principal")}
-                  </FieldLabel>
-                  <Select
-                    value={principal_id}
-                    options={principalOptions}
-                    placeholder={usersQuery.isFetching ? t("overview.grant.loadingUsers") : t("overview.grant.selectUser")}
-                    aria-labelledby={principal_labelId}
-                    disabled={usersQuery.isFetching || principalOptions.length === 0}
-                    onValueChange={setPrincipalId}
-                  />
-                  {usersTruncated ? (
-                    <FieldDescription>
-                      {t("overview.grant.truncated", {
-                        shown: IAM_LIST_LIMIT.toLocaleString(),
-                        total: userTotalCount.toLocaleString(),
-                      })}
-                    </FieldDescription>
-                  ) : null}
-                </FieldRoot>
-                <FieldRoot>
-                  <FieldLabel id={roleLabelId} nativeLabel={false} render={<span />}>
-                    {t("overview.grant.role")}
-                  </FieldLabel>
-                  <Select
-                    value={role}
-                    options={roleOptions}
-                    placeholder={t("overview.grant.selectRole")}
-                    aria-labelledby={roleLabelId}
-                    onValueChange={setRole}
-                  />
-                </FieldRoot>
-                <div className="flex items-end">
-                  <Button type="submit" variant="primary" pending={grantState.fetching} disabled={!principal_id || !role}>
+              <MutationDialog
+                trigger={(
+                  <Button
+                    type="button"
+                    variant="primary"
+                    disabled={usersQuery.isFetching || principalOptions.length === 0 || roleOptions.length === 0}
+                  >
                     {t("overview.grant.submit")}
                   </Button>
-                </div>
-              </form>
-              {error ? (
-                <Alert className="mt-3" tone="danger" title={t("overview.grant.failedTitle")}>{error}</Alert>
-              ) : null}
+                )}
+                title={t("overview.grant.title")}
+                description={t("overview.grant.summary")}
+                fields={grantFields}
+                initialValues={{ role: roleOptions[0]?.value ?? "" }}
+                submitLabel={t("overview.grant.submit")}
+                errorFallback={t("overview.grant.error")}
+                parseValues={(values) => ({
+                  principal_id: mutationDialogValueCodecs.requiredString(values.principal_id, "principal_id"),
+                  role: mutationDialogValueCodecs.requiredString(values.role, "role"),
+                })}
+                onSubmit={async (values) => {
+                  const result = await grantRole(values);
+                  if (result?.grant_role === false) throw new Error(t("overview.grant.error"));
+                }}
+                onSubmitted={() => {
+                  void overview.refetch();
+                }}
+              />
             </div>
           </SurfacePanel>
 
@@ -199,7 +174,7 @@ export function OverviewPage(): ReactElement {
               {namespaces.map((namespace) => (
                 <MiniCard
                   key={namespace.namespace}
-                  title={titleLabel(namespace.namespace)}
+                  title={titleCase(namespace.namespace)}
                   meta={t("overview.namespaces.roleCount", {
                     count: namespace.role_count,
                   })}
@@ -250,7 +225,7 @@ function PrivilegedGrantRow({
     <div className="flex items-center justify-between gap-3 px-4 py-3">
       <div className="min-w-0">
         <div className="truncate text-13 font-medium text-fg">{grant.principal_label}</div>
-        <div className={textRoleVariants({ role: "caption", truncate: true })}>{titleLabel(grant.namespace)} · {grant.role_name}</div>
+        <div className={textRoleVariants({ role: "caption", truncate: true })}>{titleCase(grant.namespace)} · {grant.role_name}</div>
       </div>
       <Button
         variant="danger"
@@ -264,9 +239,4 @@ function PrivilegedGrantRow({
       </Button>
     </div>
   );
-}
-
-function count(value: number | undefined, loading: boolean): string {
-  if (value === undefined && loading) return "—";
-  return (value ?? 0).toLocaleString();
 }

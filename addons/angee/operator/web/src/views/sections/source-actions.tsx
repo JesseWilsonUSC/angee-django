@@ -41,8 +41,8 @@ export function useSourceActions(refetch: () => void): {
     return defs.map((def) => ({
       label: def.label,
       variant: def.variant,
-      perform: (source: SourceState) => {
-        void runDaemon({
+      perform: async (source: SourceState) => {
+        await runDaemon({
           run: def.run,
           field: def.field,
           variables: { name: source.name },

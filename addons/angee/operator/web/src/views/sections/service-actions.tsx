@@ -6,7 +6,6 @@ import {
   SERVICE_RESTART_MUTATION,
   SERVICE_START_MUTATION,
   SERVICE_STOP_MUTATION,
-  STACK_UP_MUTATION,
 } from "../../data/documents.daemon";
 import { useOperatorT } from "../../i18n";
 import { useOperatorAction } from "../../data/transport";
@@ -29,13 +28,11 @@ export function useServiceActions(refetch: () => void): {
   const start = useOperatorAction(SERVICE_START_MUTATION);
   const stop = useOperatorAction(SERVICE_STOP_MUTATION);
   const restart = useOperatorAction(SERVICE_RESTART_MUTATION);
-  const recreate = useOperatorAction(STACK_UP_MUTATION);
   const destroy = useOperatorAction(SERVICE_DESTROY_MUTATION);
   const busy =
     start.result.fetching ||
     stop.result.fetching ||
     restart.result.fetching ||
-    recreate.result.fetching ||
     destroy.result.fetching;
 
   const actions = useMemo<readonly ServiceRowAction[]>(() => {
@@ -46,27 +43,27 @@ export function useServiceActions(refetch: () => void): {
       run: (variables: V) => Promise<object | undefined>,
       variablesFor: (service: ServiceState) => V,
       dangerous = false,
+      visible?: (service: ServiceState) => boolean,
     ): ServiceRowAction => ({
       label,
       variant,
-      perform: (service) => {
-        void (async () => {
-          if (dangerous) {
-            const ok = await confirm({
-              title: t("services.destroy.confirm.title"),
-              body: t("services.destroy.confirm.body", { name: service.name }),
-              confirm: label,
-              danger: true,
-            });
-            if (!ok) return;
-          }
-          await runDaemon({
-            run,
-            field,
-            variables: variablesFor(service),
-            label,
+      visible,
+      perform: async (service) => {
+        if (dangerous) {
+          const ok = await confirm({
+            title: t("services.destroy.confirm.title"),
+            body: t("services.destroy.confirm.body", { name: service.name }),
+            confirm: label,
+            danger: true,
           });
-        })();
+          if (!ok) return;
+        }
+        await runDaemon({
+          run,
+          field,
+          variables: variablesFor(service),
+          label,
+        });
       },
     });
     return [
@@ -76,6 +73,8 @@ export function useServiceActions(refetch: () => void): {
         "secondary",
         start.run,
         (service) => ({ name: service.name }),
+        false,
+        (service) => service.status.toLowerCase() !== "running",
       ),
       named(
         "serviceRestart",
@@ -83,29 +82,17 @@ export function useServiceActions(refetch: () => void): {
         "ghost",
         restart.run,
         (service) => ({ name: service.name }),
+        false,
+        (service) => service.status.toLowerCase() === "running",
       ),
-      {
-        label: t("services.recreate"),
-        variant: "ghost",
-        perform: (service) => {
-          void runDaemon({
-            run: recreate.run,
-            field: "stackUp",
-            // Recreate rebuilds the image and recreates the container, so a service-template change
-            // (Dockerfile or env) takes effect. The daemon exposes no per-service rebuild:
-            // `serviceUp(name)` has no `build` arg, and only `stackUp(input: { build: true })`
-            // rebuilds an image, so scope `stackUp` to this one service.
-            variables: { input: { services: [service.name], build: true } },
-            label: t("services.recreate"),
-          });
-        },
-      },
       named(
         "serviceStop",
         t("services.stop"),
         "ghost",
         stop.run,
         (service) => ({ name: service.name }),
+        false,
+        (service) => service.status.toLowerCase() === "running",
       ),
       named(
         "delete_services_by_pk",
@@ -116,7 +103,7 @@ export function useServiceActions(refetch: () => void): {
         true,
       ),
     ] satisfies readonly ServiceRowAction[];
-  }, [confirm, destroy.run, recreate.run, restart.run, runDaemon, start.run, stop.run, t]);
+  }, [confirm, destroy.run, restart.run, runDaemon, start.run, stop.run, t]);
 
   return { actions, busy };
 }

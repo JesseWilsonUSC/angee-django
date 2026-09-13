@@ -33,10 +33,12 @@ export function ResourceListBody<TRow extends Row = Row>({
   form,
   declarations,
   recordController,
+  routed = false,
   placement = "inline",
   renderRecord,
   selectFirstRecord = false,
   splitLayout,
+  presentation,
   baseFilter,
   filterOptions,
   facets,
@@ -90,6 +92,7 @@ export function ResourceListBody<TRow extends Row = Row>({
     : facets;
   const resolvedLaneSource = declarations.list?.props.laneSource ?? laneSource;
   const listRenderProps = {
+    presentation,
     fields,
     baseFilter,
     filterOptions,
@@ -289,6 +292,7 @@ export function ResourceListBody<TRow extends Row = Row>({
       toolbarStart={formRenderProps.toolbarStart}
       toolbar={composeNodes(formRenderProps.toolbar, recordHeaderActions)}
       deleteAction={recordDeleteAction}
+      publishBreadcrumbLabel={routed && !resolvedCreating}
     />
   ) : null;
   const recordContent = renderRecord && !resolvedCreating

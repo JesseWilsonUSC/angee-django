@@ -5,6 +5,8 @@ export const enPartiesMessages: Record<string, string> = {
   "partyPicker.createOrganization": "Create organization",
   "partyPicker.createPerson": "Create person",
   "common.yes": "Yes",
+  "partyRedirect.loading": "Opening party…",
+  "partyRedirect.unavailable": "Party record unavailable",
   "overview.metric.contacts": "People",
   "overview.metric.organizations": "Organizations",
   "overview.metric.unresolvedHandles": "Unresolved handles",

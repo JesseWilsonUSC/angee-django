@@ -42,6 +42,18 @@ describe("resourcePageRoutes", () => {
 
     expect(addon.routes?.[0]?.layout).toBe("console");
   });
+
+  test("uses a native index page when the record has its own component", () => {
+    function Detail(): null { return null; }
+    const routes = resourcePageRoutes("services", "/services", Page, undefined, {
+      detailComponent: Detail,
+    });
+
+    expect(routes[0]?.component).toBeUndefined();
+    expect(routes[0]?.indexComponent).toBe(Page);
+    expect(routes[1]?.parent).toBe("services");
+    expect(routes[1]?.component).toBe(Detail);
+  });
 });
 
 describe("expectValidBaseAddon", () => {

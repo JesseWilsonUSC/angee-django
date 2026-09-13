@@ -83,6 +83,7 @@ import type { ThemeContribution } from "@angee/ui/theme";
 import {
   APPEARANCE_CACHE_KEY,
   AppearanceProvider,
+  appearanceCacheActorId,
   clearAppearanceCache,
   type HostAppearanceDefaults,
 } from "@angee/ui/theme";
@@ -90,6 +91,7 @@ import { createAngeeI18nRuntime } from "./providers/i18n";
 import {
   type BaseAddon,
   type BaseAddonRoute,
+  type BaseLayoutProvider,
   type RefineLayoutConfig,
 } from "./define-base-addon";
 import {
@@ -125,6 +127,7 @@ export {
   type BaseAddon,
   type BaseAddonRoute,
   type DashboardPageRouteOptions,
+  type BaseLayoutProvider,
   type ResourcePageRoutesOptions,
   type RefineLayoutChromeProps,
   type RefineLayoutConfig,
@@ -377,6 +380,7 @@ export function createApp(input: CreateAppInput): AngeeApp {
     authProvider: refineAuthProvider,
     queryClient,
     loginPath,
+    layoutProviders: composed.layoutProviders as readonly BaseLayoutProvider[],
   });
   createAddonRouteNodes({
     routes,
@@ -551,14 +555,19 @@ function AppFrame({
   const { auth } = useRuntimeAuthState();
   const invalidateAuthStore = useInvalidateAuthStore();
   const sourceLogoutAction = useLogoutAction();
+  const actorId = auth.status === "resolving" ? null : auth.user?.id ?? "anonymous";
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onStorage = (event: StorageEvent) => {
-      if (event.key === APPEARANCE_CACHE_KEY) void invalidateAuthStore();
+      if (event.key !== APPEARANCE_CACHE_KEY) return;
+      const nextActorId = appearanceCacheActorId(event.newValue);
+      if (event.newValue === null || (actorId !== null && nextActorId !== null && nextActorId !== actorId)) {
+        void invalidateAuthStore();
+      }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [invalidateAuthStore]);
+  }, [actorId, invalidateAuthStore]);
   const logout = useCallback(async () => {
     const success = await sourceLogoutAction.logout();
     if (success) clearAppearanceCache();
