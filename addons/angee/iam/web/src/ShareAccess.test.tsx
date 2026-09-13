@@ -65,7 +65,7 @@ vi.mock("@angee/ui", async () => {
     Glyph: ({ name }: { name: string }) => <span data-glyph={name} />,
     ManageAccessDialog: (props: Record<string, unknown>) => {
       mocks.dialogProps = props;
-      const trigger = props.trigger as ReactElement;
+      const trigger = props.trigger as ReactElement<{ onClick?: () => void }>;
       return React.cloneElement(trigger, {
         onClick: () => (props.onOpenChange as (open: boolean) => void)(true),
       });
