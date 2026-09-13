@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from email import message_from_bytes
 from email import policy as email_policy
@@ -57,6 +57,17 @@ _FILENAME_MAX_LENGTH = 512
 # match; dropped from the signature part so only the signature text lands.
 _SIGNATURE_DELIMITER_RE = re.compile(r"[-_]{2,}\s*")
 _UNSAFE_FILENAME_RE = re.compile(r"[/\\\x00]")
+_EMBEDDED_MESSAGE_MAX_DEPTH = 4
+_EMBEDDED_MESSAGE_MAX_PARTS = 256
+EMBEDDED_MESSAGE_MAX_BYTES = 16 * 1024 * 1024
+
+
+@dataclass
+class _EmbeddedMessageBudget:
+    """Bound expansion of retained attached messages within one outer email."""
+
+    remaining_parts: int = _EMBEDDED_MESSAGE_MAX_PARTS
+    remaining_bytes: int = EMBEDDED_MESSAGE_MAX_BYTES
 
 # mail-parser-reply owns plain-text segmentation (docs/stack.md): reply
 # boundaries at attribution headers, signature and disclaimer detection. The
@@ -456,14 +467,27 @@ def _decode_lenient_header(value: Any) -> str:
 # --- body tree ---
 
 
-def _parse_body(message: MIMEPart) -> ParsedPart | None:
+def _parse_body(
+    message: MIMEPart,
+    *,
+    embedded_depth: int = 0,
+    embedded_budget: _EmbeddedMessageBudget | None = None,
+) -> ParsedPart | None:
     """Map the MIME structure onto the recursive neutral part tree."""
 
+    budget = embedded_budget or _EmbeddedMessageBudget()
+    if message.get_content_type() == "message/rfc822":
+        return _embedded_message_part(message, depth=embedded_depth, budget=budget)
+    if message.get_content_type() == "message/delivery-status":
+        return _message_report_part(message)
     if message.get_content_maintype() == "message":
-        return _embedded_message_part(message)
+        return _unsupported_message_part(message)
     if message.is_multipart():
         children = tuple(
-            part for part in (_parse_body(sub) for sub in message.iter_parts()) if part is not None
+            part for part in (
+                _parse_body(sub, embedded_depth=embedded_depth, embedded_budget=budget)
+                for sub in message.iter_parts()
+            ) if part is not None
         )
         if not children:
             return None
@@ -506,18 +530,125 @@ def _plain_part(text: str) -> ParsedPart | None:
     )
 
 
-def _embedded_message_part(message: MIMEPart) -> ParsedPart:
-    """Keep an attached ``message/rfc822`` as raw bytes so nothing is lost."""
+def _embedded_message_part(
+    message: MIMEPart, *, depth: int, budget: _EmbeddedMessageBudget,
+) -> ParsedPart:
+    """Retain raw RFC 822 bytes and expose a bounded evidence subtree."""
+
+    embedded = None
+    raw = b""
+    try:
+        candidate = message.get_content()
+        if isinstance(candidate, MIMEPart):
+            embedded = candidate
+    except Exception:  # noqa: BLE001 — an undecodable embedded message still lands as bytes.
+        pass
+    if embedded is None:
+        payload = message.get_payload()
+        if isinstance(payload, list) and payload and isinstance(payload[0], MIMEPart):
+            embedded = payload[0]
+    if embedded is not None:
+        try:
+            raw = embedded.as_bytes(policy=email_policy.default)
+        except Exception:  # noqa: BLE001 — preserve the decoded payload fallback below.
+            raw = b""
+    if not raw:
+        raw = _decoded_payload(message) or b""
+    subject = ""
+    if embedded is not None:
+        try:
+            subject = str(embedded.get("Subject", "") or "").strip()
+        except Exception:  # noqa: BLE001 — a bad optional header must not erase valid raw bytes.
+            pass
+    name = _safe_filename(f"{subject}.eml" if subject else "message.eml")
+    child = _expand_embedded_message(embedded, raw=raw, depth=depth, budget=budget)
+    children = (child,) if child is not None else ()
+    return ParsedPart(
+        type="message/rfc822", disposition="attachment", name=name, content=raw, children=children,
+    )
+
+
+def _message_report_part(message: MIMEPart) -> ParsedPart:
+    """Retain a non-RFC822 ``message/*`` report under its truthful subtype.
+
+    Delivery-status payloads are sequences of header blocks rather than attached
+    messages. Their normalized envelope remains byte-backed provenance while
+    each block becomes queryable header evidence; no sender or nested Message is
+    synthesized from transport diagnostics.
+    """
 
     try:
-        embedded = message.get_content()
-        raw = bytes(embedded)
-        subject = str(embedded.get("Subject", "") or "").strip()
-    except Exception:  # noqa: BLE001 — an undecodable embedded message still lands as bytes.
+        raw = message.as_bytes(policy=email_policy.default)
+    except Exception:  # noqa: BLE001 — the report subtype and empty evidence still land.
         raw = _decoded_payload(message) or b""
-        subject = ""
-    name = _safe_filename(f"{subject}.eml" if subject else "message.eml")
-    return ParsedPart(type="message/rfc822", disposition="attachment", name=name, content=raw)
+    children = []
+    payload = message.get_payload()
+    if isinstance(payload, list):
+        for block in payload:
+            if not isinstance(block, MIMEPart):
+                continue
+            lines = [f"{name}: {value}" for name, value in block.items() if str(value).strip()]
+            if lines:
+                children.append(ParsedPart(type="text/plain", role="header", text="\n".join(lines)))
+    return ParsedPart(
+        type=message.get_content_type(), disposition="inline", role="header",
+        content=raw, children=tuple(children),
+    )
+
+
+def _unsupported_message_part(message: MIMEPart) -> ParsedPart:
+    """Retain an unknown ``message/*`` payload without guessing its semantics."""
+
+    try:
+        raw = message.as_bytes(policy=email_policy.default)
+    except Exception:  # noqa: BLE001 — the declared subtype still lands for review.
+        raw = _decoded_payload(message) or b""
+    return ParsedPart(
+        type=message.get_content_type(), disposition="attachment", content=raw,
+    )
+
+
+def expand_embedded_message(raw: bytes) -> ParsedPart | None:
+    """Parse retained RFC 5322 envelope bytes into one bounded evidence subtree.
+
+    The result is the single subtree to append beneath the existing raw
+    ``message/rfc822`` Part. ``None`` leaves that parent intact when the bytes are
+    empty, malformed, or exceed the embedded expansion budget.
+    """
+
+    if not raw or len(raw) > EMBEDDED_MESSAGE_MAX_BYTES:
+        return None
+    try:
+        embedded = cast(EmailMessage, message_from_bytes(raw, policy=email_policy.default))
+    except Exception:  # noqa: BLE001 — the retained parent remains the evidence.
+        return None
+    return _expand_embedded_message(
+        embedded, raw=raw, depth=0, budget=_EmbeddedMessageBudget(),
+    )
+
+
+def _expand_embedded_message(
+    embedded: MIMEPart | None,
+    *,
+    raw: bytes,
+    depth: int,
+    budget: _EmbeddedMessageBudget,
+) -> ParsedPart | None:
+    """Return one normalized nested body while sharing the outer expansion budget."""
+
+    if embedded is None or not raw or depth >= _EMBEDDED_MESSAGE_MAX_DEPTH:
+        return None
+    part_count = sum(1 for _part in embedded.walk())
+    if part_count > budget.remaining_parts or len(raw) > budget.remaining_bytes:
+        return None
+    budget.remaining_parts -= part_count
+    budget.remaining_bytes -= len(raw)
+    try:
+        return _ensure_plain_body(_parse_body(
+            embedded, embedded_depth=depth + 1, embedded_budget=budget,
+        ))
+    except Exception:  # noqa: BLE001 — the retained raw parent remains actionable.
+        return None
 
 
 def _text_content(message: MIMEPart) -> str:
@@ -593,6 +724,8 @@ def _ensure_plain_body(body: ParsedPart | None) -> ParsedPart | None:
 def _has_plain_body(part: ParsedPart) -> bool:
     """Return whether any non-quoted plain-text node exists in the tree."""
 
+    if part.type == "message/rfc822":
+        return False
     if part.type == "text/plain" and part.text and part.role == "body":
         return True
     return any(_has_plain_body(child) for child in part.children)
@@ -601,6 +734,8 @@ def _has_plain_body(part: ParsedPart) -> bool:
 def _wrap_first_html(part: ParsedPart) -> tuple[ParsedPart, bool]:
     """Wrap the first HTML body node with a derived-plain alternative."""
 
+    if part.type == "message/rfc822":
+        return part, False
     if part.type == "text/html" and part.text and part.role == "body" and part.content is None:
         plain = _plain_part(html_to_text(part.text))
         if plain is None:

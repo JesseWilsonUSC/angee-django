@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import strawberry
+from django.core.exceptions import ValidationError
 from django.db import transaction
-from rebac import SubjectRef, resolve_subjects
+from rebac import PermissionDenied, SubjectRef, resolve_subjects
 from rebac.resources import model_for_resource_type
 
 from angee.base.models import AngeeModel, DirectRecordAccess
-from angee.graphql.actions import ActionResult, action_guard, authorized_action_target
+from angee.graphql.actions import ActionResult, action_guard, authorized_permission_target
 from angee.graphql.ids import PublicID
 
 
@@ -23,12 +24,7 @@ class RecordAccessType:
     label: str
 
     @classmethod
-    def from_direct(
-        cls,
-        target_id: PublicID,
-        access: DirectRecordAccess,
-        label: str,
-    ) -> RecordAccessType:
+    def from_direct(cls, target_id: PublicID, access: DirectRecordAccess, label: str) -> RecordAccessType:
         """Project one model-owned direct tuple onto the GraphQL boundary."""
 
         return cls(
@@ -41,42 +37,46 @@ class RecordAccessType:
 
 
 @strawberry.type
+class RecordAccessOption:
+    """One direct relation the caller may manage on the target record."""
+
+    relation: str
+    permission: str
+
+
+@strawberry.type
 class RecordAccessQuery:
-    """Direct-access listing for one declaratively shareable record."""
+    """Direct-access listing for declaratively shareable records."""
 
     @strawberry.field
     def record_access(
-        self,
-        info: strawberry.Info,
-        target_type: str,
-        target_ids: list[PublicID],
+        self, info: strawberry.Info, target_type: str, target_ids: list[PublicID],
     ) -> list[RecordAccessType]:
         """Return direct declared-relation tuples, without effective expansion."""
 
         model = _shareable_model(target_type)
-        permissions = sorted(set(model.get_rebac_grantable().values()))
-        if not permissions:
-            raise ValueError(f"{model._meta.label} declares no grantable relations.")
         if not target_ids:
             raise ValueError("Record access requires at least one target id.")
-        targets = [
-            (target_id, authorized_action_target(info, model, target_id, permissions[0]))
-            for target_id in target_ids
-        ]
-        accesses = [
-            (target_id, access)
-            for target_id, target in targets
-            for access in target.direct_record_access()
-        ]
+        accesses: list[tuple[PublicID, DirectRecordAccess]] = []
+        for target_id in target_ids:
+            target, allowed = _authorized_record_access(info, model, target_id)
+            accesses.extend((target_id, access) for access in target.direct_record_access(allowed))
         subjects = resolve_subjects(access.subject for _, access in accesses)
         return [
-            RecordAccessType.from_direct(
-                target_id,
-                access,
-                str(subjects.get(access.subject, access.subject)),
-            )
+            RecordAccessType.from_direct(target_id, access, str(subjects.get(access.subject, access.subject)))
             for target_id, access in accesses
         ]
+
+    @strawberry.field
+    def record_access_options(
+        self, info: strawberry.Info, target_type: str, target_id: PublicID,
+    ) -> list[RecordAccessOption]:
+        """Return declared relations the caller may manage on this record."""
+
+        model = _shareable_model(target_type)
+        _target, allowed = _authorized_record_access(info, model, target_id)
+        declaration = model.get_rebac_grantable()
+        return [RecordAccessOption(relation=relation, permission=declaration[relation]) for relation in allowed]
 
 
 @strawberry.type
@@ -100,10 +100,7 @@ class RecordAccessMutation:
             raise ValueError("Granting record access requires at least one target id.")
         permission = model.record_access_permission(relation)
         with transaction.atomic():
-            targets = [
-                authorized_action_target(info, model, target_id, permission)
-                for target_id in target_ids
-            ]
+            targets = [authorized_permission_target(info, model, target_id, permission) for target_id in target_ids]
             subject_ref = _grant_subject(subject)
             for target in targets:
                 target.grant_record_access(relation, subject_ref)
@@ -127,10 +124,7 @@ class RecordAccessMutation:
         permission = model.record_access_permission(relation)
         subject_ref = SubjectRef.parse(subject)
         with transaction.atomic():
-            targets = [
-                authorized_action_target(info, model, target_id, permission)
-                for target_id in target_ids
-            ]
+            targets = [authorized_permission_target(info, model, target_id, permission) for target_id in target_ids]
             for target in targets:
                 target.revoke_record_access(relation, subject_ref)
         return ActionResult(ok=True, message="Record access revoked.")
@@ -146,12 +140,7 @@ def _shareable_model(target_type: str) -> type[AngeeModel]:
 
 
 def _grant_subject(value: str) -> SubjectRef:
-    """Return one concrete, existing subject for a new direct grant.
-
-    Subject existence is boundary validation. The REBAC relationship writer
-    remains the owner of whether the target relation accepts this subject type
-    and optional subject-set relation.
-    """
+    """Return one concrete, existing subject for a new direct grant."""
 
     subject = SubjectRef.parse(value)
     if subject.subject_id == "*":
@@ -161,11 +150,38 @@ def _grant_subject(value: str) -> SubjectRef:
     return subject
 
 
+def _authorized_record_access(
+    info: strawberry.Info,
+    model: type[AngeeModel],
+    target_id: PublicID,
+) -> tuple[AngeeModel, list[str]]:
+    """Resolve a target and independently authorize each declared share relation."""
+
+    declaration = model.get_rebac_grantable()
+    if not declaration:
+        raise ValueError(f"{model._meta.label} declares no grantable relations.")
+    target: AngeeModel | None = None
+    allowed: list[str] = []
+    candidates: dict[str, AngeeModel] = {}
+    for permission in dict.fromkeys(declaration.values()):
+        try:
+            candidates[permission] = authorized_permission_target(info, model, target_id, permission)
+        except (PermissionDenied, ValidationError):
+            continue
+    for relation, permission in declaration.items():
+        if permission in candidates:
+            target = candidates[permission]
+            allowed.append(relation)
+    if target is None:
+        target = authorized_permission_target(info, model, target_id, next(iter(declaration.values())))
+    target.validate_record_access_target()
+    return target, allowed
+
+
 schemas = {
     "console": {
         "query": [RecordAccessQuery],
         "mutation": [RecordAccessMutation],
-        "types": [RecordAccessType],
+        "types": [RecordAccessType, RecordAccessOption],
     }
 }
-"""Direct record-sharing contributions to the console schema."""

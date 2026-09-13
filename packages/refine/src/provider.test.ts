@@ -215,7 +215,7 @@ describe("Angee Hasura provider defaults", () => {
 
     expect(subscribe).toHaveBeenCalledWith(
       {
-        query: "subscription angee_noteChanged { noteChanged { model id action changedFields: changed_fields changedValues: changed_values } }",
+        query: "subscription angee_noteChanged { noteChanged { model id action relatedRecords: related_records { model id } changedFields: changed_fields changedValues: changed_values } }",
       },
       expect.any(Object),
     );
@@ -477,7 +477,7 @@ describe("Angee Hasura provider defaults", () => {
     expect(subscribe).toHaveBeenCalledWith(
       {
         query:
-          "subscription angee_noteChanged { noteChanged { model id action changedFields: changed_fields changedValues: changed_values } }",
+          "subscription angee_noteChanged { noteChanged { model id action relatedRecords: related_records { model id } changedFields: changed_fields changedValues: changed_values } }",
       },
       expect.any(Object),
     );

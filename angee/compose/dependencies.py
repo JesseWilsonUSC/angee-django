@@ -10,7 +10,7 @@ from pathlib import Path
 from django.apps import AppConfig
 from hatch_angee import AddonManifest, ManifestError, ProjectError, compile_dependencies, write_block
 
-from angee.addons import addon_manifest
+from angee.addons import addon_manifest, resolve_manifest_roots
 
 
 class AddonDependencyGroupResult(StrEnum):
@@ -74,42 +74,10 @@ class AddonDependencyGroup:
         not contribute to the generated dependency group.
         """
 
-        manifests_by_name: dict[str, AddonManifest] = {}
-        for manifest in available_manifests:
-            manifests_by_name.setdefault(manifest.name, manifest)
-
-        root_names = tuple(roots)
-        seen_roots: set[str] = set()
-        for root in root_names:
-            if root in seen_roots:
-                raise RuntimeError(f"Duplicate root app {root!r}")
-            seen_roots.add(root)
-
-        ordered: list[AddonManifest] = []
-        visiting: set[str] = set()
-        visited: set[str] = set()
-
-        def visit(name: str) -> None:
-            manifest = manifests_by_name.get(name)
-            if manifest is None or name in visited:
-                return
-            if name in visiting:
-                raise RuntimeError(f"Cycle in app dependencies at {name}")
-            seen_dependencies: set[str] = set()
-            for dependency in manifest.depends_on:
-                if dependency in seen_dependencies:
-                    raise RuntimeError(f"{name} declares duplicate dependency {dependency!r}")
-                seen_dependencies.add(dependency)
-            visiting.add(name)
-            for dependency in sorted(manifest.depends_on):
-                visit(dependency)
-            visiting.remove(name)
-            visited.add(name)
-            ordered.append(manifest)
-
-        for root in root_names:
-            visit(root)
-        return cls(ordered, project_dir=project_dir)
+        return cls(
+            resolve_manifest_roots(roots, available_manifests),
+            project_dir=project_dir,
+        )
 
     @property
     def pyproject_path(self) -> Path | None:

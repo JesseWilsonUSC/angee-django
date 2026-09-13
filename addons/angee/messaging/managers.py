@@ -2158,6 +2158,7 @@ class MessageManager(AngeeManager.from_queryset(MessageQuerySet)):  # type: igno
         before: Any | None = None,
         after: Any | None = None,
         around: Any | None = None,
+        message_types: tuple[str, ...] = (),
     ) -> tuple[list[Any], int]:
         """Return fetched chatter messages for a record, optionally search-filtered."""
 
@@ -2174,6 +2175,16 @@ class MessageManager(AngeeManager.from_queryset(MessageQuerySet)):  # type: igno
             .prefetch_related("parts__fragment", "parts__file", "tracking_values", "reactions__handle", "stars")
             .annotate(_order_at=MessageQuerySet.chronological_time())
         )
+        kinds = {
+            strip_null_bytes(value or "").strip().lower()
+            for value in message_types
+            if strip_null_bytes(value or "").strip()
+        }
+        allowed_kinds = {value for value, _label in self.model.MessageKind.choices}
+        if not kinds.issubset(allowed_kinds):
+            raise ValueError("Message type filter contains an unsupported value.")
+        if kinds:
+            queryset = queryset.filter(message_type__in=kinds)
         search = strip_null_bytes(search or "").strip()
         for term in (item for item in _WS_RE.split(search) if item):
             queryset = queryset.searching(term)
@@ -2599,6 +2610,44 @@ class MessageManager(AngeeManager.from_queryset(MessageQuerySet)):  # type: igno
 
             transaction.on_commit(suggest_parties)
         return ingested
+
+    def expand_retained_part(self, part: Any, children: tuple[ParsedPart, ...]) -> tuple[Any, ...]:
+        """Append parsed descendants beneath one retained byte-backed Part.
+
+        Source adapters own decoding their wire formats and pass neutral
+        :class:`ParsedPart` children here.  The existing Message, parent Part and
+        File remain untouched, so immutable evidence that points at any of them
+        stays valid.  Locking the parent and treating existing children as the
+        completed state makes concurrent and repeated repairs idempotent.
+        """
+
+        part_model = apps.get_model("messaging", "Part")
+        if not isinstance(part, part_model) or part.pk is None:
+            raise ValueError("Part expansion requires a saved messaging Part.")
+        with transaction.atomic():
+            retained = part_model._base_manager.select_for_update().select_related("message").get(pk=part.pk)
+            if retained.file_id is None:
+                raise ValueError("Part expansion requires a retained byte-backed messaging Part.")
+            if not retained.message.has_access("write"):
+                raise PermissionDenied("Denied: cannot expand the retained Message part")
+            existing = tuple(
+                part_model._base_manager.filter(parent=retained).order_by("position", "sqid")
+            )
+            if existing:
+                return existing
+            if not children:
+                return ()
+            for position, child in enumerate(children):
+                self._build_parts(
+                    retained.message,
+                    child,
+                    parent=retained,
+                    position=position,
+                    owner_id=retained.created_by_id,
+                )
+            return tuple(
+                part_model._base_manager.filter(parent=retained).order_by("position", "sqid")
+            )
 
     def _ingest_one(
         self,

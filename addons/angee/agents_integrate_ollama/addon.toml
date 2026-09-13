@@ -9,7 +9,9 @@ depends_on = ["angee.agents", "angee.agents_integrate_openai", "angee.integrate"
 
 [resources]
 master = [{ path = "resources/master/010_integrate.vendor.yaml", adopt = "slug" }]
+install = [
+  { path = "resources/install/030_agents.inferenceprovider.yaml", depends_on = "resources/master/010_integrate.vendor.yaml" },
+]
 demo = [
-  { path = "resources/demo/030_agents.inferenceprovider.yaml", depends_on = ["iam:resources/demo/010_iam.user.yaml", "resources/master/010_integrate.vendor.yaml"] },
-  { path = "resources/demo/040_agents.inferencemodel.yaml", depends_on = "resources/demo/030_agents.inferenceprovider.yaml", adopt = ["provider", "name"] },
+  { path = "resources/demo/040_agents.inferencemodel.yaml", depends_on = "resources/install/030_agents.inferenceprovider.yaml", adopt = ["provider", "name"] },
 ]

@@ -159,7 +159,7 @@ function registerPaymentAction(
 }
 
 const context: ActionFormContext = {
-  record: { id: "inv-1", amount_total: "1234.56" },
+  record: { id: "inv-1", amount_total: "1234.56", journal: { id: "jnl-cash", name: "Cash Journal" } },
   selectedIds: ["inv-1", "inv-2"],
 };
 
@@ -208,6 +208,19 @@ function renderDialog(action: ActionDescriptor): void {
 }
 
 describe("ActionFormDialog", () => {
+  test("prefills a saved relation from record context ahead of the fallback default", async () => {
+    const submit = vi.fn().mockResolvedValue({ ok: true });
+    renderDialog({
+      id: "collect", label: "Collect", submit,
+      args: [{
+        name: "journal", argKind: "relation", resource: "Journal", label: "Journal",
+        defaultValue: "jnl-bank", fromContext: ({ record }) => record?.journal,
+      }],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Collect" }));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith({ journal: "jnl-cash" }, context));
+  });
+
   test("prefills scalar args from the invoking record and submits user edits", async () => {
     const submit = vi.fn().mockResolvedValue({ ok: true, message: "Saved." });
     renderDialog({

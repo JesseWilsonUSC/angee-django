@@ -55,16 +55,25 @@ def render_models(composition: ModelComposition, label: str, *, runtime_module: 
             if value is not None:
                 meta_lines.append(f"        {option} = {value!r}")
         body_lines: list[str] = []
+        body_lines.extend(
+            [
+                f"    angee_contributed_field_origins = {composition.contributed_field_origins(source)!r}",
+                "",
+            ]
+        )
         if source.__dict__.get("catalogue", False):
+            catalogue_tiers = source.__dict__.get("catalogue_tiers")
             body_lines.extend(
                 [
                     "    catalogue = True",
                     f"    catalogue_tier = {source.__dict__.get('catalogue_tier', CATALOGUE_TIERS[0])!r}",
+                    *([f"    catalogue_tiers = {catalogue_tiers!r}"] if catalogue_tiers is not None else []),
                     "",
                 ]
             )
-        if "rebac_grantable" in source.__dict__ or parent is not None:
-            body_lines.extend([f"    rebac_grantable = {source.__dict__.get('rebac_grantable', {})!r}", ""])
+        grantable = composition.grantable(source)
+        if grantable or "rebac_grantable" in source.__dict__ or parent is not None:
+            body_lines.extend([f"    rebac_grantable = {grantable!r}", ""])
         lines = [
             f"{meta_name} = getattr({source_alias}, 'Meta', object)",
             "",

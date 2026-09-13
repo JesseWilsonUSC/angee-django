@@ -5,9 +5,7 @@ import {
   Alert,
   Column,
   Facet,
-  Field,
   Form,
-  Group,
   List,
   ListView,
   LoadingPanel,
@@ -43,6 +41,7 @@ import { PartyAddresses } from "./PartyAddresses";
 import { usePartiesT } from "./i18n";
 
 import { PERSON_FORM_FIELDS_SLOT } from "./slots";
+import { personFields } from "./PersonForm";
 
 const MODEL = "parties.Person";
 
@@ -199,22 +198,7 @@ function peopleForm(
 ): React.ReactElement {
   return (
     <Form resource={MODEL}>
-      <Field name="display_name" title />
-      <Group label={t("person.group.name")} columns={2}>
-        <Field name="given_name" label={t("person.field.givenName")} />
-        <Field name="family_name" label={t("person.field.familyName")} />
-        <Field name="additional_name" label={t("person.field.middleName")} />
-        <Field name="nickname" label={t("person.field.nickname")} />
-        <Field name="name_prefix" label={t("person.field.prefix")} />
-        <Field name="name_suffix" label={t("person.field.suffix")} />
-      </Group>
-      <Group label={t("person.group.details")} columns={2}>
-        <Field name="birthday" label={t("person.field.birthday")} />
-        <Field name="anniversary" label={t("person.field.anniversary")} />
-        <Field name="folder" label={t("person.folder")} readOnly />
-      </Group>
-      {extraFields}
-      <Field name="notes" />
+      {personFields(t, extraFields)}
       <Action
         id="merge-into"
         label={t("person.action.merge")}
@@ -233,6 +217,7 @@ function peopleForm(
     </Form>
   );
 }
+
 
 /**
  * People (the person-kind contacts): a circle/smart-view workbench around the

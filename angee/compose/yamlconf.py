@@ -113,6 +113,30 @@ def load_project(
         django_yamlconf.inject_attr(attributes, project_settings)
 
 
+def project_yaml_settings(project_settings: ModuleType, root: Path) -> frozenset[str]:
+    """Return settings whose effective yamlconf value comes from project YAML.
+
+    django-yamlconf owns source precedence and provenance. This adapter projects
+    its native metadata into an Angee runtime contract; serving code never reads
+    yamlconf's cached attribute representation itself.
+    """
+
+    project_yaml = (root / f"{PROJECT_YAML_NAME}.yaml").resolve()
+    names: set[str] = set()
+    for name in django_yamlconf.defined_attributes(project_settings):
+        info = django_yamlconf.get_attr_info(name, project_settings)
+        source = info.get("source") if info else None
+        if not isinstance(source, str):
+            continue
+        try:
+            source_path = resolve_path(source)
+        except (ImproperlyConfigured, OSError, ValueError):
+            continue
+        if source_path == project_yaml:
+            names.add(name)
+    return frozenset(names)
+
+
 def reject_unexpected_sources(
     project_settings: ModuleType,
     root: Path,

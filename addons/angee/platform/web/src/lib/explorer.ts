@@ -21,6 +21,7 @@ import {
 export type PlatformExplorerResult = DocumentData<typeof PlatformExplorer>;
 
 const EMPTY_EXPLORER: PlatformExplorerData = {
+  pending_addon_changes: null,
   addons: [],
   models: [],
   edges: [],

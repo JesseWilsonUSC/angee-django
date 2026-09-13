@@ -252,6 +252,7 @@ class InferenceModel(SqidMixin, AuditMixin, AngeeModel):
     runtime = True
     catalogue = True
     catalogue_tier = "demo"
+    catalogue_tiers = ("install", "demo")
 
     sqid_prefix = "imd_"
     provider = models.ForeignKey("agents.InferenceProvider", on_delete=models.CASCADE, related_name="models")

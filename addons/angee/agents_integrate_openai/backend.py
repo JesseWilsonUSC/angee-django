@@ -52,7 +52,8 @@ class OpenAIInferenceBackend(SDKInferenceBackend):
         """List OpenAI models and their broker-prefixed aliases."""
 
         specs: list[InferenceModelSpec] = []
-        for model in self.client().models.list():
+        client = self.client()
+        for model in client.models.list():
             model_id = str(getattr(model, "id", "") or "").strip()
             if not model_id:
                 continue
@@ -62,14 +63,29 @@ class OpenAIInferenceBackend(SDKInferenceBackend):
             owned_by = str(getattr(model, "owned_by", "") or "").strip()
             if owned_by:
                 config["owned_by"] = owned_by
+            discovery = self._model_discovery(client, model_id)
+            config.update(discovery.get("config", {}))
             specs.extend(
                 self._model_specs(
                     handle=model_id,
                     display_name=model_id,
+                    model_use=self._discovered_model_use(),
+                    context_window=int(discovery.get("context_window", 0) or 0),
                     config=config,
                 )
             )
         return specs
+
+    def _model_discovery(self, client: Any, model_id: str) -> dict[str, Any]:
+        """Return optional native discovery facts for one listed physical model."""
+
+        del client, model_id
+        return {}
+
+    def _discovered_model_use(self) -> str:
+        """Return the modality asserted by this provider's model listing."""
+
+        return "chat"
 
     def _build_model(self, handle: str, client: Any) -> OpenAIChatModel:
         """Use native protocol conversion, including the configured token-limit field."""

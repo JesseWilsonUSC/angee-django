@@ -30,3 +30,26 @@ export const ConnectImapChannel = graphql(`
     }
   }
 `);
+
+export const PreviewImapSample = graphql(`
+  mutation PreviewImapSample($id: ID!, $mailbox: String!, $since: Date!, $before: Date!, $limit: Int!) {
+    preview_imap_sample(id: $id, mailbox: $mailbox, since: $since, before: $before, limit: $limit) {
+      mailbox
+      uidvalidity
+      truncated
+      messages { uid subject sent_at sender size flags }
+    }
+  }
+`);
+
+export const ImportImapSample = graphql(`
+  mutation ImportImapSample($id: ID!, $mailbox: String!, $uidvalidity: Int!, $uids: [Int!]!) {
+    import_imap_sample(id: $id, mailbox: $mailbox, uidvalidity: $uidvalidity, uids: $uids) {
+      message_ids
+      requested_uids
+      imported_uids
+      missing_uids
+      flags_unchanged
+    }
+  }
+`);

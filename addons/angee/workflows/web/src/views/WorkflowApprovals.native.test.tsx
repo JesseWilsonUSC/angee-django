@@ -10,6 +10,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 const exactVariables = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 const authoredMode = vi.hoisted(() => ({ current: "success" as "success" | "error" | "empty" }));
+const authoredVerdict = vi.hoisted(() => ({ current: "PENDING" }));
 vi.mock("@angee/refine", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@angee/refine")>();
   return {
@@ -20,7 +21,7 @@ vi.mock("@angee/refine", async (importOriginal) => {
       if (authoredMode.current === "empty") return { data: { workflow_decisions: [] }, isFetching: false, error: null, refetch: vi.fn() };
       return {
         data: { workflow_decisions: [{
-          id: "decision-1", action: "review", priority: 1, payload: {}, verdict: "PENDING",
+          id: "decision-1", action: "review", priority: 1, payload: {}, verdict: authoredVerdict.current,
           resolution: {}, attempts: 0, max_attempts: 3, expires_at: null, escalate_at: null,
           decision_schema: null, workflow_name: "Session", step_name: "Approve tool",
           created_at: "2026-09-09T00:00:00Z", updated_at: "2026-09-09T00:00:00Z",
@@ -58,7 +59,12 @@ const resource = testDataResource("workflows.Decision", {
   } }),
 });
 
-afterEach(() => { cleanup(); exactVariables.length = 0; authoredMode.current = "success"; });
+afterEach(() => {
+  cleanup();
+  exactVariables.length = 0;
+  authoredMode.current = "success";
+  authoredVerdict.current = "PENDING";
+});
 
 test("the native scoped collection opens only the selected Run decision task", async () => {
   const row = { id: "decision-1", action: "review", verdict: "PENDING", priority: 1, updated_at: "2026-09-09T00:00:00Z" };
@@ -136,7 +142,33 @@ test("a record overlay renders one exact target task without mounting a nested D
   expect(exactVariables.at(-1)).toEqual({ id: "decision-1", targetModel: "parties.Party", targetId: "party-7", targetTab: "accounting" });
 });
 
+test("a run history link renders one completed Decision outside the pending collection", async () => {
+  authoredVerdict.current = "COMPLETED";
+  const onDecisionChange = vi.fn();
+  const provider = {
+    getApiUrl: () => "test://workflows",
+    getList: vi.fn(), getOne: vi.fn(), create: vi.fn(), update: vi.fn(), deleteOne: vi.fn(),
+  } as unknown as DataProvider;
+  const router = createRouter({ routeTree: createRootRoute(), history: createMemoryHistory({ initialEntries: ["/"] }) });
+  render(
+    <Refine resources={[...refineResourcesFromDataResources([resource])]} dataProvider={{ default: provider, public: provider }} options={{ disableTelemetry: true }}>
+      <RouterContextProvider router={router}><ModelMetadataProvider metadata={schemaFieldMetadataFromDataResources([resource])}>
+        <ModalsHost><ToastProvider><AppRuntimeProvider runtime={{ widgets: defaultWidgets }}>
+          <WorkflowApprovals runId="run-1" decisionId="decision-1" selectedTaskOnly onDecisionChange={onDecisionChange} />
+        </AppRuntimeProvider></ToastProvider></ModalsHost>
+      </ModelMetadataProvider></RouterContextProvider>
+    </Refine>,
+  );
+
+  expect(await screen.findByText("This approval is no longer pending.")).toBeTruthy();
+  expect(provider.getList).not.toHaveBeenCalled();
+  expect(exactVariables.at(-1)).toEqual({ id: "decision-1", run: "run-1" });
+  fireEvent.click(screen.getByRole("button", { name: "Back to approvals" }));
+  await waitFor(() => expect(onDecisionChange).toHaveBeenCalledWith(null));
+});
+
 test("a selected target distinguishes query failure from a permission-masked unavailable result", async () => {
+  const onDecisionChange = vi.fn();
   const provider = {
     getApiUrl: () => "test://workflows",
     getList: vi.fn(), getOne: vi.fn(), create: vi.fn(), update: vi.fn(), deleteOne: vi.fn(),
@@ -147,7 +179,7 @@ test("a selected target distinguishes query failure from a permission-masked una
     return <Refine resources={[...refineResourcesFromDataResources([resource])]} dataProvider={{ default: provider, public: provider }} options={{ disableTelemetry: true }}>
       <RouterContextProvider router={router}><ModelMetadataProvider metadata={schemaFieldMetadataFromDataResources([resource])}>
         <ModalsHost><ToastProvider><AppRuntimeProvider runtime={{ widgets: defaultWidgets }}>
-          <WorkflowApprovals target={{ model: "parties.Party", id: "party-7", tab: "accounting" }} decisionId={decisionId} selectedTaskOnly />
+          <WorkflowApprovals target={{ model: "parties.Party", id: "party-7", tab: "accounting" }} decisionId={decisionId} selectedTaskOnly onDecisionChange={onDecisionChange} />
         </AppRuntimeProvider></ToastProvider></ModalsHost>
       </ModelMetadataProvider></RouterContextProvider>
     </Refine>;
@@ -158,10 +190,15 @@ test("a selected target distinguishes query failure from a permission-masked una
   rendered.rerender(view("error", "decision-2"));
   expect(await screen.findByText("Decision query failed")).toBeTruthy();
   expect(screen.queryByText("Approve tool")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Back to approvals" }));
+  await waitFor(() => expect(onDecisionChange).toHaveBeenCalledWith(null));
+  onDecisionChange.mockClear();
   rendered.unmount();
   render(view("empty"));
   expect(await screen.findByText("This approval is unavailable or you no longer have access.")).toBeTruthy();
   expect(screen.queryByText(/does not exist/i)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Back to approvals" }));
+  await waitFor(() => expect(onDecisionChange).toHaveBeenCalledWith(null));
 });
 
 test("dirty approval values use the shared leave guard before changing selection", async () => {

@@ -313,11 +313,27 @@ describe("composeAddons", () => {
     });
   });
 
+  test("orders layout providers and rejects a second claim on the same layout id", () => {
+    const a = defineAddon({ id: "a", layoutProviders: [{ id: "connection", layout: "console", component: "A", sequence: 20 }] });
+    const b = defineAddon({ id: "b", layoutProviders: [{ id: "session", layout: "console", component: "B", sequence: 10 }] });
+    expect(composeAddons([a, b], IDENTITY_CANONICALIZER).layoutProviders.map((provider) => provider.id))
+      .toEqual(["session", "connection"]);
+    expect(() => composeAddons([a, { ...a, id: "duplicate" }], IDENTITY_CANONICALIZER))
+      .toThrow(/layout provider/);
+  });
+
   test("rejects two addons that claim the same data provider name", () => {
     const a = defineAddon({ id: "a", dataProviders: { operator: "A" } });
     const b = defineAddon({ id: "b", dataProviders: { operator: "B" } });
     expect(() => composeAddons([a, b], IDENTITY_CANONICALIZER)).toThrow(
       /data provider "operator"/,
     );
+  });
+
+  test("keeps equal-sequence provider nesting independent of addon order", () => {
+    const a = defineAddon({ id: "a", layoutProviders: [{ id: "a", layout: "console", component: "A" }] });
+    const b = defineAddon({ id: "b", layoutProviders: [{ id: "b", layout: "console", component: "B" }] });
+    expect(composeAddons([b, a], IDENTITY_CANONICALIZER).layoutProviders)
+      .toEqual(composeAddons([a, b], IDENTITY_CANONICALIZER).layoutProviders);
   });
 });

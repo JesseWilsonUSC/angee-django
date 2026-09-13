@@ -54,4 +54,4 @@ const platform = defineBaseAddon({
 export default platform;
 
 export { PLATFORM_ADDON_TOOLBAR_SLOT } from "./slots";
-export { PLATFORM_ADDON_MUTATION_INVALIDATES } from "./documents";
+export { PendingAddonChanges, PLATFORM_ADDON_MUTATION_INVALIDATES, PlatformExplorer } from "./documents";

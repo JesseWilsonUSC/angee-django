@@ -699,6 +699,11 @@ def test_compose_settings_module_honors_yamlconf_final_file(
     compose_settings = importlib.reload(compose_settings)
 
     assert compose_settings.SECRET_KEY == "final-secret"
+    assert "SECRET_KEY" not in compose_settings.ANGEE_PROJECT_YAML_SETTINGS
+    assert "INSTALLED_APPS" in compose_settings.ANGEE_PROJECT_YAML_SETTINGS
+    configs = {config.name: config for config in compose_settings.INSTALLED_APPS}
+    assert configs["angee.resources"].angee_root_declaration == "angee.resources"
+    assert configs["django.contrib.contenttypes"].angee_root_declaration is None
 
 
 def test_compose_settings_module_honors_yamlconf_env(

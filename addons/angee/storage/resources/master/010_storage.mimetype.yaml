@@ -309,6 +309,11 @@
   icon_key: box
 
 # other
+- xref: other_rfc822_message
+  mime_type: message/rfc822
+  category: other
+  label: Email message
+  icon_key: mail
 - xref: other_octet_stream
   mime_type: application/octet-stream
   category: other

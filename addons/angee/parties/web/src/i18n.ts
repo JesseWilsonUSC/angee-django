@@ -1,6 +1,9 @@
 import { createNamespaceT } from "@angee/ui";
 
 export const enPartiesMessages: Record<string, string> = {
+  "partyPicker.label": "Party",
+  "partyPicker.createOrganization": "Create organization",
+  "partyPicker.createPerson": "Create person",
   "common.yes": "Yes",
   "partyRedirect.loading": "Opening party…",
   "partyRedirect.unavailable": "Party record unavailable",
@@ -74,6 +77,14 @@ export const enPartiesMessages: Record<string, string> = {
   "identity.state.confirmed": "Confirmed",
   "identity.state.dismissed": "Dismissed",
   "identity.state.suggested": "Suggested",
+  "identity.claim": "Claim",
+  "identity.senderClaim": "Sender claimed by source",
+  "identity.evidence": "Source evidence",
+  "identity.evidenceSource": "Open source {number}",
+  "identity.evidenceTruncated": "More source evidence is retained",
+  "identity.evidenceUnavailable": "No readable source evidence",
+  "identity.authenticationScope":
+    "Confirming an address associates it with this party; it does not authenticate each received message. Open the source evidence to review the message.",
   "identity.confirm": "Confirm this handle belongs to the party",
   "identity.dismiss": "Dismiss — never suggest this link again",
   "identity.confirmError": "Could not confirm this identity claim.",

@@ -1030,6 +1030,30 @@ def test_identity_migration_backfills_only_structurally_known_run_origins(
 
 
 @pytest.mark.django_db(transaction=True)
+def test_linked_business_workflow_can_start_its_error_workflow(
+    workflow_engine_tables: None,
+    no_workflow_queue: None,
+    handler_calls: list[dict[str, Any]],
+) -> None:
+    """Business child linkage must not suppress the child's error handling."""
+
+    del workflow_engine_tables, no_workflow_queue, handler_calls
+    recovery = workflow_with_steps(name="Child recovery", steps=({"key": "recover", "config": {"outcome": "done"}},), edges=())
+    parent_workflow = workflow_with_steps(name="Business parent", steps=({"key": "handoff", "config": {"outcome": "done"}},), edges=())
+    parent = run_to_terminal(start_run(parent_workflow))
+    with system_context(reason="test linked business child error handling"):
+        draft = Workflow.objects.create(name="Business child", error_workflow=recovery.published_from)
+        Step.objects.create(workflow=draft, key="explode", name="Explode", config={"mode": "error", "error": "child failed"}, is_entry=True)
+        version = draft.publish()
+    child = engine.start(version, subject=None, actor=None, parent_step_run=step_run_for(parent, "handoff"), origin=workflow_models.RunOrigin.WORKFLOW)
+    run_to_terminal(child)
+    with system_context(reason="test linked business child recovery"):
+        error_run = WorkflowRun.objects.get(parent_step_run=step_run_for(child, "explode"))
+    assert error_run.origin == workflow_models.RunOrigin.ERROR_WORKFLOW
+    assert error_run.subject == child
+
+
+@pytest.mark.django_db(transaction=True)
 def test_error_workflow_run_does_not_start_another_error_workflow(
     workflow_engine_tables: None,
     no_workflow_queue: None,

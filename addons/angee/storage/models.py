@@ -207,6 +207,7 @@ class Drive(SqidMixin, AuditMixin, ArchiveMixin, AngeeModel):
     """
 
     runtime = True
+    rebac_grantable = {"editor": "write", "viewer": "write"}
 
     sqid_prefix = "drv_"
     backend = models.ForeignKey(

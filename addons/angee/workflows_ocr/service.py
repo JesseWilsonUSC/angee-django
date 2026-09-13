@@ -132,7 +132,8 @@ def extract(
             result = document_result.value
             retained_parts = document_result.parts
             document_claims = document_result.claims
-            document_metadata = document_result.engine_metadata or {}
+            document_metadata = dict(document_result.engine_metadata or {})
+            document_metadata["pipeline_duration_ms"] = document_result.duration_ms
             used_model_roles = document_result.used_model_roles
         else:
             if model is None:
@@ -165,12 +166,22 @@ def extract(
         retained_parts = error.parts
         _validate_parts(retained_parts, source_count=len(source_facts))
         status = "failed"
-        error_code = type(error).__name__
+        error_code = ":".join(value for value in (error.stage, error.code) if value) or type(error).__name__
+        document_metadata = {
+            **error.metadata,
+            "failure": {
+                "stage": error.stage or "document_pipeline",
+                "code": error.code or type(error).__name__,
+            },
+        }
     except (RuntimeError, TimeoutError, ValidationError) as error:
         # The retained code is actionable without copying document values or a
         # provider response into an exception or workflow journal.
         status = "failed"
-        error_code = type(error).__name__
+        stage = "result_validation" if isinstance(error, ValidationError) else "document_pipeline"
+        code = type(error).__name__
+        error_code = f"{stage}:{code}"
+        document_metadata = {**document_metadata, "failure": {"stage": stage, "code": code}}
 
     target = canonical_record_target(authorized_target)
     return extraction_model.objects.create_revision(
@@ -215,26 +226,63 @@ def extract(
 
 
 def reextract(extraction: Any) -> Any:
-    """Create a new evidence revision from a retained failed extraction."""
+    """Return the newest compatible success or retry its newest failure."""
 
     if extraction.status != "failed":
         raise ValidationError({"extraction": "Only failed extraction evidence can be retried."})
-    config = dict(extraction.engine_config)
-    config["retry_of_revision"] = extraction.revision
+    extraction_model = apps.get_model("workflows_ocr", "Extraction")
+    with system_context(reason="workflows_ocr.reextract.latest"):
+        candidates = extraction_model._base_manager.filter(
+            lineage_key=extraction.lineage_key,
+        ).order_by("-revision")
+        latest = next(
+            (
+                candidate
+                for candidate in candidates
+                if _same_retry_policy(candidate, extraction)
+            ),
+            None,
+        )
+    if latest is None:
+        raise ValidationError({"extraction": "The retained extraction lineage is unavailable."})
     sources = list(
-        extraction.sources.select_related("file", "message_part__fragment", "message_part__message").order_by(
+        latest.sources.select_related("file", "message_part__fragment", "message_part__message").order_by(
             "position"
         )
     )
+    files = [source.file for source in sources if source.file_id is not None]
+    message_parts = [source.message_part for source in sources if source.message_part_id is not None]
+    _authorize(files, message_parts, latest.target)
+    for candidate in (latest.model, latest.recognition_model):
+        if candidate is not None and not candidate.has_access("read"):
+            raise PermissionDenied("Read access to every inference model is required.")
+    if latest.status == "succeeded":
+        return latest
+    config = _retry_base_config(latest.engine_config)
+    config["retry_of_revision"] = latest.revision
     return extract(
-        files=[source.file for source in sources if source.file_id is not None],
-        message_parts=[source.message_part for source in sources if source.message_part_id is not None],
-        schema=extraction.schema,
-        model=extraction.model,
-        recognition_model=extraction.recognition_model,
-        authorized_target=extraction.target,
-        engine=str(extraction.engine),
+        files=files,
+        message_parts=message_parts,
+        schema=latest.schema,
+        model=latest.model,
+        recognition_model=latest.recognition_model,
+        authorized_target=latest.target,
+        engine=str(latest.engine),
         config=config,
+    )
+
+
+def _retry_base_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in dict(config).items() if key != "retry_of_revision"}
+
+
+def _same_retry_policy(candidate: Any, original: Any) -> bool:
+    return (
+        str(candidate.engine) == str(original.engine)
+        and candidate.model_id == original.model_id
+        and candidate.recognition_model_id == original.recognition_model_id
+        and str(candidate.schema_digest) == str(original.schema_digest)
+        and _retry_base_config(candidate.engine_config) == _retry_base_config(original.engine_config)
     )
 
 

@@ -64,6 +64,7 @@ export {
   type MutationDialogParseValues,
   type MutationDialogProps,
   type MutationDialogRelation,
+  type MutationDialogValidationResult,
   type MutationDialogValues,
   mutationDialogValueCodecs,
 } from "./form/MutationDialog";

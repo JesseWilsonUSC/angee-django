@@ -46,7 +46,9 @@ class InferenceModelSpec:
         hand-entered or seeded metadata instead of overwriting it.
         """
 
-        defaults: dict[str, Any] = {"display_name": self.display_name or self.handle, "model_use": self.model_use}
+        defaults: dict[str, Any] = {"display_name": self.display_name or self.handle}
+        if self.model_use:
+            defaults["model_use"] = self.model_use
         if self.description:
             defaults["description"] = self.description
         if self.context_window:

@@ -2,8 +2,10 @@ import * as React from "react";
 import {
   ListView,
   Tag,
+  TextLink,
   type ListColumn,
   type RecordPanelContext,
+  useResourceRecordHrefLookup,
 } from "@angee/ui";
 
 import { usePartiesT } from "./i18n";
@@ -14,6 +16,8 @@ import {
 
 type LinkRow = PartyHandleActionRow & {
   confidence?: number;
+  evidence_refs?: Array<{ model: string; id: string }>;
+  evidence_truncated?: boolean;
 };
 
 function linkState(row: LinkRow, t: ReturnType<typeof usePartiesT>): React.ReactElement {
@@ -31,39 +35,64 @@ function linkState(row: LinkRow, t: ReturnType<typeof usePartiesT>): React.React
 export function IdentityTab({ recordId }: RecordPanelContext): React.ReactElement {
   const t = usePartiesT();
   const rowActions = usePartyHandleRowActions<LinkRow>("remaining");
+  const recordHref = useResourceRecordHrefLookup();
 
   const columns = React.useMemo<readonly ListColumn<LinkRow>[]>(
     () => [
       { field: "handle.value", header: t("identity.handle") },
       { field: "handle.platform", header: t("identity.platform") },
       { field: "confidence" },
-      { field: "source" },
+      {
+        field: "source",
+        header: t("identity.claim"),
+        render: (row) => row.source === "EMAIL_MATCH"
+          ? t("identity.senderClaim")
+          : String(row.source ?? ""),
+      },
+      {
+        field: "evidence_refs",
+        header: t("identity.evidence"),
+        render: (row) => row.evidence_refs?.length
+          ? <span className="flex flex-wrap gap-2">{row.evidence_refs.map((ref, index) => {
+            const href = recordHref(ref.model, ref.id);
+            return href ? <TextLink key={`${ref.model}:${ref.id}`} href={href}>
+              {t("identity.evidenceSource", { number: index + 1 })}
+            </TextLink> : null;
+          })}{row.evidence_truncated ? <span>{t("identity.evidenceTruncated")}</span> : null}</span>
+          : t("identity.evidenceUnavailable"),
+      },
       {
         field: "is_confirmed",
         header: t("identity.state"),
         render: (row) => linkState(row, t),
       },
     ],
-    [t],
+    [recordHref, t],
   );
 
   return (
-    <ListView<LinkRow>
-      resource="parties.PartyHandle"
-      scope="local"
-      fields={[
-        "id",
-        "handle.value",
-        "handle.platform",
-        "confidence",
-        "source",
-        "is_confirmed",
-        "is_dismissed",
-      ]}
-      baseFilter={{ party: { exact: recordId } }}
-      columns={columns}
-      rowActions={rowActions}
-      emptyContent={t("identity.empty")}
-    />
+    <div className="grid gap-3">
+      <p className="text-13 text-fg-muted">{t("identity.authenticationScope")}</p>
+      <ListView<LinkRow>
+        resource="parties.PartyHandle"
+        scope="local"
+        fields={[
+          "id",
+          "handle.value",
+          "handle.platform",
+          "confidence",
+          "source",
+          "evidence_refs.model",
+          "evidence_refs.id",
+          "evidence_truncated",
+          "is_confirmed",
+          "is_dismissed",
+        ]}
+        baseFilter={{ party: { exact: recordId } }}
+        columns={columns}
+        rowActions={rowActions}
+        emptyContent={t("identity.empty")}
+      />
+    </div>
   );
 }

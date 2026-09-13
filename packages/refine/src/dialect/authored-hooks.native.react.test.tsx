@@ -183,6 +183,34 @@ test("imperative authored refresh preserves all cache-registered model interests
   expect(client.getQueryCache().find({ queryKey: options.queryKey, exact: true })?.meta?.angeeModels).toEqual(["iam.User", "notes.Note"]);
 });
 
+test("a broad observer wins over an exact-record observer sharing one authored query", () => {
+  const client = new QueryClient();
+  clients.push(client);
+  const provider = {} as DataProvider;
+  const exact = authoredQueryOptions(
+    client, () => provider, "default", DOCUMENT, { id: "a" },
+    ["notes.Note"], [{ model: "notes.Note", id: "note-a" }],
+  );
+  authoredQueryOptions(client, () => provider, "default", DOCUMENT, { id: "a" }, ["notes.Note"]);
+  const meta = client.getQueryCache().find({ queryKey: exact.queryKey, exact: true })?.meta;
+  expect(meta?.angeeBroadModels).toEqual(["notes.Note"]);
+  expect(meta?.angeeRecords).toBeUndefined();
+});
+
+test("a related-only model with no direct rows does not become model-wide", () => {
+  const client = new QueryClient();
+  clients.push(client);
+  const provider = {} as DataProvider;
+  const options = authoredQueryOptions(
+    client, () => provider, "default", DOCUMENT, { id: "a" },
+    ["workflows.StepRun"], [], ["workflows.StepRun"],
+  );
+  const meta = client.getQueryCache().find({ queryKey: options.queryKey, exact: true })?.meta;
+  expect(meta?.angeeRelatedModels).toEqual(["workflows.StepRun"]);
+  expect(meta?.angeeBroadModels).toBeUndefined();
+  expect(meta?.angeeRecords).toBeUndefined();
+});
+
 test("native custom hashing keeps one query and still reports data-only consumer failures", async () => {
   const f = fixture(vi.fn().mockRejectedValue(new Error("denied")));
   f.client.setDefaultOptions({ queries: { retry: false, queryKeyHashFn: (key) => `custom:${JSON.stringify(key)}` } });

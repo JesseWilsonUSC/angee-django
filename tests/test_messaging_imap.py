@@ -12,17 +12,19 @@ from __future__ import annotations
 
 import ssl
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import connection
 from imapclient.exceptions import LoginError
 from rebac import system_context
 
 from angee.integrate.credentials import CredentialKind
+from angee.messaging_integrate_imap import parser as imap_parser
 from angee.messaging_integrate_imap.backend import ImapChannelBackend, ImapError
 from angee.messaging_integrate_imap.parser import (
     fallback_message,
@@ -392,9 +394,22 @@ def test_alternative_with_plain_body_keeps_html_unwrapped() -> None:
 
 
 def test_embedded_rfc822_message_lands_as_attachment_bytes() -> None:
-    """A forwarded message/rfc822 part keeps its raw bytes and a subject filename."""
+    """A forwarded message keeps raw provenance and bounded nested evidence."""
 
-    inner = _eml(message_id="<inner@example.com>", subject="Inner report")
+    inner = (
+        b"From: supplier@example.com\r\n"
+        b"To: billing@example.com\r\n"
+        b"Subject: Inner report\r\n"
+        b"Message-ID: <inner@example.com>\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b'Content-Type: multipart/mixed; boundary="INNER"\r\n\r\n'
+        b"--INNER\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+        b"<p>Invoice INV-42 is attached.</p>\r\n"
+        b"--INNER\r\nContent-Type: application/pdf\r\n"
+        b"Content-Disposition: attachment; filename=invoice.pdf\r\n"
+        b"Content-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjQK\r\n"
+        b"--INNER--\r\n"
+    )
     raw = (
         b"From: ada@example.com\r\n"
         b"To: bob@example.com\r\n"
@@ -418,6 +433,83 @@ def test_embedded_rfc822_message_lands_as_attachment_bytes() -> None:
     assert embedded.disposition == "attachment"
     assert embedded.name == "Inner report.eml"
     assert b"Message-ID: <inner@example.com>" in embedded.content
+    assert embedded.children
+    nested = embedded.children[0]
+    assert nested.type == "multipart/mixed"
+    assert nested.children[0].type == "multipart/alternative"
+    assert [part.type for part in nested.children[0].children] == ["text/plain", "text/html"]
+    assert nested.children[1].type == "application/pdf"
+
+
+def test_embedded_rfc822_expansion_limit_retains_raw_parent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A bounded-out attached message remains raw evidence for explicit review."""
+
+    inner = _eml(message_id="<inner-limit@example.com>", subject="Bounded report")
+    raw = (
+        b"From: ada@example.com\r\nTo: bob@example.com\r\nSubject: Fwd\r\n"
+        b"Message-ID: <fwd-limit@example.com>\r\nMIME-Version: 1.0\r\n"
+        b'Content-Type: message/rfc822\r\n\r\n' + inner
+    )
+    budget_type = imap_parser._EmbeddedMessageBudget
+    monkeypatch.setattr(
+        imap_parser, "_EmbeddedMessageBudget",
+        lambda: budget_type(remaining_parts=256, remaining_bytes=1),
+    )
+    embedded = _parse(raw).body
+    assert embedded.type == "message/rfc822"
+    assert embedded.content
+    assert embedded.children == ()
+
+
+def test_delivery_report_keeps_status_blocks_and_expands_attached_message() -> None:
+    """A DSN report is not mislabeled as an empty attached email."""
+
+    attached = (
+        b"From: supplier@example.com\r\nSubject: Invoice\r\nMessage-ID: <invoice@example.com>\r\n"
+        b"MIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+        b"<p>Invoice INV-42 is attached.</p>\r\n"
+    )
+    raw = (
+        b"From: postmaster@example.com\r\nTo: billing@example.com\r\nSubject: Delivery report\r\n"
+        b"Message-ID: <dsn@example.com>\r\nMIME-Version: 1.0\r\n"
+        b'Content-Type: multipart/report; boundary="REPORT"; report-type=delivery-status\r\n\r\n'
+        b"--REPORT\r\nContent-Type: text/plain\r\n\r\nDelivery was delayed.\r\n"
+        b"--REPORT\r\nContent-Type: message/delivery-status\r\n\r\n"
+        b"Reporting-MTA: dns; example.com\r\n\r\nFinal-Recipient: rfc822; billing@example.com\r\n"
+        b"Action: delayed\r\nStatus: 4.0.0\r\n\r\n"
+        b"--REPORT\r\nContent-Type: message/rfc822\r\n\r\n" + attached +
+        b"\r\n--REPORT--\r\n"
+    )
+    body = _parse(raw).body
+    assert body.type == "multipart/report"
+    status, forwarded = body.children[1:]
+    assert status.type == "message/delivery-status"
+    assert status.content
+    assert len(status.children) == 2
+    assert all(child.role == "header" for child in status.children)
+    assert forwarded.type == "message/rfc822"
+    assert forwarded.content
+    assert forwarded.children[0].type == "multipart/alternative"
+    assert [child.type for child in forwarded.children[0].children] == ["text/plain", "text/html"]
+
+
+def test_outer_html_and_embedded_plain_are_normalized_per_message() -> None:
+    """Nested plain text does not suppress the outer envelope's HTML fallback."""
+
+    inner = _eml(message_id="<inner-plain@example.com>", subject="Inner plain")
+    raw = (
+        b"From: ada@example.com\r\nTo: bob@example.com\r\nSubject: Outer HTML\r\n"
+        b"Message-ID: <outer-html@example.com>\r\nMIME-Version: 1.0\r\n"
+        b'Content-Type: multipart/mixed; boundary="OUTERHTML"\r\n\r\n'
+        b"--OUTERHTML\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Outer context.</p>\r\n"
+        b"--OUTERHTML\r\nContent-Type: message/rfc822\r\n\r\n" + inner +
+        b"\r\n--OUTERHTML--\r\n"
+    )
+    body = _parse(raw).body
+    assert body.children[0].type == "multipart/alternative"
+    assert [part.type for part in body.children[0].children] == ["text/plain", "text/html"]
+    assert body.children[1].type == "message/rfc822"
+    assert body.children[1].children
 
 
 def test_unknown_charset_degrades_without_dropping_the_body() -> None:
@@ -651,6 +743,60 @@ def _drain(backend: ImapChannelBackend) -> list[Any]:
     while batch := backend.fetch_messages():
         collected.extend(batch)
     return collected
+
+
+def test_sample_preview_is_bounded_readonly_and_keeps_cursor(monkeypatch: pytest.MonkeyPatch) -> None:
+    account = FakeImapAccount({"INBOX": _folder(_eml(subject="A"), _eml(subject="B"), _eml(subject="C"))})
+    backend = _backend(monkeypatch, account)
+    backend.bridge.cursor = {"mailboxes": {"INBOX": {"uidvalidity": 100, "last_uid": 1}}}
+
+    result = backend.preview_sample(mailbox="INBOX", since=date(2026, 7, 1), before=date(2026, 8, 1), limit=2)
+
+    assert [message.uid for message in result.messages] == [3, 2]
+    assert result.truncated and result.uidvalidity == 100
+    assert account.searches == [("INBOX", ["SINCE", date(2026, 7, 1), "BEFORE", date(2026, 8, 1)])]
+    assert all(b"BODY.PEEK[]" not in fields for _, _, fields in account.fetches)
+    assert backend.bridge.cursor == {"mailboxes": {"INBOX": {"uidvalidity": 100, "last_uid": 1}}}
+    assert len(account.logins) == account.logouts == 1
+
+
+def test_sample_fetch_pins_uids_and_preserves_unread_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    folder = _folder(_eml(message_id="a@sample", subject="A"), _eml(message_id="b@sample", subject="B"))
+    folder["messages"][2]["flags"] = ()
+    account = FakeImapAccount({"INBOX": folder})
+    backend = _backend(monkeypatch, account)
+
+    messages, imported, unchanged = backend.fetch_sample(mailbox="INBOX", uidvalidity=100, uids=[2, 99])
+
+    assert [message.subject for message in messages] == ["B"]
+    assert imported == [2] and unchanged
+    assert folder["messages"][2]["flags"] == ()
+    assert backend.bridge.cursor == {}
+    assert account.searches == []
+    assert all(set(uids) <= {2, 99} for _, uids, _ in account.fetches)
+    assert len(account.logins) == account.logouts == 1
+
+
+def test_sample_rejects_changed_mailbox_epoch_before_body_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    account = FakeImapAccount({"INBOX": _folder(_eml(), uidvalidity=200)})
+    backend = _backend(monkeypatch, account)
+    with pytest.raises(ValidationError, match="UID identity changed"):
+        backend.fetch_sample(mailbox="INBOX", uidvalidity=100, uids=[1])
+    assert account.fetches == []
+    assert backend.bridge.cursor == {}
+    assert account.logouts == 1
+
+
+def test_sample_rejects_unbounded_requests_before_connect(monkeypatch: pytest.MonkeyPatch) -> None:
+    account = FakeImapAccount({"INBOX": _folder(_eml())})
+    backend = _backend(monkeypatch, account)
+    with pytest.raises(ValidationError, match="sample limit"):
+        backend.preview_sample(mailbox="INBOX", since=date(2026, 7, 1), before=date(2026, 8, 1), limit=51)
+    with pytest.raises(ValidationError, match="one year"):
+        backend.preview_sample(mailbox="INBOX", since=date(2024, 7, 1), before=date(2026, 8, 1))
+    with pytest.raises(ValidationError, match="positive message UIDs"):
+        backend.fetch_sample(mailbox="INBOX", uidvalidity=100, uids=list(range(1, 52)))
+    assert account.logins == []
 
 
 def test_backfill_pages_in_batches_and_sets_the_cursor(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1227,6 +1227,7 @@ class BridgeSyncStatusMixin:
 class BridgeTypeMixin(IntegrationLabelMixin, BridgeSyncStatusMixin):
     """Project the persisted fields shared by every ``Bridge`` child type."""
 
+    owner: UserType | None
     backend_class: auto
     lifecycle: auto
     runtime_status: auto
@@ -1253,7 +1254,7 @@ class IntegrationType(IntegrationLabelMixin, AngeeNode):
     vendor: VendorType
     credential: CredentialType | None
     account: ExternalAccountType | None
-    owner: UserType
+    owner: UserType | None
     kind: auto
     lifecycle: auto
     runtime_status: auto
@@ -1294,7 +1295,7 @@ class ConnectedIntegrationType(IntegrationLabelMixin, AngeeNode):
     vendor: VendorType
     credential: ConnectedCredentialType | None
     account: ConnectedExternalAccountType | None
-    owner: UserType
+    owner: UserType | None
     kind: auto
     lifecycle: auto
     runtime_status: auto

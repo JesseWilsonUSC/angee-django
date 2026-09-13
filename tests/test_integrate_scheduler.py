@@ -62,6 +62,13 @@ class SchedulerBridge(Bridge, Integration):
                 message="Scanning vendor rows",
                 details={"items": items, "source": "fixture"},
             )
+        if self.config.get("detached_progress"):
+            detached = type(self).objects.sudo(reason="test detached bridge progress").get(pk=self.pk)
+            BridgeProgressReporter(detached).report(
+                "discovering",
+                message="Reached the sync budget",
+                details={"items": items, "budget_exhausted": True, "cursor": {"seen": items}},
+            )
         self.cursor = {"seen": items}
         return items
 
@@ -214,7 +221,8 @@ def test_enqueued_due_bridge_persists_success_telemetry(scheduler_tables: None) 
     bridge.refresh_from_db()
     integration.refresh_from_db()
     assert bridge.last_sync_started_at == now
-    assert bridge.last_sync_completed_at == now
+    assert bridge.last_sync_completed_at is not None
+    assert bridge.last_sync_completed_at >= now
     assert bridge.last_sync_status == "ok"
     assert bridge.last_sync_items == 7
     assert bridge.sync_stage == Bridge.SyncStage.COMPLETED
@@ -223,10 +231,44 @@ def test_enqueued_due_bridge_persists_success_telemetry(scheduler_tables: None) 
     assert bridge.sync_progress["items"] == 7
     assert bridge.last_sync_summary["items"] == 7
     assert bridge.cursor == {"seen": 7}
-    assert bridge.next_sync_at == now + timedelta(seconds=42)
+    assert bridge.next_sync_at == bridge.last_sync_completed_at + timedelta(seconds=42)
     assert integration.lifecycle == IntegrationLifecycle.CONNECTED
     assert integration.runtime_status == IntegrationRuntimeStatus.OK
     assert integration.last_used_status == "ok"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_paused_manual_sync_stays_one_shot_and_out_of_periodic_due_scan(
+    scheduler_tables: None,
+) -> None:
+    """A paused bridge may sync explicitly without rearming periodic polling."""
+
+    del scheduler_tables
+    now = timezone.now()
+    with system_context(reason="test paused one-shot bridge setup"):
+        bridge = make_integration(
+            "paused-one-shot",
+            model=SchedulerBridge,
+            lifecycle=IntegrationLifecycle.PAUSED,
+            config={"items": 3},
+            next_sync_at=now,
+        )
+
+    result = integrate_sync_runner.run_bridge_sync_job(
+        bridge._meta.label_lower, bridge.pk, now.isoformat(),
+    )
+
+    assert result == {"ok": True, "items": 3, "skipped": False}
+    bridge.refresh_from_db()
+    assert bridge.cursor == {"seen": 3}
+    assert bridge.next_sync_at is None
+    with system_context(reason="test paused legacy due marker"):
+        bridge.next_sync_at = now
+        bridge.save(update_fields=["next_sync_at", "updated_at"])
+        due = SchedulerBridge.objects.due_for_enqueue(
+            timestamp=now, stale_before=now - timedelta(minutes=5),
+        )
+        assert not due.filter(pk=bridge.pk).exists()
 
 
 @pytest.mark.django_db(transaction=True)
@@ -379,6 +421,42 @@ def test_bridge_progress_reporter_persists_progress_payload(scheduler_tables: No
     assert bridge.sync_progress["stage"] == Bridge.SyncStage.COMPLETED
     assert bridge.sync_progress["details"] == {"items": 3, "source": "fixture"}
     assert bridge.sync_progress["message"] == "Scanning vendor rows"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_sync_completion_uses_finish_time_and_keeps_detached_progress(
+    scheduler_tables: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A terminal marker keeps partition progress and records the actual finish."""
+
+    del scheduler_tables
+    queued_at = timezone.now()
+    finished_at = queued_at + timedelta(seconds=17)
+    monkeypatch.setattr("angee.integrate.models.timezone.now", lambda: finished_at)
+    with system_context(reason="test integrate scheduler setup"):
+        bridge = make_integration(
+            "detached-progress",
+            model=SchedulerBridge,
+            config={"items": 600, "detached_progress": True},
+            next_sync_at=queued_at,
+        )
+
+    result = _enqueue_and_run_due(now=queued_at)
+
+    assert result == {"ran": 1, "errors": 0}
+    bridge.refresh_from_db()
+    assert bridge.last_sync_started_at == queued_at
+    assert bridge.last_sync_completed_at == finished_at
+    assert bridge.sync_progress == {
+        "stage": Bridge.SyncStage.COMPLETED,
+        "queued_at": queued_at.isoformat(),
+        "started_at": queued_at.isoformat(),
+        "message": "Reached the sync budget",
+        "details": {"items": 600, "budget_exhausted": True, "cursor": {"seen": 600}},
+        "items": 600,
+        "completed_at": finished_at.isoformat(),
+    }
 
 
 @pytest.mark.django_db(transaction=True)

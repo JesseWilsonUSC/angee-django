@@ -8,6 +8,7 @@ import { ShareListChrome, ShareRecordChrome } from "./ShareAccess";
 import { enIamMessages } from "./i18n";
 import { OAuthLoginMethods } from "./OAuthLoginMethods";
 import { LOGIN_CALLBACK_PATH } from "./redirects";
+import { assignmentSubjectsWidget } from "./assignment-subject-widget";
 import { oidcLoginSection } from "./views/oidc-section";
 
 export {
@@ -16,6 +17,14 @@ export {
   type IamLoginPageProps,
 } from "./IamLoginPage";
 export { userDisplayName, type UserDisplayNameInput } from "./identity-labels";
+export { RecordAccessPanel } from "./ShareAccess";
+export {
+  assignmentSubjectOptions,
+  useAssignmentSubjects,
+  type AssignmentSubjectOption,
+  type AssignmentSubjectsResult,
+  type UseAssignmentSubjectsOptions,
+} from "./assignment-subjects";
 
 // IAM contributes its grouped Settings tree, including the inbound OIDC sign-in
 // provider admin; a route-less parent inherits its first child's target.
@@ -55,6 +64,7 @@ const identityMenu: readonly BaseMenuItem[] = [
 
 const iam = defineBaseAddon({
   id: "iam",
+  widgets: { assignmentSubjects: assignmentSubjectsWidget },
   routes: [
     {
       name: "iam.login.callback",

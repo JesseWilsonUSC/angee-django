@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import httpx
+import httpx2
 import pytest
 from anthropic.types import Message, TextBlock, Usage
 from django.core.management import call_command
@@ -501,33 +502,6 @@ class _FakeOpenAIClient:
         self.instances.append(self)
 
 
-class _FakeOllamaModels:
-    """Small fake for Ollama's OpenAI-compatible model-list resource."""
-
-    def list(self, **kwargs: Any) -> _FakeModelPage:
-        """Return representative tagged Ollama model ids."""
-
-        assert kwargs == {}
-        return _FakeModelPage(
-            [
-                SimpleNamespace(id="llama3.2:latest", owned_by="library"),
-                SimpleNamespace(id="nomic-embed-text:latest", owned_by="library"),
-                SimpleNamespace(id="qwen2.5-coder:7b", owned_by="library"),
-            ]
-        )
-
-
-class _FakeOllamaClient:
-    """Small fake for Ollama through ``openai.OpenAI``."""
-
-    instances: list[Any] = []
-
-    def __init__(self, **kwargs: Any) -> None:
-        self.kwargs = kwargs
-        self.models = _FakeOllamaModels()
-        self.instances.append(self)
-
-
 @pytest.mark.django_db(transaction=True)
 def test_anthropic_backend_refresh_syncs_native_and_broker_models(
     agents_tables: None,
@@ -657,11 +631,59 @@ def test_openai_backend_refresh_syncs_native_and_broker_models(
 
 
 def test_ollama_backend_lists_tagged_models_without_a_credential(monkeypatch: Any) -> None:
-    """Ollama reuses the OpenAI client with its endpoint, placeholder key, and open allow-list."""
+    """Ollama uses its native show endpoint once per physical listed model."""
 
-    _FakeOllamaClient.instances.clear()
-    monkeypatch.setattr(OllamaInferenceBackend, "client_class", _FakeOllamaClient)
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/v1/models":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "list",
+                    "data": [
+                        {"id": "llama3.2:latest", "object": "model", "owned_by": "library"},
+                        {"id": "nomic-embed-text:latest", "object": "model", "owned_by": "library"},
+                        {"id": "qwen2.5-coder:7b", "object": "model", "owned_by": "library"},
+                    ],
+                },
+            )
+        assert request.url.path == "/api/show"
+        model_id = json.loads(request.content)["model"]
+        if model_id == "nomic-embed-text:latest":
+            return httpx.Response(503, json={"error": "native metadata unavailable"})
+        if model_id == "llama3.2:latest":
+            return httpx.Response(
+                200,
+                json={
+                    "details": {"family": "llama"},
+                    "model_info": {"llama.context_length": 131072},
+                    "parameters": "temperature 0.8\nnum_ctx 32768",
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "details": {},
+                "model_info": {
+                    "qwen.context_length": 65536,
+                    "qwen.vision.context_length": 8192,
+                },
+            },
+        )
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handle))
     backend = OllamaInferenceBackend(SimpleNamespace(credential=None, base_url="", config={}))
+    monkeypatch.setattr(
+        backend,
+        "_client_kwargs",
+        lambda: {
+            "api_key": "not-required",
+            "base_url": "http://localhost:11434/v1",
+            "http_client": http_client,
+        },
+    )
 
     specs = backend.list_models()
 
@@ -674,10 +696,27 @@ def test_ollama_backend_lists_tagged_models_without_a_credential(monkeypatch: An
         "ollama/qwen2.5-coder:7b",
     ]
     assert {spec.config["source"] for spec in specs} == {"ollama"}
-    assert _FakeOllamaClient.instances[-1].kwargs == {
-        "api_key": "not-required",
-        "base_url": "http://localhost:11434/v1",
-    }
+    assert all(spec.model_use == "" for spec in specs)
+    assert all("model_use" not in spec.upsert_defaults() for spec in specs)
+    assert [json.loads(request.content)["model"] for request in requests[1:]] == [
+        "llama3.2:latest",
+        "nomic-embed-text:latest",
+        "qwen2.5-coder:7b",
+    ]
+    assert [request.url.path for request in requests] == [
+        "/v1/models",
+        "/api/show",
+        "/api/show",
+        "/api/show",
+    ]
+    by_handle = {spec.handle: spec for spec in specs}
+    assert by_handle["llama3.2:latest"].context_window == 131072
+    assert by_handle["ollama/llama3.2:latest"].context_window == 131072
+    assert by_handle["llama3.2:latest"].config["ollama_num_ctx"] == 32768
+    assert by_handle["ollama/llama3.2:latest"].config["ollama_num_ctx"] == 32768
+    assert by_handle["nomic-embed-text:latest"].context_window == 0
+    assert by_handle["qwen2.5-coder:7b"].context_window == 0
+    assert all(spec.max_output_tokens == 0 for spec in specs)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -805,11 +844,28 @@ def inference_http(monkeypatch, request):
         )
         return httpx.Response(200, json=response.model_dump(mode="json"), request=request)
 
+    async def respond_anthropic(self, request):
+        """Serve the Anthropic SDK through its isolated, SDK-owned HTTP stack."""
+
+        content = b"".join([chunk async for chunk in request.stream])
+        requests.append(httpx.Request(request.method, str(request.url), headers=request.headers, content=content))
+        if isinstance(scenario, int):
+            return httpx2.Response(
+                scenario,
+                json={"error": {"message": "provider rejected request", "type": "test"}},
+                request=request,
+            )
+        response = _FakeAnthropicMessages(None).create()
+        return httpx2.Response(200, json=response.model_dump(mode="json"), request=request)
+
     def client_class(path):
         cls = import_string(path)
 
         def build(**kwargs):
-            kwargs.setdefault("http_client", httpx.AsyncClient())
+            if "http_client" not in kwargs:
+                kwargs["http_client"] = (
+                    httpx2.AsyncClient() if path.startswith("anthropic.") else httpx.AsyncClient()
+                )
             kwargs.setdefault("base_url", "https://provider.invalid/v1")
             kwargs["max_retries"] = 0
             client = cls(**kwargs)
@@ -819,6 +875,7 @@ def inference_http(monkeypatch, request):
         return build
 
     monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", respond)
+    monkeypatch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", respond_anthropic)
     monkeypatch.setattr("angee.agents.sdk_backends.import_string", client_class)
     return requests, clients
 

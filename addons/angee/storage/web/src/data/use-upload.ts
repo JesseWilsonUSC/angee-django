@@ -1,6 +1,8 @@
 import { useAuthoredMutation } from "@angee/refine";
 import { refineResourceName, useModelMetadata } from "@angee/metadata";
 import { useInvalidate } from "@refinedev/core";
+import { bytesToHex } from "@noble/hashes/utils.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { useCallback, useRef, useState } from "react";
 
 import { errorMessage } from "@angee/ui";
@@ -18,10 +20,7 @@ const FILE_MODEL = "storage.File";
  */
 async function sha256Hex(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest("SHA-256", buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return bytesToHex(sha256(new Uint8Array(buffer)));
 }
 
 export type UploadStatus =

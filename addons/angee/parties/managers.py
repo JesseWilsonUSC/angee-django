@@ -18,6 +18,7 @@ import re
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 from itertools import combinations
 from typing import TYPE_CHECKING, Any, Self, cast
 
@@ -29,8 +30,11 @@ from django.db.models.functions import Coalesce, NullIf
 from phonenumbers import PhoneNumberMatcher
 from rebac import PermissionDenied, actor_context, current_actor, system_context
 
+from angee.base.identity import public_id_for
 from angee.base.mixins import HierarchyQuerySet
 from angee.base.models import AngeeManager, AngeeQuerySet
+from angee.base.refs import canonical_record_target
+from angee.base.scoping import read_scoped_queryset
 from angee.parties.domains import GENERIC_EMAIL_DOMAINS
 from angee.parties.mixins import LinkSource
 
@@ -39,6 +43,25 @@ if TYPE_CHECKING:
 
 
 _SIGNATURE_PHONE_CANDIDATE = re.compile(r"(?<!\w)\+?\d(?:[\d \t()./\-]*\d)?(?!\w)")
+
+
+class HandleAssociationStatus(StrEnum):
+    """Nondisclosing assessment of one claimed Handle for a candidate Party."""
+
+    SAME_CONFIRMED = "same_confirmed"
+    SAME_DISMISSED = "same_dismissed"
+    CONFIRMED_OTHER = "confirmed_other"
+    WEAK_SAME = "weak_same"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class HandleAssociationAssessment:
+    """Closed risk status plus association rows already readable by the actor."""
+
+    status: HandleAssociationStatus
+    readable_links: tuple[Any, ...]
+    conflict_evidence_readable: bool
 
 
 class CircleQuerySet(HierarchyQuerySet, AngeeQuerySet):
@@ -309,6 +332,116 @@ class HandleManager(AngeeManager.from_queryset(HandleQuerySet)):  # type: ignore
 
 class PartyHandleManager(AngeeManager):
     """Owns the confidence link between a party and a handle, and the resolution."""
+
+    def has_confirmed_association(self, handle: Any, *, actor: Any) -> bool:
+        """Return whether this readable Handle has any confirmed owner, without disclosing it."""
+
+        if actor is None:
+            raise PermissionDenied("an actor is required to assess a party-handle association")
+        handle.with_actor(actor)._require_record_access("read")
+        with system_context(reason="parties.party_handle.has_confirmed_association"):
+            return self.filter(
+                handle_id=handle.pk, is_confirmed=True, is_dismissed=False,
+            ).exists()
+
+    def assess_claimed_handle(self, party: Any, handle: Any, *, actor: Any) -> HandleAssociationAssessment:
+        """Assess a claimed Handle without disclosing inaccessible Party associations."""
+
+        if actor is None:
+            raise PermissionDenied("an actor is required to assess a party-handle association")
+        party.with_actor(actor)._require_record_access("read")
+        handle.with_actor(actor)._require_record_access("read")
+        with system_context(reason="parties.party_handle.assess_claimed_handle"):
+            authoritative = tuple(
+                self.filter(handle_id=handle.pk)
+                .only("party_id", "is_confirmed", "is_dismissed")
+                .order_by("pk")
+            )
+        same = tuple(link for link in authoritative if link.party_id == party.pk)
+        if any(link.is_dismissed for link in same):
+            status = HandleAssociationStatus.SAME_DISMISSED
+        elif any(
+            link.is_confirmed and not link.is_dismissed and link.party_id != party.pk
+            for link in authoritative
+        ):
+            status = HandleAssociationStatus.CONFIRMED_OTHER
+        elif any(link.is_confirmed and not link.is_dismissed for link in same):
+            status = HandleAssociationStatus.SAME_CONFIRMED
+        elif any(not link.is_dismissed for link in same):
+            status = HandleAssociationStatus.WEAK_SAME
+        else:
+            status = HandleAssociationStatus.UNKNOWN
+        visible = read_scoped_queryset(self.model, actor)
+        readable = (
+            tuple(visible.filter(handle_id=handle.pk).select_related("party").order_by("pk"))
+            if visible is not None else ()
+        )
+        readable_ids = {link.pk for link in readable}
+        conflict_ids = {
+            link.pk for link in authoritative
+            if (
+                (link.party_id == party.pk and link.is_dismissed)
+                or (
+                    link.party_id != party.pk
+                    and link.is_confirmed
+                    and not link.is_dismissed
+                )
+            )
+        }
+        return HandleAssociationAssessment(
+            status=status,
+            readable_links=readable,
+            conflict_evidence_readable=conflict_ids.issubset(readable_ids),
+        )
+
+    def propose_claimed_handle(
+        self,
+        party: Any,
+        handle: Any,
+        *,
+        evidence: Any,
+        actor: Any,
+        confidence: float = 0.4,
+    ) -> Any:
+        """Retain an unconfirmed address claim for human identity review.
+
+        The evidence record may be a Message, document, or another readable native
+        record. This owner deliberately records only that the source claimed the
+        handle. Transport authentication remains unknown, independently of any
+        later human confirmation of Party ownership.
+        """
+
+        party.with_actor(actor)._require_record_access("write")
+        handle.with_actor(actor)._require_record_access("read")
+        evidence.with_actor(actor)._require_record_access("read")
+        if not 0 < confidence < 0.5:
+            raise ValidationError({"confidence": "Claimed-handle proposals require confidence below 0.5."})
+        evidence_target = canonical_record_target(evidence)
+        evidence_model = evidence_target.content_type.model_class()
+        if evidence_model is None:
+            raise ValidationError({"evidence": "The evidence record has no canonical model."})
+        evidence_ref = {
+            "model": evidence_model._meta.label,
+            "id": public_id_for(evidence_model, evidence_target.object_id),
+        }
+        with system_context(reason="parties.party_handle.propose_claimed_handle"), transaction.atomic():
+            locked_handle = type(handle)._base_manager.select_for_update().get(pk=handle.pk)
+            existing = self.select_for_update().filter(party=party, handle=locked_handle).first()
+            refs = list((existing.metadata or {}).get("evidence", ())) if existing is not None else []
+            if evidence_ref not in refs:
+                refs.append(evidence_ref)
+            return self.link(
+                party,
+                locked_handle,
+                confidence=confidence,
+                source=cast(LinkSource, LinkSource.EMAIL_MATCH),
+                is_confirmed=False,
+                metadata={
+                    "claim": "source_sender",
+                    "evidence": refs,
+                },
+                created_by_id=getattr(actor, "pk", None),
+            )
 
     def link(
         self,

@@ -5,10 +5,12 @@ from __future__ import annotations
 import subprocess
 import sys
 import time
+from argparse import SUPPRESS
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+from django.core.management import call_command, get_commands, load_command_class
 from django.core.management.base import (
     BaseCommand,
     CommandError,
@@ -63,6 +65,7 @@ class Command(BaseCommand):
             metavar="SECONDS",
             help="Seconds to wait for the default database (default: 60).",
         )
+        provision.add_argument("--post-build", action="store_true", help=SUPPRESS)
         provision.set_defaults(handler=self._handle_provision)
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -123,21 +126,37 @@ class Command(BaseCommand):
         9. ``schema`` — render the GraphQL SDL.
         10. ``bootstrap_admin`` — only when ``--bootstrap-admin``.
 
-        Every step after the database wait runs in a fresh interpreter (see
-        :meth:`_run_step`). App population repairs generated models at boot; each subsequent
-        command still needs an independent registry and migration-loader state.
-        A fresh child loads the emitted concrete models — the contract documented in AGENTS.md "Run From The Root".
+        Build runs in the parent. One fresh interpreter then loads the emitted
+        models and runs the remaining commands together via ``call_command``.
+        Django gives migration commands their own loaders; REBAC invalidates its
+        backend after sync. The completed schema builds can therefore be reused
+        between checks and SDL generation. Each command retains its transactions.
+
+        ``--post-build`` is the internal child entrypoint. It must not repeat
+        build or start another child, because the new app registry is the
+        boundary that makes the emitted runtime visible to subsequent commands.
         """
 
+        steps = self._provision_plan(options)
+        if options["post_build"]:
+            for step in steps[1:]:
+                self._run_step(step)
+            return
+
         self._wait_for_database(options["wait_db"])
-        manage_py = self._manage_py_path()
-        for step in self._provision_plan(options):
-            self._run_step(manage_py, step)
+        self._run_step(steps[0])
+        child = [sys.executable, self._manage_py_path(), "angee", "provision", "--post-build"]
+        for option in ("demo", "force_rebac", "bootstrap_admin"):
+            if options[option]:
+                child.append(f"--{option.replace('_', '-')}")
+        result = subprocess.run(child, check=False)
+        if result.returncode != 0:
+            raise CommandError(f"angee provision: post-build commands failed (exit {result.returncode})")
         self.stdout.write(self.style.SUCCESS("angee provision: ok"))
 
     @staticmethod
     def _provision_plan(options: dict[str, Any]) -> list[list[str]]:
-        """Map the provision flags to the ordered child ``manage.py`` argv suffixes.
+        """Map the provision flags to the ordered management command arguments.
 
         Pure: it reads only the option flags and returns the step list, so the
         plan (contents, ordering, the build-before-migrate invariant) is testable
@@ -170,8 +189,8 @@ class Command(BaseCommand):
         """Resolve the ``manage.py`` this command was invoked through.
 
         Provision is always invoked via ``python manage.py angee provision``, so
-        ``sys.argv[0]`` is the entrypoint; resolve it to an absolute path so each
-        child spawns the same entrypoint regardless of the child's cwd.
+        ``sys.argv[0]`` is the entrypoint; resolve it to an absolute path so the
+        post-build child uses the same entrypoint regardless of its cwd.
         """
 
         return str(Path(sys.argv[0]).resolve())
@@ -200,17 +219,33 @@ class Command(BaseCommand):
                 time.sleep(1)
         raise CommandError(f"angee provision: database did not accept connections within {seconds}s: {last_error}")
 
-    def _run_step(self, manage_py: str, step: list[str]) -> None:
-        """Run one provision step in a fresh interpreter, streaming its output.
+    def _run_step(self, step: list[str]) -> None:
+        """Run one command in the current registry with its CLI check policy.
 
-        The child inherits this process's env, cwd, and stdout/stderr (no capture),
-        so a fresh interpreter loads the freshly emitted concrete models. A
-        non-zero exit aborts provision with a ``CommandError`` naming the step.
+        ``call_command`` defaults to skipping checks, so explicitly preserve
+        each checked command's CLI policy. Commands that opt out of checks don't
+        accept the ``skip_checks`` option. Command-owned transactions stay independent;
+        any failure stops the sequence and identifies the command that failed.
         """
 
         label = " ".join(step)
         self.stdout.write(self.style.MIGRATE_HEADING(f"angee provision: {label}"))
         self.stdout.flush()
-        result = subprocess.run([sys.executable, manage_py, *step], check=False)
-        if result.returncode != 0:
-            raise CommandError(f"angee provision: step '{label}' failed (exit {result.returncode})")
+        try:
+            command = load_command_class(get_commands()[step[0]], step[0])
+            check_options = {"skip_checks": "--skip-checks" in step} if command.requires_system_checks else {}
+            call_command(
+                command,
+                *step[1:],
+                stdout=self.stdout,
+                stderr=self.stderr,
+                **check_options,
+            )
+        except SystemExit as error:
+            if error.code not in (None, 0):
+                raise CommandError(f"angee provision: step '{label}' failed (exit {error.code})") from error
+        except Exception as error:
+            raise CommandError(f"angee provision: step '{label}' failed: {error}") from error
+        finally:
+            self.stdout.flush()
+            self.stderr.flush()

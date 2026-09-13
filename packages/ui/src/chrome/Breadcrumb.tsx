@@ -53,14 +53,17 @@ export function BreadcrumbLabelProvider({
 }
 
 /** Let a route page replace the generic current crumb with its record label. */
-export function useBreadcrumbLeafLabel(label: string | null | undefined): void {
+export function useBreadcrumbLeafLabel(
+  label: string | null | undefined,
+  enabled = true,
+): void {
   const setLeafLabel = React.useContext(BreadcrumbLeafLabelSetterContext);
   React.useEffect(() => {
-    if (!setLeafLabel) return;
+    if (!setLeafLabel || !enabled) return;
     const next = label?.trim() ? label : null;
     setLeafLabel(next);
     return () => setLeafLabel(null);
-  }, [label, setLeafLabel]);
+  }, [enabled, label, setLeafLabel]);
 }
 
 /** Publish the routed collection owner's return URL for its matching crumb. */

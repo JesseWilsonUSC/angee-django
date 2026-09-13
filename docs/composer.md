@@ -212,6 +212,14 @@ read-only filesystem probe. After a successful build, normal `makemigrations` ma
 generate any remaining lossless changes and Django handles the rest of the
 migration lifecycle.
 
+[`angee provision`](../angee/compose/management/commands/angee.py) owns full
+runtime preparation. It builds in the initial process, then starts one fresh
+process to load the emitted models and run the remaining commands together.
+Keep that post-build boundary; native command loaders and cache invalidation
+allow subsequent database preparation, checks and schema output to share the
+initialized registry. Each command retains its own transactions and failures
+stop later steps.
+
 ### Composed addon dependencies
 
 Each addon's `addon.toml` owns its third-party `dependencies`. After runtime

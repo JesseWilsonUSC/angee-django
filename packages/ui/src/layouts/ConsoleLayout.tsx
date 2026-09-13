@@ -9,12 +9,14 @@ import { Chatter } from "../communication/Chatter";
 import { ChatterProvider, useChatter } from "../communication/chatter-context";
 import { useUiT } from "../i18n";
 import { cn } from "../lib/cn";
+import { SlotOutlet } from "../lib/slot-outlet";
 import {
   LARGE_VIEWPORT_QUERY,
   MOBILE_VIEWPORT_QUERY,
   useMediaQuery,
 } from "../lib/use-media-query";
 import type { CollapsiblePane } from "../page";
+import { useSlot } from "../runtime";
 import { Drawer } from "../ui/drawer";
 import { ControlBandProvider } from "./ControlBand";
 import { DrawerProvider } from "./drawer-context";
@@ -24,6 +26,9 @@ import { StatuslineProvider } from "./Statusline";
 import { Workbench } from "./Workbench";
 
 type PaneToggleController = Pick<CollapsiblePane, "collapsed" | "toggle">;
+
+/** Additive notices below console navigation and above the active page controls. */
+export const CONSOLE_NOTICE_SLOT = "console.notice";
 
 export interface ConsoleLayoutProps {
   children: React.ReactNode;
@@ -36,6 +41,7 @@ export function ConsoleLayout({
   showChatter = true,
   className,
 }: ConsoleLayoutProps): React.ReactElement {
+  const notices = useSlot(CONSOLE_NOTICE_SLOT);
   const [controlHost, setControlHost] =
     React.useState<HTMLDivElement | null>(null);
   const [statusHost, setStatusHost] =
@@ -129,7 +135,16 @@ export function ConsoleLayout({
                     showChatterToggle={showChatter}
                     showUserMenu
                   />
-                  <div ref={setControlHost} className="area-control" />
+                  <div className="area-control min-w-0">
+                    <div className="contents" data-console-notices>
+                      <SlotOutlet entries={notices} />
+                    </div>
+                    <div
+                      ref={setControlHost}
+                      className="contents"
+                      data-console-controls
+                    />
+                  </div>
                   <ConsoleWorkbench
                     showChatter={showChatter}
                     onPrimaryController={handlePrimaryController}

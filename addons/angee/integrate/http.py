@@ -277,6 +277,13 @@ class HttpClient:
                     if remaining_bytes <= 0:
                         return None
                     response_limit = min(remaining_bytes, max_bytes) if max_bytes is not None else remaining_bytes
+                    declared_length = response.headers.get("content-length")
+                    if declared_length is not None:
+                        try:
+                            if int(declared_length) > response_limit:
+                                return None
+                        except ValueError:
+                            pass
                     for chunk in response.iter_bytes(
                         chunk_size=min(_DOWNLOAD_CHUNK_BYTES, response_limit + 1),
                     ):

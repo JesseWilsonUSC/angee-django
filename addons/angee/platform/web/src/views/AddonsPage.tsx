@@ -79,7 +79,7 @@ function groupOptions(t: (key: string) => string): readonly ResourceToolbarGroup
  * The Odoo-style Apps board: the `platform.Addon` reflection rendered as category
  * lanes of app cards (board view) over the shared `ListView`, with a list view a
  * toggle away. Cards carry the manifest metadata + lifecycle state and the
- * Install/Uninstall actions; the toolbar grows and rescans the VCS marketplace.
+ * Install/Disable actions; the toolbar grows and rescans the VCS marketplace.
  */
 export function AddonsPage(): ReactElement {
   const t = usePlatformT();

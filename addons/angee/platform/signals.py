@@ -36,7 +36,7 @@ def _reconcile_addons(*, app_config: object, using: str, **kwargs: object) -> No
     if not _table_exists(using, addon_model._meta.db_table):
         return  # not yet created (e.g. migrating back past the Addon migration)
     with system_context(reason="platform.reconcile_addons"):
-        addon_model.objects.reconcile_from_registry(using)
+        addon_model.objects.reconcile_loaded_registry(using)
 
 
 def _table_exists(using: str, table_name: str) -> bool:

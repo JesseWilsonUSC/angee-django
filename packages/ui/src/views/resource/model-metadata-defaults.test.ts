@@ -697,6 +697,12 @@ describe("relation column read expansion", () => {
 });
 
 describe("canonical relation grouping", () => {
+  test("shares a default axis across list and board without duplicating the toolbar choice", () => {
+    const defaults = [{ field: "status" }, { field: "status" }];
+    const options = buildGroupOptions([{ field: "status" }], MESSAGE_METADATA, defaults);
+    expect(options.filter((option) => option.id === "status")).toHaveLength(1);
+    expect(() => validResourceViewGroupStack(defaults, MESSAGE_METADATA)).toThrow(/duplicate group/);
+  });
   test("offers one relation axis and never its label or backend key", () => {
     const options = buildGroupOptions([{ field: "sender.party.display_name" }, { field: "status" }], MESSAGE_METADATA, null);
     expect(options.map((option) => option.id)).toEqual(["sender", "status"]);

@@ -19,6 +19,7 @@ from django.db import models
 from django.db.models.utils import make_model_tuple
 from django.utils.module_loading import module_has_submodule
 
+from angee.base.models import AngeeModel
 from angee.base.transitions import revalidate_transition_metadata
 
 
@@ -50,9 +51,26 @@ class ModelComposition:
         self,
         sources_by_label: dict[str, tuple[type[models.Model], ...]],
         extensions: dict[str, tuple[type[models.Model], ...]],
+        model_owners: dict[type[models.Model], str] | None = None,
     ) -> None:
         self.sources_by_label = dict(sorted(sources_by_label.items()))
         self.extensions = extensions
+        self._model_owners = model_owners or {}
+        self._contributed_field_origins: dict[type[models.Model], tuple[tuple[str, str], ...]] = {}
+        missing_owners = [
+            donor
+            for donors in extensions.values()
+            for donor in donors
+            if donor not in self._model_owners
+        ]
+        if missing_owners:
+            names = ", ".join(
+                sorted(f"{donor.__module__}.{donor.__name__}" for donor in missing_owners)
+            )
+            raise ImproperlyConfigured(
+                f"Addon ownership is required for extension donors: {names}. "
+                "Use ModelComposition.discover() or pass model_owners."
+            )
         self.models_by_label: dict[str, type[models.Model]] = {}
         for sources in self.sources_by_label.values():
             for source in sources:
@@ -109,6 +127,8 @@ class ModelComposition:
         for model in dict.fromkeys(declarations):
             self._validate_import(model)
         self._validate_fields()
+        for source in self.ordered_models:
+            self.grantable(source)
 
     @classmethod
     def discover(cls, app_configs: Iterable[AppConfig]) -> ModelComposition:
@@ -121,6 +141,7 @@ class ModelComposition:
 
         sources_by_label: dict[str, list[type[models.Model]]] = {}
         extensions: dict[str, list[type[models.Model]]] = {}
+        model_owners: dict[type[models.Model], str] = {}
         for config in app_configs:
             source = config.models_module
             if source is None and module_has_submodule(config.module, "models"):
@@ -158,12 +179,14 @@ class ModelComposition:
                     sources_by_label.setdefault(config.label, []).append(model)
                 else:
                     extensions.setdefault(target, []).append(model)
+                model_owners[model] = config.name
         return cls(
             {
                 label: tuple(sorted(sources, key=lambda model: model._meta.object_name))
                 for label, sources in sources_by_label.items()
             },
             {target: tuple(donors) for target, donors in extensions.items()},
+            model_owners,
         )
 
     @staticmethod
@@ -188,6 +211,32 @@ class ModelComposition:
 
         return self.extensions.get(source._meta.label_lower, ())
 
+    def grantable(self, source: type[models.Model]) -> dict[str, str]:
+        """Merge explicit same-record grants without inheriting parent authority.
+
+        Donors may add relationships, but cannot silently change the permission
+        required to grant a relationship already declared by another owner.
+        """
+
+        grantable: dict[str, str] = {}
+        for owner in (source, *self.donors(source)):
+            # Donors may be plain abstract Django models. Bind the existing
+            # validator to their own declaration, without inheriting grants.
+            declaration = AngeeModel.get_rebac_grantable.__func__(owner)
+            for relation, permission in declaration.items():
+                previous = grantable.setdefault(relation, permission)
+                if previous != permission:
+                    raise ImproperlyConfigured(
+                        f"{source._meta.label_lower} composes conflicting rebac_grantable "
+                        f"permissions for {relation!r}: {previous!r} and {permission!r}."
+                    )
+        return grantable
+
+    def contributed_field_origins(self, source: type[models.Model]) -> tuple[tuple[str, str], ...]:
+        """Return ``(field name, addon name)`` for fields supplied by source donors."""
+
+        return self._contributed_field_origins.get(source, ())
+
     def _validate_fields(self) -> None:
         """Reject competing additive fields and parent columns redeclared by children.
 
@@ -198,7 +247,7 @@ class ModelComposition:
 
         fields_by_label: dict[str, dict[str, models.Field]] = {}
         for source in self.ordered_models:
-            owners: dict[str, tuple[models.Field, type[models.Model]]] = {}
+            owners: dict[str, tuple[models.Field, type[models.Model] | None]] = {}
             parent = self.parent(source)
             inherited = fields_by_label[parent._meta.label_lower] if parent is not None else {}
             for base in (*self.donors(source), source):
@@ -212,12 +261,24 @@ class ModelComposition:
                     if previous[0].creation_counter != field.creation_counter:
                         raise ImproperlyConfigured(
                             f"{source._meta.label_lower} composes field {field.name!r} from "
-                            f"both {previous[1]._meta.label} and {base._meta.label}"
+                            f"both {previous[1]._meta.label if previous[1] is not None else 'shared ancestry'} "
+                            f"and {base._meta.label}"
                         )
+                    if previous[0] is not field:
+                        owners[field.name] = (previous[0], source if base is source else None)
             fields_by_label[source._meta.label_lower] = {
                 **inherited,
                 **{name: field for name, (field, _) in owners.items()},
             }
+            self._contributed_field_origins[source] = tuple(
+                sorted(
+                    (name, self._model_owners[base])
+                    for name, (field, base) in owners.items()
+                    if base is not None
+                    and base is not source
+                    and (field.concrete or field.many_to_many)
+                )
+            )
 
     def validate_concrete(self, concrete_models: Iterable[type[models.Model]]) -> None:
         """Validate transition declarations against final Django classes after import."""

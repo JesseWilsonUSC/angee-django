@@ -1,5 +1,27 @@
 import { graphql, type DocumentType } from "@angee/gql/console";
 
+export const WorkflowSubjectHistoryPaneDocument = graphql(`
+  query WorkflowSubjectHistoryPane($subjectDeclaration: String!, $id: ID!) {
+    workflow_subject_history(subject: { subject_declaration: $subjectDeclaration, id: $id }) {
+      truncated
+      runs {
+        id status origin waiting_kind next_wake_at active_step updated_at workflow { id name }
+        parent_step_run { run { id workflow { id name } } }
+        reprocessed_from { id }
+        recovery_source_attempt { step_run { run { id workflow { name } } } }
+      }
+      child_runs { parent_run_id run { id status workflow { id name } } }
+      failures {
+        id system_kind error run { id }
+        step { id key name }
+        current_attempt { id error }
+      }
+      pending_decisions { id action priority assignees step_run { run { id } } target_reference { model id tab } }
+      artifacts { id label created_at target_reference { model id } }
+    }
+  }
+`);
+
 export const WorkflowGraphDocument = graphql(`
   query WorkflowGraph($workflow: String!) {
     workflows_by_pk(id: $workflow) {
@@ -427,14 +449,6 @@ export const CancelWorkflowRunDocument = graphql(`
     cancel_workflow_run(run: $id) {
       ok
       message
-    }
-  }
-`);
-
-export const ReprocessWorkflowRunDocument = graphql(`
-  mutation ReprocessWorkflowRun($run: ID!, $requestKey: String!) {
-    reprocess_workflow_run(run: $run, request_key: $requestKey) {
-      ok message id validation_errors
     }
   }
 `);

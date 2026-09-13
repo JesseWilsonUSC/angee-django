@@ -78,6 +78,7 @@ class OperatorDaemon:
     admin_bearer: str | None
     scope: tuple[str, ...]
     ttl: str
+    restart_job: str | None = None
 
     @classmethod
     def from_settings(cls) -> OperatorDaemon:
@@ -91,6 +92,7 @@ class OperatorDaemon:
             admin_bearer=cls._setting("ANGEE_OPERATOR_TOKEN"),
             scope=tuple(str(item) for item in getattr(settings, "ANGEE_OPERATOR_TOKEN_SCOPE", ())),
             ttl=str(getattr(settings, "ANGEE_OPERATOR_TOKEN_TTL", _DEFAULT_TTL)),
+            restart_job=cls._setting("ANGEE_OPERATOR_RESTART_JOB"),
         )
 
     def mint_token(self, actor: str) -> str | None:
@@ -256,13 +258,6 @@ class OperatorDaemon:
         query = urlencode({"source": source, "path": path})
         data = self._request("PUT", f"{self._base()}/files?{query}", {"content": content, "etag": etag}) or {}
         return str(data.get("etag", ""))
-
-    def stack_build(self) -> str:
-        """Trigger a stack rebuild + restart (``POST /stack/build``); return a status marker."""
-
-        data = self._request("POST", f"{self._base()}/stack/build", {})
-        status = (data or {}).get("status")
-        return str(status) if status else "rebuilding"
 
     def _base(self) -> str:
         """Return the absolute daemon base, or raise when the daemon is unconfigured."""

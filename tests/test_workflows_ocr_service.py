@@ -19,7 +19,15 @@ from django.db import IntegrityError, connection, models
 from django.test import SimpleTestCase, override_settings
 from django.utils import timezone
 from PIL import Image, ImageDraw
-from rebac import RelationshipTuple, actor_context, system_context, to_object_ref, to_subject_ref, write_relationships
+from rebac import (
+    PermissionDenied,
+    RelationshipTuple,
+    actor_context,
+    system_context,
+    to_object_ref,
+    to_subject_ref,
+    write_relationships,
+)
 
 from angee.workflows.attempts import RecoveryMode
 from angee.workflows_ocr.engines import DocumentPart, DocumentPipelineError, PageImage, PageResult
@@ -32,7 +40,8 @@ from angee.workflows_ocr.routing import (
 from angee.workflows_ocr.service import _document_sources, _merge, extract, reextract
 from angee.workflows_ocr.steps import OcrExtractStepImpl
 from angee.workflows_ocr_glm.engine import GlmOllamaEngine
-from tests.conftest import _clear_model_tables, _create_missing_tables
+from angee.messaging.backends import ParsedMessage, ParsedPart
+from tests.conftest import _clear_model_tables, _create_missing_tables, make_integration
 from tests.ocr_engines import FakeOcrEngine
 from tests.ocr_models import OCR_MODELS, Extraction, ExtractionPage, ExtractionSource
 from tests.test_agents_graphql import AGENTS_GRAPHQL_MODELS
@@ -327,13 +336,82 @@ class ExtractionServiceTests(TestCase):
             )
             self.assertEqual(first.result, config["result"])
             self.assertIsNone(first.model_id)
-            self.assertEqual(first.provenance["document"], {"route": "fake"})
+            self.assertEqual(first.provenance["document"], {"route": "fake", "pipeline_duration_ms": 0})
             self.assertEqual(first.parts.count(), 1)
             self.assertEqual(first.parts.get().claims["/number"], [{"part_position": 0}])
             self.assertEqual(revised.revision, first.revision + 1)
             self.assertEqual(revised.recognition_model_id, self.model.pk)
             self.assertEqual(revised.provenance["configured_model_roles"], ["recognition"])
             self.assertEqual(revised.provenance["used_model_roles"], [])
+
+    def test_retained_message_part_expansion_preserves_evidence_and_is_idempotent(self) -> None:
+        channel = make_integration("retained-part-repair")
+        repair_actor = channel.owner
+        message_model = apps.get_model("messaging", "Message")
+        with system_context(reason="test retained message part"), override_settings(
+            ANGEE_STORAGE_DEFAULT_DRIVE=self.drive.slug,
+        ):
+            [message] = message_model.objects.ingest(
+                [ParsedMessage(
+                    external_id="retained-part-repair",
+                    platform="email",
+                    body=ParsedPart(
+                        type="multipart/mixed",
+                        children=(
+                            ParsedPart(type="text/plain", text="Outer retained context"),
+                            ParsedPart(
+                                type="message/rfc822", disposition="attachment",
+                                name="forwarded.eml", content=b"Subject: Forwarded\r\n\r\nNested body",
+                            ),
+                        ),
+                    ),
+                )],
+                channel=channel,
+                quote_edges=False,
+            )
+        with actor_context(repair_actor):
+            retained = message.parts.get(type="message/rfc822")
+            outer_text = message.parts.get(fragment__text="Outer retained context")
+        retained_file_id = retained.file_id
+        with system_context(reason="test retained message part target grant"):
+            write_relationships([
+                RelationshipTuple(to_object_ref(self.drive), "viewer", to_subject_ref(repair_actor)),
+            ])
+        with actor_context(repair_actor):
+            evidence = extract(
+                files=(retained.file,), message_parts=(outer_text,), schema=SCHEMA, model=None,
+                authorized_target=self.drive, engine="fake_document",
+                config={"result": {"number": "OLD", "rows": []}, "source_text": "retained context"},
+            )
+            source_facts = tuple(
+                ExtractionSource._base_manager.filter(extraction=evidence).order_by("position").values_list(
+                    "pk", "file_id", "message_part_id", "content_hash",
+                )
+            )
+        with actor_context(self.stranger), self.assertRaises(PermissionDenied):
+            message_model.objects.expand_retained_part(
+                retained, (ParsedPart(type="text/plain", text="Denied"),),
+            )
+        with actor_context(repair_actor):
+            first = message_model.objects.expand_retained_part(
+                retained, (ParsedPart(type="text/plain", text="Nested body"),),
+            )
+            repeated = message_model.objects.expand_retained_part(
+                retained, (ParsedPart(type="text/plain", text="Nested body"),),
+            )
+
+        retained.refresh_from_db()
+        self.assertEqual(retained.file_id, retained_file_id)
+        with system_context(reason="test retained extraction identity"):
+            self.assertEqual(
+                tuple(ExtractionSource._base_manager.filter(extraction=evidence).order_by("position").values_list(
+                    "pk", "file_id", "message_part_id", "content_hash",
+                )),
+                source_facts,
+            )
+        self.assertEqual([row.pk for row in repeated], [row.pk for row in first])
+        with actor_context(repair_actor):
+            self.assertEqual(retained.children.count(), 1)
 
     def test_document_engine_retains_validation_failure_before_postgres_json_null_error(self) -> None:
         with actor_context(self.owner):

@@ -1,9 +1,9 @@
 import { lazy, useEffect, useState, type ReactElement } from "react";
 
 import { EmptyState } from "../fragments/EmptyState";
-import { LoadingPanel } from "../fragments/LoadingPanel";
 import { useUiT } from "../i18n";
 import { formatSize, isJsonMime } from "./model";
+import { PreviewSkeleton } from "./PreviewSkeleton";
 import {
   type PreviewProvider,
   type PreviewProviderProps,
@@ -63,7 +63,7 @@ function FileText({
 }): ReactElement {
   const t = useUiT();
   const { text, loading, error } = useFileText(url);
-  if (loading) return <LoadingPanel message={t("preview.loading")} />;
+  if (loading) return <PreviewSkeleton label={t("preview.loading")} variant="text" />;
   if (error) return <EmptyState title={t("preview.loadError")} description={error.message} />;
   return children(text);
 }

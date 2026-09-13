@@ -109,3 +109,5 @@ export type { ApprovalTaskProps } from "./views/ApprovalTask";
 export { WorkflowApprovals } from "./views/WorkflowApprovals";
 export type { WorkflowApprovalsProps } from "./views/WorkflowApprovals";
 export { useWorkflowsT } from "./i18n";
+export { workflowTriggerAssignmentForm } from "./views/WorkflowTriggersPanel";
+export { WorkflowSubjectHistoryPane } from "./views/WorkflowSubjectHistoryPane";

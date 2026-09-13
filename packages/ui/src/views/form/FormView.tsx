@@ -3,6 +3,7 @@ import { useModelMetadata } from "@angee/metadata";
 
 import { Button } from "../../ui/button";
 import { Tabs } from "../../ui/tabs";
+import { useBreadcrumbLeafLabel } from "../../chrome/Breadcrumb";
 import { renderGlyph } from "../../chrome/Glyph";
 import { ControlBand, ControlBandProvider } from "../../layouts/ControlBand";
 import { cn } from "../../lib/cn";
@@ -31,6 +32,7 @@ import {
   FormViewOverview,
   FormViewRecordHeader,
 } from "./form-view-body";
+import { recordRepresentationValue, titleText } from "./form-view-model";
 
 export {
   acknowledgeFormSubmit,
@@ -61,6 +63,8 @@ export type {
 } from "./form-view-surface";
 
 export interface FormViewProps extends UseFormViewSurfaceProps {
+  /** Publish this routed record's representation into the current breadcrumb. */
+  publishBreadcrumbLabel?: boolean;
   /** Override the record heading from the same live create/edit form context. */
   title?: React.ReactNode | ((context: RecordToolbarContext) => React.ReactNode);
   submitLabel?: React.ReactNode;
@@ -127,6 +131,7 @@ function FormViewInstance(props: FormViewProps): React.ReactElement {
     recordPresentation = "document",
     defaultRecordTab,
     overviewTab,
+    publishBreadcrumbLabel = false,
     className,
   } = props;
   const surface = useFormViewSurface({
@@ -177,6 +182,13 @@ function FormViewInstance(props: FormViewProps): React.ReactElement {
     applyPatch,
     reload,
   } = surface;
+  useBreadcrumbLeafLabel(
+    titleText(
+      recordRepresentationValue(displayRecord, surface.modelMetadata),
+      "",
+    ) || null,
+    publishBreadcrumbLabel && !isCreate,
+  );
   const toolbarStartNode =
     typeof toolbarStart === "function"
       ? toolbarStart(recordToolbarContext)

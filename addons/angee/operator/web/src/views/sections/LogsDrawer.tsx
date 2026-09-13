@@ -6,10 +6,7 @@ import {
   WORKSPACE_LOGS_SUBSCRIPTION,
 } from "../../data/documents.daemon";
 import { useOperatorT } from "../../i18n";
-import {
-  OperatorTransportProvider,
-  useOperatorSnapshot,
-} from "../../data/transport";
+import { useOperatorSnapshot } from "../../data/transport";
 import { LogPanel, useDaemonLogStream, useServiceLogStream } from "./logs";
 
 // One drawer log source: a running service (structured `/logs/stream` socket) or
@@ -92,14 +89,8 @@ function OperatorLogsDrawerBody(): ReactNode {
 
 /**
  * The operator logs drawer — the first console-shell drawer adopter. Mounted at
- * shell level (above the router outlet), outside the operator routes' transport
- * gate, so it establishes its own daemon transport rather than depending on an
- * operator page being open.
+ * shell level under the console's persistent operator transport.
  */
 export function OperatorLogsDrawer(): ReactNode {
-  return (
-    <OperatorTransportProvider>
-      <OperatorLogsDrawerBody />
-    </OperatorTransportProvider>
-  );
+  return <OperatorLogsDrawerBody />;
 }

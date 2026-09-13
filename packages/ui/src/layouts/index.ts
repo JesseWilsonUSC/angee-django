@@ -1,5 +1,5 @@
 export { barVariants, type BarRecipeProps } from "./bar";
-export { ConsoleLayout, type ConsoleLayoutProps } from "./ConsoleLayout";
+export { CONSOLE_NOTICE_SLOT, ConsoleLayout, type ConsoleLayoutProps } from "./ConsoleLayout";
 export {
   ControlBand,
   ControlBandProvider,

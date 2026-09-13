@@ -13,6 +13,7 @@ import type { PreviewProvider } from "@angee/ui/preview/index";
 import type {
   AddonManifest,
   AddonRoute,
+  LayoutProviderContribution,
 } from "./define-addon";
 import type { DashboardDefinition } from "@angee/ui/dashboard/headless";
 import type { ThemeContribution } from "@angee/ui/theme";
@@ -25,6 +26,8 @@ export interface BaseAddonRoute extends AddonRoute {
    * straight in next to an eager function component.
    */
   component?: RouteComponent;
+  /** Native index page rendered only when this route has no matched child. */
+  indexComponent?: RouteComponent;
   /**
    * Menu item id whose trail seeds chrome for routes outside the menu, or
    * disambiguates chrome derivation when multiple menu items target this route.
@@ -34,6 +37,11 @@ export interface BaseAddonRoute extends AddonRoute {
   icon?: string;
   /** Dashboard definition registered with this routed page. */
   dashboard?: DashboardDefinition;
+  /**
+   * Model displayed by this route when another route owns the resource
+   * registration. Record chrome uses this for subject-aware contributions.
+   */
+  recordModel?: string;
 }
 
 export interface ResourcePageRoutesOptions {
@@ -49,6 +57,8 @@ export interface ResourcePageRoutesOptions {
   detailMenu?: string;
   /** Optional detail component when the child route renders its own page. */
   detailComponent?: RouteComponent;
+  /** Model displayed when this route deliberately does not own a resource. */
+  recordModel?: string;
 }
 
 export function resourcePageRoutes(
@@ -65,8 +75,9 @@ export function resourcePageRoutes(
       name,
       path,
       layout,
-      component,
+      ...(options.detailComponent ? { indexComponent: component } : { component }),
       ...(resource ? { resource } : {}),
+      ...(options.recordModel ? { recordModel: options.recordModel } : {}),
       ...(options.menu ? { menu: options.menu } : {}),
     },
     {
@@ -103,7 +114,7 @@ export function dashboardPageRoute(options: DashboardPageRouteOptions): BaseAddo
 
 /** An addon manifest whose routes carry their page components. */
 export interface BaseAddon
-  extends Omit<AddonManifest, "routes" | "menus" | "previews" | "themes"> {
+  extends Omit<AddonManifest, "routes" | "menus" | "previews" | "themes" | "layoutProviders"> {
   routes?: readonly BaseAddonRoute[];
   menus?: readonly BaseMenuItem[];
   /**
@@ -119,8 +130,13 @@ export interface BaseAddon
    * registers it alongside the schema-named providers.
    */
   dataProviders?: Readonly<Record<string, Required<RefineDataProvider>>>;
+  layoutProviders?: readonly BaseLayoutProvider[];
   /** Browser presentation attached to canonical installed theme definitions. */
   themes?: readonly ThemeContribution[];
+}
+
+export interface BaseLayoutProvider extends Omit<LayoutProviderContribution, "component"> {
+  component: ComponentType<RefineLayoutChromeProps>;
 }
 
 /**

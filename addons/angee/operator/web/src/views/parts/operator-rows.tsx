@@ -31,7 +31,9 @@ export function useOperatorRows<TRow extends StringIdRow>(
     ...snapshotResult,
     rows: snapshot ? selectRows(snapshot) : [],
     fetching: result.fetching,
-    error: snapshot ? null : result.error ?? null,
+    // Keep cached rows visible during a disconnect, but do not hide that the
+    // snapshot is stale. RowsListView owns the contained error presentation.
+    error: result.error ?? null,
   };
 }
 

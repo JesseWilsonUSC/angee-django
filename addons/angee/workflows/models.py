@@ -31,6 +31,7 @@ from django.core.exceptions import (
     ValidationError,
 )
 from django.db import DEFAULT_DB_ALIAS, OperationalError, ProgrammingError, connections, models, router, transaction
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rebac import system_context
 
@@ -41,6 +42,7 @@ from angee.base.models import AngeeDataModel
 from angee.base.refs import RecordRefMixin
 from angee.base.scoping import system_queryset
 from angee.base.transitions import StateTransitions, TransitionNotAllowed, save_state, transition
+from angee.graphql.events import ChangeRelatedRecord
 from angee.graphql.schema import GraphQLSchemas
 from angee.resources.mixins import ResourceLoadMixin, ResourceWritePreparation
 from angee.workflows.attempts import (
@@ -149,6 +151,7 @@ class Workflow(ResourceLoadMixin, AuditMixin, AngeeDataModel):
     """
 
     runtime = True
+    rebac_grantable = {"editor": "write", "viewer": "write"}
 
     sqid_prefix = "wfl_"
     key = models.SlugField(max_length=100, blank=True, default="")
@@ -219,6 +222,12 @@ class Workflow(ResourceLoadMixin, AuditMixin, AngeeDataModel):
         """Return the workflow's display label."""
 
         return self.name
+
+    def validate_record_access_target(self) -> None:
+        """Keep direct grants on the mutable owner of a workflow lineage."""
+
+        if self.published_from_id is not None:
+            raise ValidationError("Direct record access can only be managed on a workflow lineage head.")
 
     @classmethod
     def lineage_projection_annotation(cls) -> dict[str, Any]:
@@ -1513,6 +1522,28 @@ class WorkflowRun(AuditMixin, RecordRefMixin, AngeeDataModel):
             ),
         }
 
+    @classmethod
+    def active_step_projection_annotation(cls) -> dict[str, Any]:
+        """Return the oldest active journal step label without loading the run journal."""
+
+        step_run = cls._meta.apps.get_model("workflows", "StepRun")
+        active = step_run.objects.filter(
+            run_id=models.OuterRef("pk"),
+            status__in=(StepRunStatus.STARTED, StepRunStatus.WAITING),
+        ).order_by("created_at", "pk")
+        return {
+            "_workflow_active_step": models.Subquery(
+                active.annotate(
+                    display=Coalesce(
+                        "step__name",
+                        "system_kind",
+                        output_field=models.CharField(),
+                    ),
+                ).values("display")[:1],
+                output_field=models.CharField(),
+            ),
+        }
+
     def awaiting_decision(self) -> bool:
         """Return whether this run has an unresolved workflow decision."""
 
@@ -1883,6 +1914,12 @@ class StepRun(AuditMixin, AngeeDataModel):
     error = models.TextField(blank=True)
     stacktrace = models.TextField(blank=True)
 
+    def change_related_records(self) -> tuple[ChangeRelatedRecord, ...]:
+        """Invalidate exact reads of this execution's parent workflow run."""
+
+        run_model = self._meta.get_field("run").related_model
+        return (ChangeRelatedRecord(run_model._meta.label, run_model.public_id_from_pk(self.run_id)),)
+
     status_transitions = StateTransitions(
         status,
         {
@@ -2181,6 +2218,15 @@ class StepAttempt(AuditMixin, AngeeDataModel):
 
     sqid_prefix = "wsa_"
     step_run = models.ForeignKey("workflows.StepRun", on_delete=models.PROTECT, related_name="attempts")
+
+    def change_related_records(self) -> tuple[ChangeRelatedRecord, ...]:
+        """Invalidate exact reads of this attempt's execution journal row."""
+
+        step_run_model = self._meta.get_field("step_run").related_model
+        return (ChangeRelatedRecord(
+            step_run_model._meta.label,
+            step_run_model.public_id_from_pk(self.step_run_id),
+        ),)
     retry_of = models.OneToOneField(
         "self",
         on_delete=models.PROTECT,

@@ -22,12 +22,52 @@ export function authoredQueryReadsAnyModel(
   return models.some((model) => typeof model === "string" && wanted.has(model));
 }
 
+/** Match one live row change, respecting an authored query's optional exact-record interests. */
+export function authoredQueryReadsChange(meta: unknown, model: string, id: string): boolean {
+  if (!authoredQueryReadsAnyModel(meta, [model])) return false;
+  const metadata = recordValue(meta);
+  const records = metadata?.angeeRecords;
+  const broadModels = metadata?.angeeBroadModels;
+  if (Array.isArray(broadModels) && broadModels.includes(model)) return true;
+  const relatedModels = metadata?.angeeRelatedModels;
+  if (Array.isArray(relatedModels) && relatedModels.includes(model)) return false;
+  if (!Array.isArray(records)) return true;
+  return records.some((value) => {
+    const record = recordValue(value);
+    return record?.model === model && record?.id === id;
+  });
+}
+
+/** Refetch authored reads affected by one exact live row change. */
+export async function invalidateAuthoredQueriesForChange(
+  queryClient: Pick<QueryClient, "cancelQueries" | "invalidateQueries">,
+  model: string,
+  id: string,
+  relatedRecords: readonly { model: string; id: string }[] = [],
+): Promise<void> {
+  return invalidateAuthoredQueriesMatching(
+    queryClient,
+    (query) => authoredQueryReadsChange(query.meta, model, id)
+      || relatedRecords.some((record) => authoredQueryReadsChange(query.meta, record.model, record.id)),
+  );
+}
+
 /** Refetch every active authored read registered against one of the moved models. */
 export async function invalidateAuthoredQueries(
   queryClient: Pick<QueryClient, "cancelQueries" | "invalidateQueries">,
   modelLabels: readonly string[],
 ): Promise<void> {
-  const predicate = (query: Query) => authoredQueryReadsAnyModel(query.meta, modelLabels);
+  return invalidateAuthoredQueriesMatching(
+    queryClient,
+    (query) => authoredQueryReadsAnyModel(query.meta, modelLabels),
+  );
+}
+
+/** One cancellation/refetch protocol shared by model-wide and exact-row invalidation. */
+async function invalidateAuthoredQueriesMatching(
+  queryClient: Pick<QueryClient, "cancelQueries" | "invalidateQueries">,
+  predicate: (query: Query) => boolean,
+): Promise<void> {
   // Native invalidation joins an initial in-flight request instead of restarting
   // it. Cancel that snapshot first so an event cannot be lost when it settles.
   await queryClient.cancelQueries({

@@ -1,4 +1,4 @@
-import { cn, Skeleton, textRoleVariants, type ResourceToolbarGroupOption, type ListColumn } from "@angee/ui";
+import { cn, defineRowAction, Skeleton, textRoleVariants, type ResourceToolbarGroupOption, type ListColumn, type RowActionDeclaration } from "@angee/ui";
 import { useCallback, useMemo, type ReactNode } from "react";
 
 import { useOperatorT } from "../../i18n";
@@ -25,6 +25,8 @@ export interface ServicesPageProps {
 /** Services page: the daemon service list. Rows open the service detail page. */
 export function ServicesPage({ names }: ServicesPageProps = {}): ReactNode {
   const t = useOperatorT();
+  const { refetch } = useOperatorSnapshot({ services: true });
+  const serviceActions = useServiceActions(refetch);
   const selectRows = useCallback<OperatorRowsSelector<ServiceRowData>>(
     (snapshot) => daemonRowsByName(
       snapshot.services.filter(
@@ -67,6 +69,19 @@ export function ServicesPage({ names }: ServicesPageProps = {}): ReactNode {
     ],
     [t],
   );
+  const rowActions = useMemo<readonly RowActionDeclaration<ServiceRowData>[]>(
+    () => serviceActions.actions.map((action, index) => defineRowAction({
+      kind: "page",
+      id: `service-${index}`,
+      label: action.label,
+      variant: action.variant,
+      disabled: () => serviceActions.busy,
+      visible: (service) => action.visible?.(service) ?? true,
+      pendingPolicy: "active-row",
+      onSelect: action.perform,
+    })),
+    [serviceActions.actions, serviceActions.busy],
+  );
 
   return (
     <OperatorRowsList<ServiceRowData>
@@ -75,6 +90,7 @@ export function ServicesPage({ names }: ServicesPageProps = {}): ReactNode {
       columns={columns}
       groupOptions={groupOptions}
       rowHref={(service) => serviceDetailPath(service.name)}
+      rowActions={rowActions}
       emptyContent={t("services.empty")}
     />
   );

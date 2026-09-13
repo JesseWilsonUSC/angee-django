@@ -18,6 +18,7 @@ import {
   type ListColumn,
   type StringIdRow,
   useRouteHref,
+  useResourceRecordHrefLookup,
   useSlot,
 } from "@angee/ui";
 import { Link } from "@tanstack/react-router";
@@ -26,7 +27,11 @@ import { usePartiesT } from "./i18n";
 import { usePartyHandleRowActions } from "./party-handle-row-actions";
 import { PARTIES_REVIEW_TOOLBAR_SLOT } from "./slots";
 
-type SuggestionRow = StringIdRow;
+type SuggestionRow = StringIdRow & {
+  source?: string;
+  evidence_refs?: Array<{ model: string; id: string }>;
+  evidence_truncated?: boolean;
+};
 
 /**
  * Human identity review, split between uncertain party↔handle claims and
@@ -35,6 +40,7 @@ type SuggestionRow = StringIdRow;
 export function ReviewPage(): React.ReactElement {
   const t = usePartiesT();
   const routeHref = useRouteHref();
+  const recordHref = useResourceRecordHrefLookup();
   const counts = useAuthoredQuery(PartyReviewCounts, undefined, {
     models: ["parties.PartyHandle"],
   });
@@ -49,9 +55,25 @@ export function ReviewPage(): React.ReactElement {
       { field: "handle.platform", header: t("review.platform") },
       { field: "party.display_name", header: t("review.party") },
       { field: "confidence" },
-      { field: "source" },
+      {
+        field: "source",
+        header: t("identity.claim"),
+        render: (row) => row.source === "EMAIL_MATCH"
+          ? t("identity.senderClaim")
+          : String(row.source ?? ""),
+      },
+      {
+        field: "evidence_refs",
+        header: t("identity.evidence"),
+        render: (row) => <span className="flex flex-wrap gap-2">{row.evidence_refs?.map((ref, index) => {
+          const href = recordHref(ref.model, ref.id);
+          return href ? <TextLink key={`${ref.model}:${ref.id}`} href={href}>
+            {t("identity.evidenceSource", { number: index + 1 })}
+          </TextLink> : null;
+        })}{row.evidence_truncated ? <span>{t("identity.evidenceTruncated")}</span> : null}</span>,
+      },
     ],
-    [t],
+    [recordHref, t],
   );
   const handleCount = counts.data?.party_handles_aggregate.aggregate?.count ?? 0;
   const duplicateCandidates = duplicates.data?.duplicate_party_candidates ?? [];
@@ -71,6 +93,7 @@ export function ReviewPage(): React.ReactElement {
             fetching={counts.isFetching}
           >
             {counts.error ? <ErrorBanner description={t("review.error")} /> : null}
+            <p className="mb-3 text-13 text-fg-muted">{t("identity.authenticationScope")}</p>
             <ListView<SuggestionRow>
               resource="parties.PartyHandle"
               fields={[
@@ -80,6 +103,9 @@ export function ReviewPage(): React.ReactElement {
                 "party.display_name",
                 "confidence",
                 "source",
+                "evidence_refs.model",
+                "evidence_refs.id",
+                "evidence_truncated",
               ]}
               baseFilter={{
                 is_confirmed: { exact: false },

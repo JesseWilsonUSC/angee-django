@@ -9,6 +9,7 @@ from functools import wraps
 from typing import ParamSpec, TypeVar, cast
 
 import strawberry
+from angee.base.scoping import read_scoped_queryset
 from angee.base.transitions import TransitionNotAllowed
 from django.core.exceptions import NON_FIELD_ERRORS, ObjectDoesNotExist, ValidationError
 from django.db import models
@@ -151,8 +152,7 @@ def authorized_action_target(
     1. An unauthenticated session raises ``rebac.PermissionDenied`` — a GraphQL
        error, the same contract as ``angee.iam``'s ``session_user`` gate, so the
        client re-authenticates instead of toasting.
-    2. The row resolves through the actor's write-scoped queryset
-       (:func:`angee.graphql.writes.instance_for_write`): a row the actor cannot
+    2. The row resolves through the actor's write-scoped queryset: a row the actor cannot
        reach reads as plain not-found, never an existence oracle.
     3. The resolved row must grant the per-row REBAC ``permission`` (e.g.
        ``"write"``, ``"write__status"``).
@@ -170,6 +170,33 @@ def authorized_action_target(
     if user is None or not getattr(user, "is_authenticated", False):
         raise PermissionDenied("Authentication required.")
     instance = instance_for_write(model, id)
+    return _require_action_permission(instance, model, id, permission)
+
+
+def authorized_permission_target(
+    info: strawberry.Info,
+    model: type[_RebacActionTarget],
+    id: PublicID,
+    permission: str,
+) -> _RebacActionTarget:
+    """Resolve a target through the exact requested permission scope."""
+
+    user = getattr(info.context.request, "user", None)
+    if user is None or not getattr(user, "is_authenticated", False):
+        raise PermissionDenied("Authentication required.")
+    scoped = read_scoped_queryset(model, user, action=permission)
+    instance = instance_for_id(model, id, queryset=scoped) if scoped is not None else None
+    return _require_action_permission(instance, model, id, permission)
+
+
+def _require_action_permission(
+    instance: _RebacActionTarget | None,
+    model: type[_RebacActionTarget],
+    id: PublicID,
+    permission: str,
+) -> _RebacActionTarget:
+    """Preserve the shared not-found and row-permission result contract."""
+
     if instance is None:
         raise ValidationError(
             {NON_FIELD_ERRORS: [f"{model._meta.object_name} {public_id_value(id)!r} was not found."]}

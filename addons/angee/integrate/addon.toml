@@ -31,6 +31,11 @@ name = "integration_parent_impl_axis"
 app_label = "integrate"
 module = "runtime_migrations.integration_parent_impl_axis"
 
+[[migrations]]
+name = "platform_managed_integrations"
+app_label = "integrate"
+module = "runtime_migrations.platform_managed_integrations"
+
 [resources]
 master = [
   { path = "resources/master/010_integrate.vendor.yaml", adopt = "slug" },

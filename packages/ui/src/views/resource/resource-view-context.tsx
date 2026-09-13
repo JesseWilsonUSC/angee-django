@@ -15,6 +15,7 @@ import { Filter, ResourceQuery, useModelMetadata } from "@angee/metadata";
 import { validateResourceViewState } from "./model/state";
 import { normaliseGroupStack } from "./model/search";
 import { normalisePageSize } from "./page-size";
+import type { ResourceCollectionPresentation } from "./resource-view-types";
 
 import {
   createResourceViewState,
@@ -101,7 +102,10 @@ export type ResourceViewProviderScope = "route" | "local";
 export interface ResourceViewScopeMountOptions {
   ambient: ResourceViewContextValue | null;
   resource?: string;
-  scope: "inherit" | "local";
+  scope?: "inherit" | "local";
+  /** Embedded collections own local state unless the caller explicitly opts in
+   * to an ambient or route-owned view. */
+  presentation?: ResourceCollectionPresentation;
   initialState?: ResourceViewInitialState;
   isolated?: boolean;
   providerKey?: Key;
@@ -150,18 +154,20 @@ export function withResourceViewScope({
   ambient,
   resource,
   scope,
+  presentation,
   initialState,
   isolated = false,
   providerKey,
   children,
 }: ResourceViewScopeMountOptions): ReactElement {
-  if (!isolated && scope !== "local" && ambient) return children(ambient);
+  const resolvedScope = scope ?? (presentation === "embedded" ? "local" : "inherit");
+  if (!isolated && resolvedScope !== "local" && ambient) return children(ambient);
   return (
     <ResourceViewProvider
       key={providerKey}
       initialState={initialState}
       resource={resource}
-      scope={isolated || scope === "local" ? "local" : "route"}
+      scope={isolated || resolvedScope === "local" ? "local" : "route"}
     >
       <ResourceViewScopeBound>{children}</ResourceViewScopeBound>
     </ResourceViewProvider>

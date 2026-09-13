@@ -753,7 +753,7 @@ requires-dist = [
     { name = "django-simple-history", specifier = ">=3.7" },
     { name = "django-sqids", specifier = ">=0.1" },
     { name = "django-yamlconf", specifier = ">=1.5.0" },
-    { name = "django-zed-rebac", git = "https://github.com/ang-ee/django-zed-rebac.git?rev=de13a3dc133d8db8b96ac248f0c1e5e002f7c190" },
+    { name = "django-zed-rebac", specifier = ">=0.17.0" },
     { name = "hatch-angee", specifier = ">=0.2.3" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
@@ -772,7 +772,7 @@ addons = [
     { name = "django-axes", specifier = ">=8.0" },
     { name = "django-countries", specifier = ">=9,<10" },
     { name = "django-import-export", specifier = ">=4.4" },
-    { name = "django-zed-rebac", extras = ["strawberry-django"], git = "https://github.com/ang-ee/django-zed-rebac.git?rev=de13a3dc133d8db8b96ac248f0c1e5e002f7c190" },
+    { name = "django-zed-rebac", extras = ["strawberry-django"], specifier = ">=0.17.0" },
     { name = "fastmcp", specifier = ">=3.4.2,<4" },
     { name = "httpcore", specifier = ">=1.0,<2" },
     { name = "httpx", specifier = ">=0.28.1,<0.29" },
@@ -942,9 +942,13 @@ wheels = [
 [[package]]
 name = "django-zed-rebac"
 version = "0.17.0"
-source = { git = "https://github.com/ang-ee/django-zed-rebac.git?rev=de13a3dc133d8db8b96ac248f0c1e5e002f7c190#de13a3dc133d8db8b96ac248f0c1e5e002f7c190" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e7/d0/3a6408da993e7bc79134f6933b424c950f4f9fecae898735d3fa7584ea63/django_zed_rebac-0.17.0.tar.gz", hash = "sha256:8874ec838e2fb0c4a114d1ec0ad44c17c92aed26f3b9e789597e5b18b69d0b7d", size = 290465, upload-time = "2026-09-13T15:13:13.178Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/f9/6948785b03f659d7aaedc30c01a0d07466c1ae69094f662599cd0a216267/django_zed_rebac-0.17.0-py3-none-any.whl", hash = "sha256:ff28e14c466a7a60738373d86d741b43d907e13b1d1e1347e9e2731c4de82018", size = 203586, upload-time = "2026-09-13T15:13:12.055Z" },
 ]
 
 [package.optional-dependencies]

@@ -461,10 +461,47 @@ export const STACK_DESTROY_MUTATION = graphql(`
   }
 `);
 
-// `jobRun` returns the launched job id as a scalar string.
+export const OperatorJobRunOperationFields = graphql(`
+  fragment OperatorJobRunOperationFields on JobRunOperation {
+    id
+    rootJob
+    chainedRestart
+    status
+    currentStep
+    startedAt
+    endedAt
+    nodes { name kind status message }
+    output
+    error
+  }
+`);
+
 export const JOB_RUN_MUTATION = graphql(`
-  mutation OperatorJobRun($name: String!, $inputs: [KeyValueInput!]) {
-    jobRun(name: $name, inputs: $inputs)
+  mutation OperatorJobRun($name: String!, $inputs: [KeyValueInput!], $chainedRestart: Boolean!) {
+    jobRun(name: $name, inputs: $inputs, chainedRestart: $chainedRestart) {
+      ...OperatorJobRunOperationFields
+    }
+  }
+`);
+
+export const JOB_RUN_PREVIEW_QUERY = graphql(`
+  query OperatorJobRunPreview($name: String!, $chainedRestart: Boolean!) {
+    jobRunPreview(name: $name, chainedRestart: $chainedRestart) {
+      jobs
+      services
+    }
+  }
+`);
+
+export const LATEST_JOB_RUN_QUERY = graphql(`
+  query OperatorLatestJobRun {
+    latestJobRun { ...OperatorJobRunOperationFields }
+  }
+`);
+
+export const JOB_RUN_OPERATION_QUERY = graphql(`
+  query OperatorJobRunOperation($id: ID!) {
+    jobRunOperation(id: $id) { ...OperatorJobRunOperationFields }
   }
 `);
 

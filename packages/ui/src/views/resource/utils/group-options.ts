@@ -14,7 +14,9 @@ export function buildGroupOptions<TRow extends Row>(
 ): readonly ResourceToolbarGroupOption[] {
   const declared = defaultGroups ? Array.isArray(defaultGroups) ? defaultGroups : [defaultGroups] : [];
   const query = suppliedQuery ?? queryForColumns(columns, metadata, declared);
-  const defaults = query.groupsFrom(declared).map((axis) => axis.spec);
+  // Defaults are alternatives from different views; repeated axes are valid.
+  // Validate each one while leaving actual grouping-stack validation strict.
+  const defaults = declared.map((group) => query.group(group).spec);
   const names = [...new Set([...defaults.map(({ field }) => field), ...Object.keys(query.axes)])];
   return names.map((name) => {
     const axis = query.axis(name);

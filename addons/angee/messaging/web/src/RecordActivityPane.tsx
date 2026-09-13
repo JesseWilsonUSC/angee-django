@@ -1,6 +1,6 @@
 import { useAuthoredMutation, useAuthoredQuery } from "@angee/refine";
 import * as React from "react";
-import { Button, DatePopover, EmptyState, ErrorBanner, FieldRoot, Glyph, LoadingPanel, Textarea, cn, dateFromValue, errorMessage, formatDate, formatDateStorage, textRoleVariants, useActionForm } from "@angee/ui";
+import { Button, DatePopover, EmptyState, ErrorBanner, FieldRoot, Glyph, LoadingPanel, Textarea, cn, dateFromValue, errorMessage, formatDate, formatDateStorage, formatDateTime, textRoleVariants, useActionForm } from "@angee/ui";
 import type { ChatterViewContext } from "@angee/ui/runtime";
 import { userDisplayName } from "@angee/iam";
 
@@ -11,6 +11,7 @@ import {
   READ_MODELS,
   RecordActivityThreadDocument,
   ScheduleRecordActivityDocument,
+  type RecordActivityMessageRow,
   type RecordActivityRow,
 } from "./documents";
 
@@ -25,9 +26,9 @@ interface ScheduleValues {
   dueDate: string;
 }
 
-/** The Activity chatter tab: the record's scheduled activities plus a scheduler.
- *  Reads its own narrow `record_thread` window (activities only) so opening the tab
- *  never pulls the Comments feed payload. */
+/** The Activity chatter tab: retained system changes, scheduled activities, and a
+ * scheduler. It reads a kind-filtered record-thread window, leaving ordinary
+ * conversation to Comments while reusing the same stored thread. */
 export function RecordActivityPane({ context }: RecordActivityPaneProps): React.ReactElement {
   const t = useMessagingT();
   const modelLabel = context.route?.modelLabel;
@@ -89,6 +90,7 @@ export function RecordActivityPane({ context }: RecordActivityPaneProps): React.
     () => [...(threadPayload?.activities ?? [])].sort(compareActivities),
     [threadPayload?.activities],
   );
+  const updates = threadPayload?.messages ?? [];
   const busy = scheduleForm.submitting || completeState.fetching || cancelState.fetching;
 
   if (!enabled) {
@@ -151,8 +153,26 @@ export function RecordActivityPane({ context }: RecordActivityPaneProps): React.
 
   return (
     <div className="flex min-h-72 flex-col gap-4">
+      {updates.length > 0 ? (
+        <section className="space-y-2" aria-label={t("activity.history")}>
+          <h3 className={cn(textRoleVariants({ role: "meta" }), "text-fg-muted")}>
+            {t("activity.history")}
+          </h3>
+          {updates.map((message) => (
+            <RecordUpdateItem key={message.id} message={message} />
+          ))}
+          {(threadPayload?.message_result_count ?? 0) > updates.length ? (
+            <p className={cn(textRoleVariants({ role: "caption" }), "text-fg-muted")}>
+              {t("activity.historyLimited", { count: updates.length })}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
       {activities.length > 0 ? (
-        <div className="space-y-3">
+        <section className="space-y-3" aria-label={t("activity.planned")}>
+          <h3 className={cn(textRoleVariants({ role: "meta" }), "text-fg-muted")}>
+            {t("activity.planned")}
+          </h3>
           {activities.map((activity) => (
             <ActivityItem
               key={activity.id}
@@ -166,15 +186,15 @@ export function RecordActivityPane({ context }: RecordActivityPaneProps): React.
               onCancel={() => void handleCancel(activity.id)}
             />
           ))}
-        </div>
-      ) : (
+        </section>
+      ) : updates.length === 0 ? (
         <EmptyState
           icon="activity"
           title={t("activity.emptyTitle")}
           description={t("activity.emptyHint")}
           className="min-h-40 p-4"
         />
-      )}
+      ) : null}
       <form
         onSubmit={handleSchedule}
         className="mt-auto space-y-2 border-t border-border-subtle pt-3"
@@ -238,6 +258,51 @@ export function RecordActivityPane({ context }: RecordActivityPaneProps): React.
         ) : null}
       </form>
     </div>
+  );
+}
+
+function RecordUpdateItem({
+  message,
+}: {
+  message: RecordActivityMessageRow;
+}): React.ReactElement {
+  const t = useMessagingT();
+  const author = message.sender?.display_name || message.sender?.value || t("message.author");
+  const timestamp = message.sent_at ?? message.created_at;
+  const trackingValues = [...message.tracking_values].sort(
+    (left, right) =>
+      left.position - right.position || left.field_label.localeCompare(right.field_label),
+  );
+
+  return (
+    <article className="space-y-2 rounded-8 border border-border-subtle bg-surface p-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className={cn(textRoleVariants({ role: "meta" }), "truncate")}>{author}</span>
+        {timestamp ? (
+          <time className={cn(textRoleVariants({ role: "caption" }), "shrink-0 text-fg-muted")}>
+            {formatDateTime(timestamp)}
+          </time>
+        ) : null}
+      </div>
+      {message.preview ? <p className="text-13 text-fg">{message.preview}</p> : null}
+      {trackingValues.length > 0 ? (
+        <dl className="space-y-1 rounded-6 bg-surface-inset p-2">
+          {trackingValues.map((tracking) => (
+            <div
+              key={tracking.id}
+              className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-2 text-13"
+            >
+              <dt className="truncate font-medium text-fg-muted">{tracking.field_label}</dt>
+              <dd className="min-w-0 text-fg">
+                <span className="text-fg-muted">{tracking.old_display || "—"}</span>
+                <span aria-hidden="true"> → </span>
+                <span>{tracking.new_display || "—"}</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </article>
   );
 }
 

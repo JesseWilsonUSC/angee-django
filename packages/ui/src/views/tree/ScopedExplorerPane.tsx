@@ -1,9 +1,9 @@
 import * as React from "react";
 
 import { EmptyState } from "../../fragments/EmptyState";
-import { LoadingPanel } from "../../fragments/LoadingPanel";
 import { useUiT } from "../../i18n";
 import { PrimaryPanePublisher } from "../../layouts/primary-pane-context";
+import { Skeleton, SkeletonStatus, SkeletonText } from "../../ui/skeleton";
 import {
   RelationPicker,
   type RelationCreateConfig,
@@ -115,13 +115,18 @@ export function ScopedExplorerPane<
       setRootId,
     ],
   );
-  const primaryPane = hasRoots ? navigator : null;
+  const loadingLabel = t("loading.default");
+  const primaryPane = hasRoots
+    ? navigator
+    : loading
+      ? <ExplorerNavigatorSkeleton label={loadingLabel} />
+      : null;
 
   if (loading && !hasRoots) {
     return (
       <>
         <PrimaryPanePublisher node={primaryPane} />
-        {loadingContent ?? <LoadingPanel />}
+        {loadingContent ?? <ExplorerContentSkeleton label={loadingLabel} />}
       </>
     );
   }
@@ -145,5 +150,45 @@ export function ScopedExplorerPane<
       <PrimaryPanePublisher node={primaryPane} />
       {children(controller)}
     </>
+  );
+}
+
+function ExplorerNavigatorSkeleton({ label }: { label: string }): React.ReactElement {
+  return (
+    <SkeletonStatus label={label} className="flex h-full min-h-0 flex-col gap-3 p-2">
+      <div aria-hidden="true" className="space-y-3">
+        <Skeleton className="h-9 w-full" />
+        {Array.from({ length: 7 }, (_, index) => (
+          <div key={index} className="flex items-center gap-2 px-2 py-1">
+            <Skeleton className="size-3.5 shrink-0" />
+            <Skeleton shape="text" size="sm" className={index % 3 === 0 ? "w-2/3" : "w-4/5"} />
+          </div>
+        ))}
+      </div>
+    </SkeletonStatus>
+  );
+}
+
+function ExplorerContentSkeleton({ label }: { label: string }): React.ReactElement {
+  return (
+    <SkeletonStatus label={label} className="h-full min-h-0 bg-canvas p-4">
+      <div aria-hidden="true" className="flex h-full min-h-0 flex-col gap-4">
+        <div className="flex items-center justify-between gap-4">
+          <Skeleton shape="text" size="lg" className="w-48" />
+          <Skeleton className="h-btn-sm w-24" />
+        </div>
+        <div className="min-h-0 flex-1 rounded-8 border border-border-subtle bg-sheet p-5">
+          <SkeletonText lines={3} className="max-w-2xl" />
+          <div className="mt-7 grid gap-4 sm:grid-cols-2">
+            {Array.from({ length: 6 }, (_, index) => (
+              <div key={index} className="space-y-2 border-b border-border-subtle pb-4">
+                <Skeleton shape="text" size="sm" className="w-20" />
+                <Skeleton shape="text" size="md" className={index % 2 === 0 ? "w-4/5" : "w-2/3"} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </SkeletonStatus>
   );
 }

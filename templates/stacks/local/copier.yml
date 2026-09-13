@@ -91,7 +91,7 @@ addon_namespace:
   help: Import namespace for this project's consumer addons; a valid Python identifier.
 
 # Path of the web package relative to the project root; matches the chained project's
-# web_path and the frontend-build/caddy services' project-relative web path.
+# web_path and the frontend-build job/caddy service's project-relative web path.
 web_path:
   type: str
   default: "web"

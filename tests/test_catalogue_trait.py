@@ -81,6 +81,17 @@ def test_catalogue_marker_and_tier_are_declared_per_class() -> None:
 
                 app_label = "base"
 
+        class MultiTierCatalogue(AngeeModel):
+            """Catalogue with one default authoring tier and an additional load tier."""
+
+            catalogue = True
+            catalogue_tier = "demo"
+            catalogue_tiers = ("install", "demo")
+            name = models.CharField(max_length=40)
+
+            class Meta:
+                app_label = "base"
+
         assert DeclaredCatalogue.is_catalogue_model() is True
         assert DeclaredCatalogue.get_catalogue_tier() == "master"
         assert ParentCatalogue.is_catalogue_model() is True
@@ -89,6 +100,9 @@ def test_catalogue_marker_and_tier_are_declared_per_class() -> None:
         assert ChildCatalogue.get_catalogue_tier() == "master"
         assert InstallCatalogue.is_catalogue_model() is True
         assert InstallCatalogue.get_catalogue_tier() == "install"
+        assert MultiTierCatalogue.get_catalogue_tier() == "demo"
+        assert MultiTierCatalogue.get_catalogue_tiers() == ("install", "demo")
+        assert not [error for error in MultiTierCatalogue.check() if error.id == "angee.E014"]
 
 
 def test_invalid_catalogue_tier_is_a_system_check_error() -> None:
@@ -113,6 +127,38 @@ def test_invalid_catalogue_tier_is_a_system_check_error() -> None:
     catalogue_errors = [error for error in errors if error.id == "angee.E014"]
     assert len(catalogue_errors) == 1
     assert "catalogue_tier" in catalogue_errors[0].msg
+
+
+@pytest.mark.parametrize(
+    ("default_tier", "allowed_tiers"),
+    [
+        ("broken", ("install", "demo")),
+        ("install", ()),
+        ("install", ("demo",)),
+        ("install", ("install", "install")),
+        ("install", ("install", 1)),
+        ("install", ["install", "demo"]),
+    ],
+)
+def test_invalid_multi_tier_catalogue_contract_is_a_system_check_error(
+    default_tier: str, allowed_tiers: object,
+) -> None:
+    """A multi-tier catalogue keeps one valid included default authoring tier."""
+
+    with isolate_apps():
+
+        class InvalidMultiTierCatalogue(AngeeModel):
+            catalogue = True
+            catalogue_tier = default_tier
+            catalogue_tiers = allowed_tiers
+            name = models.CharField(max_length=40)
+
+            class Meta:
+                app_label = "base"
+
+        errors = InvalidMultiTierCatalogue.check()
+
+    assert [error.id for error in errors].count("angee.E014") == 1
 
 
 @pytest.mark.django_db(transaction=True)

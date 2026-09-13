@@ -9,8 +9,8 @@ import { Glyph } from "../chrome/Glyph";
 import { Input } from "../ui/input";
 import { ErrorBanner } from "../fragments/ErrorBanner";
 import { InlineEmpty } from "../fragments/InlineEmpty";
-import { LoadingPanel } from "../fragments/LoadingPanel";
 import { PageHeader } from "../page/PageHeader";
+import { Skeleton, SkeletonStatus, SkeletonText } from "../ui/skeleton";
 import type {
   DashboardDefinition,
   DashboardLoadState,
@@ -94,7 +94,15 @@ function StoredDashboardSurface(
   const binding = props.registry.store!.useDashboard(props.target);
   const state = binding.state;
   const t = useDashboardT();
-  if (state.status === "loading") return <LoadingPanel message={t("surface.loading")} />;
+  if (state.status === "loading") {
+    return (
+      <DashboardSkeleton
+        className={props.className}
+        label={t("surface.loading")}
+        toolbar={props.toolbar}
+      />
+    );
+  }
   if (state.status === "forbidden") return <DashboardUnavailable message={state.message ?? t("surface.forbidden")} />;
   if (state.status === "unavailable") return <DashboardUnavailable message={state.message ?? t("surface.unavailable")} />;
   if (state.status === "error") return <DashboardUnavailable message={state.error.message} />;
@@ -118,6 +126,45 @@ function StoredDashboardSurface(
     );
   }
   return <ReadyDashboardSurface {...props} state={state} binding={binding} />;
+}
+
+function DashboardSkeleton({
+  className,
+  label,
+  toolbar,
+}: {
+  className?: string;
+  label: string;
+  toolbar?: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <SkeletonStatus
+      label={label}
+      className={cn("flex min-h-0 flex-1 flex-col", className)}
+    >
+      <div aria-hidden="true" className="flex min-h-14 flex-none items-center justify-between gap-4 border-b border-border-subtle px-4 py-3">
+        <div className="min-w-0 flex-1 space-y-2">
+          <Skeleton shape="text" size="lg" className="w-52 max-w-2/3" />
+          <Skeleton shape="text" size="sm" className="w-72 max-w-4/5" />
+        </div>
+        <Skeleton className="h-btn-sm w-24 shrink-0" />
+      </div>
+      {toolbar}
+      <div aria-hidden="true" className="grid min-h-0 flex-1 grid-cols-12 auto-rows-[56px] gap-3 overflow-hidden p-3">
+        {[
+          "col-span-12 row-span-3 md:col-span-5",
+          "col-span-12 row-span-3 md:col-span-7",
+          "col-span-12 row-span-4 md:col-span-8",
+          "col-span-12 row-span-4 md:col-span-4",
+        ].map((placement, index) => (
+          <div key={placement} className={cn("rounded-8 border border-border-subtle bg-sheet p-4", placement)}>
+            <Skeleton shape="text" size="md" className={index % 2 === 0 ? "w-32" : "w-24"} />
+            <SkeletonText lines={index < 2 ? 3 : 5} className="mt-5" />
+          </div>
+        ))}
+      </div>
+    </SkeletonStatus>
+  );
 }
 
 function ReadyDashboardSurface(

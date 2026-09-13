@@ -2,7 +2,9 @@
 # the package's [project] + entry points; see hatch-angee's native AddonManifest.
 [addon]
 name = "angee.platform_integrate_operator"
-description = "Install and uninstall addons through the operator — edits settings.yaml and rebuilds the stack"
+description = "Install and disable addons through the operator, with application restart status and actions"
 keywords = ["marketplace", "addons", "operator"]
 category = "Integration"
 depends_on = ["angee.platform", "angee.operator"]
+
+[web]

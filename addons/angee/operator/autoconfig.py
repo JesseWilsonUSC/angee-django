@@ -6,5 +6,6 @@ SETTINGS = {
     "ANGEE_OPERATOR_GRAPHQL_ENDPOINT": "/operator/graphql",
     "ANGEE_OPERATOR_URL": None,
     "ANGEE_OPERATOR_TOKEN": None,
+    "ANGEE_OPERATOR_RESTART_JOB": None,
 }
 """Django settings contributed when the operator addon is installed."""

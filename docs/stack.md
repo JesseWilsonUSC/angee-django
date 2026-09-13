@@ -60,7 +60,7 @@ Dependency changes must update this file in the same change.
 | cryptography | Encryption primitives | `EncryptedField` (Fernet at rest, secret-by-type) |
 | django-import-export >= 4.4 + tablib | Native Dataset parsing, model field coercion, instance loading, import lifecycle, row results and transactions | Source grouping/diagnostic indexes, tier/xref/adoption policy and ledger/grant hooks in the native transaction. The bounded declaration-constraint evaluator remains because Django Q.check fails open on database errors |
 | pyyaml | YAML parsing substrate | Resource loader reads `.yaml`/`.yml` resource files; django-yamlconf consumes project settings YAML |
-| ruamel.yaml | Comment/format-preserving round-trip YAML editing | The `AddonInstaller`'s `settings.yaml` `INSTALLED_APPS` install/uninstall edit — the one writer that must preserve operator comments and layout (pyyaml round-trips lose them); not used at boot |
+| ruamel.yaml | Comment/format-preserving round-trip YAML editing | The `AddonInstaller`'s `settings.yaml` `INSTALLED_APPS` install/disable edit — the one writer that must preserve operator comments and layout (pyyaml round-trips lose them); not used at boot |
 | django-yamlconf | Django settings YAML overlays | `angee.compose.settings` loads `settings.yaml` beside `manage.py`; `Composer` applies addon `autoconfig.py` fragments |
 | django-environ | Typed boot environment access and URL parsers | `angee.compose.settings` reads Angee bootstrap env vars and honors the standard service URLs a deployment injects — `DATABASE_URL`→`DATABASES`, `CACHE_URL`→`CACHES`, `EMAIL_URL`→`EMAIL_*` — override-safe (an explicit project setting wins), falling back to the SQLite/Django floor when unset |
 | django-anymail | Vendor-neutral Django email backend API across transactional ESPs, plus the deterministic test backend | `angee.messaging` renders outbound `Message` parts and envelopes into `AnymailMessage`; deployments select an ESP through `EMAIL_BACKEND` plus `ANYMAIL`/`ANYMAIL_*` environment settings, while an unconfigured stack logs and declines delivery without touching Django's implicit localhost SMTP backend |
@@ -140,6 +140,7 @@ GPL code is incompatible with a framework composed into commercial consumers.
 | @agentclientprotocol/sdk | ACP client — agent JSON-RPC session, prompt/cancel, session-update stream (the agent image runs `@agentclientprotocol/claude-agent-acp`; both replace the deprecated `@zed-industries/*` names) | WebSocket ndjson transport to a routed agent + assistant-ui runtime bridge |
 | @assistant-ui/react | Chat thread UI — message store, composer, tool-call rendering | ACP-streaming runtime adapter and styled thread surface |
 | streamdown | Streamed-markdown render for assistant chunks | Assistant message body in the agent chat |
+| @noble/hashes | Portable audited SHA-256 for browser file bytes, including non-secure LAN HTTP origins where WebCrypto digest is unavailable | `@angee/storage` emits the lowercase content hash used by upload deduplication and finalize verification |
 | react-pdf (+ pdfjs-dist) | Inline PDF rendering (pdf.js) | storage file previewer |
 | @vidstack/react | Inline video/audio player | storage file previewer |
 | heic-to | Client-side HEIC/HEIF decode to a displayable image (current libheif-wasm) | storage HEIC previewer |

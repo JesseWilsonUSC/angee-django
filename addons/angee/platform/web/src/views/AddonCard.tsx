@@ -1,13 +1,16 @@
-import { useCallback, type ReactElement, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactElement, type ReactNode } from "react";
 import {
   Badge, Button, Chip, Glyph, errorMessage, statusTone, textRoleVariants, useAuthoredResourceMutation, useToast, type CardActionContext, type Tone } from "@angee/ui";
+import { useAuthoredQuery } from "@angee/refine";
 
 import {
+  AddonChangePreview,
+  DisableAddon,
   InstallAddon,
   PLATFORM_ADDON_MUTATION_INVALIDATES,
-  UninstallAddon,
 } from "../documents";
 import { usePlatformT } from "../i18n";
+import { AddonChangeDialog, type AddonChangeAction } from "./AddonChangeDialog";
 
 /** The reflection resource the board reads + invalidates after every lifecycle write. */
 export const ADDON_MODEL = "platform.Addon";
@@ -90,9 +93,10 @@ export function AddonCard({ row }: { row: AddonResourceRow }): ReactElement {
 }
 
 /**
- * The card footer lifecycle controls. An enabled addon offers Uninstall (locked for a
- * forced/depended-on addon — the server refuses it too); an available/removed one
- * offers Install, or shows the pending-restart state once it is queued. Both writes go
+ * The card footer lifecycle controls. An enabled addon offers Disable; required
+ * addons still open the server-owned refusal preview. An available addon offers
+ * Install; a removed addon offers Reinstall through the same server-owned preview.
+ * Pending rows show the restart state once queued. Both writes go
  * through the platform AddonInstaller mutations and refetch the reflected board.
  */
 export function AddonCardActions({
@@ -104,60 +108,89 @@ export function AddonCardActions({
 }): ReactNode {
   const t = usePlatformT();
   const toast = useToast();
+  const [action, setAction] = useState<AddonChangeAction | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const applyingRef = useRef(false);
+  const preview = useAuthoredQuery(
+    AddonChangePreview,
+    { addon: row.id, action: action ?? "INSTALL" },
+    { enabled: action !== null },
+  );
   // Invalidate the board only on an *effective* write — a server refusal (`ok: false`)
   // changed nothing, so it should not trigger a refetch.
   const [install, installState] = useAuthoredResourceMutation(InstallAddon, {
     invalidateModels: PLATFORM_ADDON_MUTATION_INVALIDATES,
     shouldInvalidate: (data) => Boolean(data?.install?.ok),
   });
-  const [uninstall, uninstallState] = useAuthoredResourceMutation(UninstallAddon, {
+  const [disable, disableState] = useAuthoredResourceMutation(DisableAddon, {
     invalidateModels: PLATFORM_ADDON_MUTATION_INVALIDATES,
-    shouldInvalidate: (data) => Boolean(data?.uninstall?.ok),
+    shouldInvalidate: (data) => Boolean(data?.disable?.ok),
   });
-  const busy = installState.fetching || uninstallState.fetching;
+  const applying = installState.fetching || disableState.fetching;
+  const busy = applying || preview.isFetching;
 
   const run = useCallback(
-    async (kind: "install" | "uninstall") => {
+    async () => {
+      const change = preview.data?.addon_change_preview;
+      if (!action || !change?.can_apply || applyingRef.current) return;
+      applyingRef.current = true;
       try {
         const result =
-          kind === "install"
-            ? (await install({ addon: row.id }))?.install
-            : (await uninstall({ addon: row.id }))?.uninstall;
+          action === "INSTALL"
+            ? (await install({ addon: row.id, revision: change.revision }))?.install
+            : (await disable({ addon: row.id, revision: change.revision }))?.disable;
         if (result?.ok) {
           toast.success({ title: result.message });
+          setAction(null);
           context.refresh();
         } else {
-          toast.danger({ title: result?.message ?? t("apps.actionFailed") });
+          const message = result?.message ?? t("apps.actionFailed");
+          setApplyError(message);
+          toast.danger({ title: message });
+          await preview.refetch();
         }
       } catch (cause) {
-        toast.danger({ title: errorMessage(cause, t("apps.actionFailed")) });
+        const message = errorMessage(cause, t("apps.actionFailed"));
+        setApplyError(message);
+        toast.danger({ title: message });
+      } finally {
+        applyingRef.current = false;
       }
     },
-    [install, uninstall, row.id, toast, t, context],
+    [action, context, disable, install, preview.data, preview.refetch, row.id, t, toast],
   );
 
-  // Pending first: a queued change (install *or* uninstall) shows the restart state and
-  // hides the live action, so a composed-but-removed root cannot be uninstalled twice.
-  if (row.pending) {
-    return (
-      <Button size="sm" variant="ghost" disabled>
-        {t("apps.pendingRestart")}
-      </Button>
-    );
-  }
+  const dialog = action ? (
+    <AddonChangeDialog
+      action={action}
+      addonLabel={row.label}
+      preview={preview.data?.addon_change_preview ?? null}
+      loading={preview.isFetching}
+      applying={applying}
+      error={preview.error ? errorMessage(preview.error, t("apps.actionFailed")) : applyError}
+      onRetry={() => { setApplyError(null); void preview.refetch(); }}
+      onConfirm={() => { void run(); }}
+      onCancel={() => { setAction(null); setApplyError(null); }}
+    />
+  ) : null;
+
+  // Pending first: a queued install or disable shows the restart state and
+  // hides the live action, so a composed-but-disabled root cannot be queued twice.
+  if (row.pending) return null;
   if (row.state === "enabled") {
-    return (
+    return (<>
       <Button
         size="sm"
         variant="ghost"
-        disabled={row.forced || busy}
+        disabled={busy}
         title={row.forced ? t("apps.forcedHint") : undefined}
-        onClick={() => void run("uninstall")}
+        onClick={() => { setApplyError(null); setAction("DISABLE"); }}
       >
-        <Glyph decorative name="trash" />
-        {t("apps.uninstall")}
+        <Glyph decorative name="minus" />
+        {t("apps.disable")}
       </Button>
-    );
+      {dialog}
+    </>);
   }
   if (row.source === "remote") {
     // Known from a marketplace source but not materialised — the local installer
@@ -170,10 +203,11 @@ export function AddonCardActions({
       </Button>
     );
   }
-  return (
-    <Button size="sm" variant="primary" disabled={busy} onClick={() => void run("install")}>
+  return (<>
+    <Button size="sm" variant="primary" disabled={busy} onClick={() => { setApplyError(null); setAction("INSTALL"); }}>
       <Glyph decorative name="plus" />
-      {t("apps.install")}
+      {t(row.state === "removed" ? "apps.reinstall" : "apps.install")}
     </Button>
-  );
+    {dialog}
+  </>);
 }

@@ -36,7 +36,7 @@ export function useDocumentSubscription<
   options: DocumentSubscriptionOptions<TData> = {},
 ): DocumentSubscriptionRun<TData> {
   const client = useOperatorWsClient();
-  const enabled = options.enabled ?? true;
+  const enabled = (options.enabled ?? true) && client !== null;
   const stable = useStableVariables(variables);
   const onDataRef = useRef(options.onData);
   onDataRef.current = options.onData;
@@ -56,6 +56,7 @@ export function useDocumentSubscription<
       return;
     }
     setState((prev) => ({ ...prev, fetching: true, error: null }));
+    if (!client) return;
     const dispose = client.subscribe<TData>(
       { query, variables: stable },
       {

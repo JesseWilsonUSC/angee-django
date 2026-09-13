@@ -10,6 +10,7 @@ export const OperatorConnectionQuery = graphql(`
     operator_connection {
       endpoint
       token
+      restart_job
     }
   }
 `);

@@ -91,6 +91,7 @@ import { createAngeeI18nRuntime } from "./providers/i18n";
 import {
   type BaseAddon,
   type BaseAddonRoute,
+  type BaseLayoutProvider,
   type RefineLayoutConfig,
 } from "./define-base-addon";
 import {
@@ -126,6 +127,7 @@ export {
   type BaseAddon,
   type BaseAddonRoute,
   type DashboardPageRouteOptions,
+  type BaseLayoutProvider,
   type ResourcePageRoutesOptions,
   type RefineLayoutChromeProps,
   type RefineLayoutConfig,
@@ -378,6 +380,7 @@ export function createApp(input: CreateAppInput): AngeeApp {
     authProvider: refineAuthProvider,
     queryClient,
     loginPath,
+    layoutProviders: composed.layoutProviders as readonly BaseLayoutProvider[],
   });
   createAddonRouteNodes({
     routes,

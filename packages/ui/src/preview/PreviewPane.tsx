@@ -3,10 +3,10 @@ import { usePreviews } from "../runtime";
 
 import { EmptyState } from "../fragments/EmptyState";
 import { LazyBoundary } from "../fragments/LazyBoundary";
-import { LoadingPanel } from "../fragments/LoadingPanel";
 import { useUiT } from "../i18n";
 import { builtinPreviewProviders } from "./builtins";
 import { displayMime } from "./model";
+import { PreviewSkeleton } from "./PreviewSkeleton";
 import {
   resolvePreviewProvider,
   type PreviewFile,
@@ -54,7 +54,7 @@ export function PreviewPane({
   const instanceKey = `${provider.id}:${file.url}`;
   return (
     <LazyBoundary
-      pending={<LoadingPanel message={t("preview.loading")} />}
+      pending={<PreviewSkeleton label={t("preview.loading")} />}
       fallback={empty}
       resetKey={instanceKey}
     >

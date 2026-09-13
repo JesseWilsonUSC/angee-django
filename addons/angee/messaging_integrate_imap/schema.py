@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated, cast
 
 import strawberry
@@ -10,10 +11,12 @@ from django.core.exceptions import ImproperlyConfigured
 from django.views.decorators.debug import sensitive_variables
 from graphql import GraphQLError
 
-from angee.graphql.actions import ActionResult, action_target
+from angee.graphql.actions import ActionResult, action_target, authorized_action_target
+from angee.graphql.data.pydantic_resource import pydantic_node
 from angee.graphql.ids import PublicID
 from angee.iam.permissions import ADMIN_PERMISSION_CLASSES, session_user
 from angee.messaging.schema import ChannelType
+from angee.messaging_integrate_imap.backend import ImapSampleImport, ImapSampleMessage, ImapSamplePreview
 from angee.messaging_integrate_imap.connect import (
     ImapConnectError,
     connect_imap_channel,
@@ -21,11 +24,36 @@ from angee.messaging_integrate_imap.connect import (
 )
 
 Channel = apps.get_model("messaging", "Channel")
+ImapSampleMessageType = pydantic_node(ImapSampleMessage, name="ImapSampleMessage")
+ImapSamplePreviewType = pydantic_node(ImapSamplePreview, name="ImapSamplePreview")
+ImapSampleImportType = pydantic_node(ImapSampleImport, name="ImapSampleImport")
 
 
 @strawberry.type
 class MessagingImapMutation:
     """Console actions for connecting IMAP-backed message channels."""
+
+    @strawberry.mutation(permission_classes=ADMIN_PERMISSION_CLASSES)
+    def preview_imap_sample(
+        self, info: strawberry.Info, id: PublicID, mailbox: str, since: date, before: date, limit: int = 20,
+    ) -> ImapSamplePreviewType:
+        """Preview headers from a bounded historical mailbox selection."""
+
+        channel = authorized_action_target(info, Channel, id, "write")
+        return channel.preview_imap_sample(
+            actor=session_user(info), mailbox=mailbox, since=since, before=before, limit=limit,
+        )
+
+    @strawberry.mutation(permission_classes=ADMIN_PERMISSION_CLASSES)
+    def import_imap_sample(
+        self, info: strawberry.Info, id: PublicID, mailbox: str, uidvalidity: int, uids: list[int],
+    ) -> ImapSampleImportType:
+        """Import the explicit selection without activating live message triggers."""
+
+        channel = authorized_action_target(info, Channel, id, "write")
+        return channel.import_imap_sample(
+            actor=session_user(info), mailbox=mailbox, uidvalidity=uidvalidity, uids=uids,
+        )
 
     @strawberry.mutation(permission_classes=ADMIN_PERMISSION_CLASSES)
     def connect_imap_channel(

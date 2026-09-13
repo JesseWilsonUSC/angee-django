@@ -166,6 +166,44 @@ input Int_comparison_exp {
 
 scalar JSON
 
+type JobRunNode {
+  name: String!
+  kind: JobRunNodeKind!
+  status: JobRunStatus!
+  message: String
+}
+
+enum JobRunNodeKind {
+  JOB
+  SERVICE
+}
+
+type JobRunOperation {
+  id: ID!
+  rootJob: String!
+  chainedRestart: Boolean!
+  status: JobRunStatus!
+  currentStep: String
+  startedAt: Time!
+  endedAt: Time
+  nodes: [JobRunNode!]!
+  output: String
+  error: String
+}
+
+type JobRunPreview {
+  jobs: [String!]!
+  services: [String!]!
+}
+
+enum JobRunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  BLOCKED
+}
+
 type JobState {
   id: ID!
   name: String!
@@ -199,7 +237,7 @@ type Mutation {
   stackDev(input: StackRuntimeInput): MutationResult
   stackDown: MutationResult
   stackDestroy(purge: Boolean): MutationResult
-  jobRun(name: String!, inputs: [KeyValueInput!]): String!
+  jobRun(name: String!, inputs: [KeyValueInput!], chainedRestart: Boolean = false): JobRunOperation!
   fileWrite(source: String!, path: String!, content: String!, etag: String): FileRef!
   serviceInit(input: ServiceInput!): MutationResult
   serviceUpdateFromTemplate(name: String!, input: ServiceTemplateUpdateInput): ServiceTemplateUpdateResult!
@@ -247,6 +285,9 @@ type PreflightFailure {
 }
 
 type Query {
+  jobRunOperation(id: ID!): JobRunOperation
+  latestJobRun: JobRunOperation
+  jobRunPreview(name: String!, chainedRestart: Boolean!): JobRunPreview!
   health: MutationResult
   stackStatus: StackStatus
   stackTemplateInputs: TemplateInputsResponse!
@@ -628,6 +669,8 @@ type TemplateInputsResponse {
   recorded: [KeyValue!]!
   unrecorded: [String!]!
 }
+
+scalar Time
 
 input WorkspaceCreateInput {
   template: String!

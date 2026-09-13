@@ -21,7 +21,7 @@ import {
   recordValue,
   stringValue,
 } from "./dialect/wire";
-import { invalidateAuthoredQueries } from "./query-invalidation";
+import { invalidateAuthoredQueries, invalidateAuthoredQueriesForChange } from "./query-invalidation";
 
 type FetchFn = typeof globalThis.fetch;
 type GraphQLWsClient = ReturnType<typeof graphqlWS.createClient>;
@@ -348,8 +348,18 @@ function invalidateAuthoredQueriesForEvent(
   event: LiveEvent,
 ): void {
   const model = stringValue(recordValue(event.payload)?.model);
+  const id = stringValue(recordValue(event.payload)?.id);
+  const relatedRecords = Array.isArray(recordValue(event.payload)?.relatedRecords)
+    ? (recordValue(event.payload)?.relatedRecords as unknown[]).flatMap((value) => {
+      const record = recordValue(value);
+      const relatedModel = stringValue(record?.model);
+      const relatedId = stringValue(record?.id);
+      return relatedModel && relatedId ? [{ model: relatedModel, id: relatedId }] : [];
+    })
+    : [];
   if (!queryClient || !model) return;
-  void invalidateAuthoredQueries(queryClient, [model]);
+  if (id) void invalidateAuthoredQueriesForChange(queryClient, model, id, relatedRecords);
+  else void invalidateAuthoredQueries(queryClient, [model]);
 }
 
 function hasuraOptions(
@@ -418,7 +428,7 @@ function changeSubscriptionDocument(changesRoot: string): string {
   // multi-word ones to the camelCase keys `changeEventFromResult` reads.
   return (
     `subscription angee_${root} { ` +
-    `${root} { model id action ` +
+    `${root} { model id action relatedRecords: related_records { model id } ` +
     `changedFields: changed_fields changedValues: changed_values } }`
   );
 }
@@ -441,6 +451,9 @@ function changeEventFromResult(
       action,
       changedFields: Array.isArray(event?.changedFields) ? event.changedFields : [],
       changedValues: recordValue(event?.changedValues) ?? {},
+      ...(Array.isArray(event?.relatedRecords) && event.relatedRecords.length > 0
+        ? { relatedRecords: event.relatedRecords }
+        : {}),
     },
     date: new Date(),
     meta: {

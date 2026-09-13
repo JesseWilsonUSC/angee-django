@@ -77,6 +77,32 @@ export const IamUsers = graphql(`
   }
 `);
 
+export const IamAssignmentSubjects = graphql(`
+  query IamAssignmentSubjects($limit: Int = 500) {
+    users(limit: $limit, order_by: [{ username: asc }]) {
+      id
+      username
+      first_name
+      last_name
+      email
+      display_name
+      is_active
+      assignment_subject
+    }
+    users_aggregate {
+      aggregate { count }
+    }
+    groups(limit: $limit, order_by: [{ name: asc }]) {
+      id
+      name
+      assignment_subject
+    }
+    groups_aggregate {
+      aggregate { count }
+    }
+  }
+`);
+
 export const IamRebacSchema = graphql(`
   query IamRebacSchema {
     rebac_schema {
@@ -141,6 +167,10 @@ export type IAMOverviewVariables = DocumentVariables<typeof IamOverview>;
 export type IAMRole = DocumentType<typeof IamOverview>["iam_roles"][number];
 
 export type IAMUsersVariables = DocumentVariables<typeof IamUsers>;
+
+export type IAMAssignmentSubjectsVariables = DocumentVariables<typeof IamAssignmentSubjects>;
+
+export type IAMAssignmentSubjectsData = DocumentType<typeof IamAssignmentSubjects>;
 
 /** One privileged-grant row, derived from the `IamOverview` selection. The
  * backend `IAMGrantType` computes the full row (`subject`, `role_name`,

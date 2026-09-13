@@ -41,10 +41,20 @@ export function ShareListChrome(): React.ReactElement {
   />;
 }
 
-function ShareAccess({ resource, targetIds, record }: {
+/** Open the shared access surface for an embedded single-record caller. */
+export function RecordAccessPanel({ resource, recordId, recordLabel }: {
+  resource: string;
+  recordId: string;
+  recordLabel: string;
+}): React.ReactElement {
+  return <ShareAccess resource={resource} targetIds={[recordId]} label={recordLabel} />;
+}
+
+function ShareAccess({ resource, targetIds, record, label }: {
   resource: string;
   targetIds: readonly string[];
   record?: Row | null;
+  label?: string;
 }): React.ReactElement | null {
   const listedModel = useModelMetadata(resource);
   const accessResource = listedModel?.resource.grantable?.length
@@ -57,13 +67,15 @@ function ShareAccess({ resource, targetIds, record }: {
     resource={model.resource}
     targetIds={targetIds}
     record={record}
+    label={label}
   />;
 }
 
-function BoundShareAccess({ resource, targetIds, record }: {
+function BoundShareAccess({ resource, targetIds, record, label: suppliedLabel }: {
   resource: DataResourceMetadata;
   targetIds: readonly string[];
   record?: Row | null;
+  label?: string;
 }): React.ReactElement {
   const t = useUiT();
   const [open, setOpen] = React.useState(false);
@@ -113,11 +125,11 @@ function BoundShareAccess({ resource, targetIds, record }: {
   );
   const representation = record && resource.recordRepresentation
     ? rowValueAtPath(record, resource.recordRepresentation) : null;
-  const label = typeof representation === "string" && representation
+  const label = suppliedLabel ?? (typeof representation === "string" && representation
     ? representation
     : stableTargetIds.length === 1
       ? modelLabelSegment(resource.modelLabel)
-      : t("access.selection", { count: stableTargetIds.length });
+      : t("access.selection", { count: stableTargetIds.length }));
   return <ManageAccessDialog
     open={open}
     onOpenChange={setOpen}

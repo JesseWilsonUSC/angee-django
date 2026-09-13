@@ -167,6 +167,14 @@ class HandleType(AngeeNode):
         return cast("Any", self).resolved_confidence
 
 
+@strawberry.type
+class PartyHandleEvidenceType:
+    """One actor-readable native record supporting a handle association claim."""
+
+    model: str
+    id: strawberry.ID
+
+
 @strawberry_django.type(PartyHandle)
 class PartyHandleType(AngeeNode):
     """GraphQL projection of a confidence-bearing party↔handle link."""
@@ -179,6 +187,19 @@ class PartyHandleType(AngeeNode):
     is_dismissed: auto
     created_at: auto
     updated_at: auto
+
+    @strawberry_django.field(only=["metadata"])
+    def evidence_refs(self, info: strawberry.Info) -> list["PartyHandleEvidenceType"]:
+        """Return at most twenty actor-readable records supporting this claim."""
+
+        page = cast(Any, self).evidence_page(session_user(info))
+        return [PartyHandleEvidenceType(model=item.model, id=item.id) for item in page.items]
+
+    @strawberry_django.field(only=["metadata"])
+    def evidence_truncated(self, info: strawberry.Info) -> bool:
+        """Return whether more retained evidence exists beyond the bounded projection."""
+
+        return bool(cast(Any, self).evidence_page(session_user(info)).truncated)
 
 
 @strawberry_django.type(Address)

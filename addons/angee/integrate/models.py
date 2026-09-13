@@ -1431,7 +1431,14 @@ class IntegrationQuerySet(AngeeQuerySet[Any]):
     def due_for_enqueue(self, *, timestamp: datetime, stale_before: datetime) -> Any:
         """Return bridge rows due for a new queue attempt or stale recovery."""
 
-        return self.filter(Q(next_sync_at__lte=timestamp) | Q(sync_stage="queued", updated_at__lte=stale_before))
+        return self.filter(
+            Q(lifecycle=IntegrationLifecycle.CONNECTED, next_sync_at__lte=timestamp)
+            | Q(
+                lifecycle__in=(IntegrationLifecycle.CONNECTED, IntegrationLifecycle.PAUSED),
+                sync_stage="queued",
+                updated_at__lte=stale_before,
+            )
+        )
 
     def live_account_owners(
         self,
@@ -1683,7 +1690,14 @@ class Integration(SqidMixin, ImplDefaultsMixin, AuditMixin, AngeeModel):
         blank=True,
         related_name="integrations",
     )
-    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="integrations")
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="integrations",
+    )
+    """User owner for personal connections; null marks a platform-managed install resource."""
     lifecycle = StateField(choices_enum=IntegrationLifecycle, default=IntegrationLifecycle.DISCONNECTED)
     """Declared connection intent for this integration.
 
@@ -1992,8 +2006,9 @@ class Bridge(models.Model, metaclass=RebacModelBase):
     last_sync_summary = models.JSONField(default=dict, blank=True)
     next_sync_at = models.DateTimeField(null=True, blank=True, db_index=True)
     """Next scheduler poll. NULL means unscheduled: a bridge enters the poll loop
-    when its first (eager) sync records a result; the scheduler claims a due row
-    by pushing this one interval out for the duration of the run."""
+    when its first connected sync records a result; paused one-shot syncs keep it
+    NULL. The scheduler claims a connected due row by pushing this one interval
+    out for the duration of the run."""
 
     class Meta:
         """Django model options for abstract bridge inheritance."""
@@ -2414,9 +2429,16 @@ class Bridge(models.Model, metaclass=RebacModelBase):
         try:
             with bridge_sync_context(), bridge_progress_context(self):
                 result = self.sync()
-            self.record_sync(result, now=now)
+            # Partitioned syncs report through thread-local Bridge instances.
+            # Re-read their last merged payload before this parent writes the
+            # terminal marker, or its stale in-memory value drops budget/cursor
+            # detail. The scheduler timestamp identifies the attempt; completion
+            # is when the external work actually finished.
+            self.refresh_from_db(fields=["sync_progress"])
+            self.record_sync(result, now=timezone.now())
         except Exception as error:  # noqa: BLE001 — sync failure is telemetry, then caller policy.
-            self.record_sync_error(error, now=now)
+            self.refresh_from_db(fields=["sync_progress"])
+            self.record_sync_error(error, now=timezone.now())
             raise
         return result
 
@@ -2483,11 +2505,13 @@ class Bridge(models.Model, metaclass=RebacModelBase):
     def _next_sync_at(self, *, now: datetime) -> datetime | None:
         """Return the next polling timestamp from this bridge's interval.
 
-        ``None`` keeps the bridge unscheduled — a push-mode child (a live chat
-        channel) overrides this to stay out of the poll loop while its live
-        ingest owns delivery.
+        ``None`` keeps paused/disconnected bridges unscheduled after an explicit
+        one-shot sync. A push-mode child (a live chat channel) may also override
+        this to stay out of the poll loop while its live ingest owns delivery.
         """
 
+        if IntegrationLifecycle.from_value(self.lifecycle) is not IntegrationLifecycle.CONNECTED:
+            return None
         return now + timedelta(seconds=int(self.poll_interval))
 
 

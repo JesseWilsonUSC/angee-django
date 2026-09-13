@@ -5,6 +5,8 @@ import { AtSign, Building2, CircleDot, Contact, HeartHandshake, LayoutDashboard,
 import { enPartiesMessages } from "./i18n";
 import { directoryForm } from "./DirectoriesPage";
 import { organizationForm } from "./OrganizationsPage";
+import { personForm } from "./PersonForm";
+import { partyPickerWidget } from "./PartyPicker";
 
 // One rail root ("Parties") whose children are the People and Organizations
 // pages. The root is route-less and inherits its target from the first child.
@@ -103,11 +105,14 @@ const parties = defineBaseAddon({
   forms: {
     "parties.Directory": directoryForm,
     "parties.Organization": organizationForm,
+    "parties.Person": personForm,
   },
+  widgets: { partyPicker: partyPickerWidget },
 });
 
 export { PARTIES_OVERVIEW_SLOT, PARTIES_REVIEW_TOOLBAR_SLOT, PERSON_FORM_FIELDS_SLOT, ORGANIZATION_FORM_FIELDS_SLOT } from "./slots";
 export { senderDisplayName, type SenderIdentity } from "./identity";
 export { addressFields, PartyAddresses } from "./PartyAddresses";
+export { PartyPicker, partyPickerWidget, type PartyPickerProps } from "./PartyPicker";
 
 export default parties;

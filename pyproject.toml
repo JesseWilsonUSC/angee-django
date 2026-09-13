@@ -143,9 +143,6 @@ default-groups = ["dev", "addons"]
 # --project). The rendered stack host pins its own stack-owned cache; every
 # other invocation uses uv's default per-user cache.
 
-[tool.uv.sources]
-django-zed-rebac = { git = "https://github.com/ang-ee/django-zed-rebac.git", rev = "de13a3dc133d8db8b96ac248f0c1e5e002f7c190" }
-
 [tool.hatch-angee]
 # This repository publishes the framework core only. Folder addons remain
 # in-repo source content and must never generate wheel seams or entry points.

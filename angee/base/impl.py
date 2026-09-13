@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, ClassVar, NoReturn, cast, get_args
@@ -19,6 +20,7 @@ from django.core.exceptions import FieldDoesNotExist, ImproperlyConfigured, Vali
 from django.db import models, router
 from django.utils.module_loading import import_string
 from django_choices_field import TextChoicesField
+from jsonschema import Draft202012Validator
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 from rebac import system_context
@@ -48,7 +50,56 @@ class ImplChoice:
     config_schema: dict[str, Any] | None
 
 
-_SCHEMA_COMMON_KEYS = frozenset({"title", "description", "default"})
+_SCHEMA_COMMON_KEYS = frozenset({"title", "description", "default", "widget", "relation"})
+_POLICY_IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
+_FILTER_OPERATORS = (
+    "eq", "ne", "eqs", "nes", "lt", "gt", "lte", "gte", "in", "nin", "ina", "nina",
+    "contains", "ncontains", "containss", "ncontainss", "between", "nbetween", "null", "nnull",
+    "startswith", "nstartswith", "startswiths", "nstartswiths", "endswith", "nendswith", "endswiths",
+    "nendswiths",
+)
+_FORM_SPEC_RELATION_SCHEMA: dict[str, Any] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$defs": {
+        "json": {
+            "oneOf": [
+                {"type": "null"}, {"type": "string"}, {"type": "number"}, {"type": "boolean"},
+                {"type": "array", "items": {"$ref": "#/$defs/json"}},
+                {"type": "object", "additionalProperties": {"$ref": "#/$defs/json"}},
+            ]
+        },
+        "filter": {"oneOf": [
+        {
+            "type": "object", "additionalProperties": False, "required": ["operator", "value"],
+            "properties": {
+                "operator": {"enum": ["and", "or"]}, "key": {"type": "string"},
+                "value": {"type": "array", "items": {"$ref": "#/$defs/filter"}},
+            },
+        },
+        {
+            "type": "object", "additionalProperties": False, "required": ["operator", "field"],
+            "properties": {
+                "operator": {"enum": list(_FILTER_OPERATORS)},
+                "field": {"type": "string", "minLength": 1}, "value": {"$ref": "#/$defs/json"},
+            },
+        },
+    ]}},
+    "type": "object", "additionalProperties": False, "required": ["resource"],
+    "properties": {
+        "resource": {"type": "string", "minLength": 1},
+        "permission": {"type": "string", "pattern": _POLICY_IDENTIFIER.pattern},
+        "labelField": {"type": "string", "minLength": 1},
+        "filters": {"type": "array", "items": {"$ref": "#/$defs/filter"}},
+        "create": {
+            "type": "object", "additionalProperties": False, "required": ["resource"],
+            "properties": {
+                "resource": {"type": "string", "minLength": 1},
+                "defaultValues": {"type": "object", "additionalProperties": {"$ref": "#/$defs/json"}},
+            },
+        },
+    },
+}
+_FORM_SPEC_RELATION_VALIDATOR = Draft202012Validator(_FORM_SPEC_RELATION_SCHEMA)
 
 
 class _ConfigFormSpecProjector:
@@ -212,7 +263,28 @@ class _ConfigFormSpecProjector:
             result["description"] = description
         if "default" in schema:
             result["defaultValue"] = copy.deepcopy(schema["default"])
+        if "widget" in schema:
+            widget = schema["widget"]
+            if not isinstance(widget, str) or not widget:
+                self._unsupported("config", "non-string widget")
+            result["widget"] = widget
+        if "relation" in schema:
+            if projected.get("type") != "string":
+                self._unsupported("config", "relation on a non-string field")
+            if result.get("widget", "many2one") != "many2one":
+                self._unsupported("config", "relation with a non-relation widget")
+            result["relation"] = self._relation(schema["relation"])
         return result
+
+    def _relation(self, value: Any) -> dict[str, Any]:
+        error = next(_FORM_SPEC_RELATION_VALIDATOR.iter_errors(value), None)
+        if error is not None:
+            location = ".".join(str(part) for part in error.absolute_path)
+            self._unsupported(
+                "config",
+                f"invalid relation{f' at {location}' if location else ''}: {error.message}",
+            )
+        return copy.deepcopy(value)
 
     def _reject_keywords(self, schema: dict[str, Any], allowed: set[str] | frozenset[str], path: str) -> None:
         unsupported = sorted(set(schema) - set(allowed))
