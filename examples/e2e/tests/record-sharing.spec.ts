@@ -95,4 +95,47 @@ test.describe("shared record access", () => {
       page.getByRole("button", { name: "Share", exact: true }),
     ).toHaveCount(1);
   });
+
+  test("agents, users, and groups share one principal Access surface", async ({
+    page,
+  }) => {
+    const expectAccessSurface = async (): Promise<void> => {
+      const access = page.getByRole("tab", { name: "Access", exact: true });
+      await expect(access).toBeVisible({ timeout: 20_000 });
+      await access.click();
+
+      const roles = page.getByRole("tab", { name: /^Roles \d+$/ });
+      const grants = page.getByRole("tab", { name: /^Grants \d+$/ });
+      const permissions = page.getByRole("tab", { name: /^Permissions \d+$/ });
+      await expect(roles).toBeVisible();
+      await expect(grants).toBeVisible();
+      await expect(permissions).toBeVisible();
+
+      await grants.click();
+      await expect(page.getByRole("button", { name: "Sort Target (not sorted)" })).toBeVisible();
+      await permissions.click();
+      await expect(page.getByText(/Permission paths reached by effective roles/)).toBeVisible();
+      await expect(page.getByRole("button", { name: "Sort Permission (not sorted)" })).toBeVisible();
+    };
+
+    await page.goto("/agents");
+    const agent = page.getByRole("link", { name: "Open Demo Agent", exact: true });
+    await expect(agent).toBeVisible({ timeout: 20_000 });
+    await agent.click();
+    await expectAccessSurface();
+
+    await page.goto("/iam/users");
+    const user = page.getByRole("link", { name: "Open admin", exact: true });
+    await expect(user).toBeVisible({ timeout: 20_000 });
+    await user.click();
+    await expectAccessSurface();
+
+    await page.goto("/iam/groups");
+    const group = page.getByRole("link", { name: "Open Admins", exact: true });
+    await expect(group).toBeVisible({ timeout: 20_000 });
+    await group.click();
+    await expect(page.getByRole("tab", { name: "Members", exact: true })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Bindings", exact: true })).toHaveCount(0);
+    await expectAccessSurface();
+  });
 });
