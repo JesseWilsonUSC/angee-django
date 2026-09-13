@@ -127,7 +127,7 @@ export class NotesPage extends PageObject {
     }
     await this.recordRows.first().getByRole("link", { name: /^Open / }).click();
     await this.page.waitForURL(/\/notes\/.+/, { timeout: 10000 });
-    await this.page.locator(".cm-content").first().waitFor({ timeout: 15000 });
+    await this.titleInput.waitFor({ state: "visible", timeout: 15000 });
   }
 
   /** Open a specific record through the same public detail route as its link. */
