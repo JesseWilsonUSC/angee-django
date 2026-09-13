@@ -48,6 +48,7 @@ from angee.workflows.attempts import (
     MapExpansionPlan,
     MapItemSource,
     RecoveryCapability,
+    RecoveryMode,
     RecoveryPlan,
     RetryIntent,
     deserialize_decision_specs,
@@ -563,12 +564,26 @@ class WorkflowRunManager(AngeeManager.from_queryset(WorkflowRunQuerySet)):  # ty
         with system_context(reason="workflows.runs.start"), transaction.atomic(using=alias):
             locked_parent = None
             if parent_run_id is not None:
-                system_queryset(self.model, using=alias, lock=("self",)).get(pk=parent_run_id)
+                locked_parent_run = system_queryset(
+                    self.model, using=alias, lock=("self",)
+                ).select_related("recovery_source_attempt__step_run").get(pk=parent_run_id)
                 locked_parent = system_queryset(step_run_model, using=alias, lock=("self",)).get(
                     pk=parent_step_run.pk
                 )
                 if locked_parent.run_id != parent_run_id:
                     raise OperationalError("Parent workflow step changed while locking.")
+                recovery_source = locked_parent_run.recovery_source_attempt
+                if (
+                    origin == RunOrigin.WORKFLOW
+                    and locked_parent_run.origin == RunOrigin.RECOVERY
+                    and locked_parent_run.recovery_mode == RecoveryMode.FRESH
+                    and recovery_source is not None
+                    and recovery_source.step_run.step_id == locked_parent.step_id
+                    and recovery_source.step_run.map_index == locked_parent.map_index
+                ):
+                    locked_parent = self._fresh_recovery_child_parent(
+                        locked_parent_run, locked_parent, using=alias,
+                    )
             head = system_queryset(workflow_model, using=alias, lock=("self",)).get(pk=head_id)
             locked_trigger = None
             if trigger is not None:
@@ -591,6 +606,60 @@ class WorkflowRunManager(AngeeManager.from_queryset(WorkflowRunQuerySet)):  # ty
                 using=alias,
                 validate_new=validate_new,
             )
+
+    def _fresh_recovery_child_parent(
+        self, recovery_run: Any, recovery_step_run: Any, *, using: str,
+    ) -> Any:
+        """Resolve a replayed child handoff to its oldest exact FRESH source slot."""
+
+        attempt_model = self.model._meta.apps.get_model("workflows", "StepAttempt")
+        step_run_model = self.model._meta.apps.get_model("workflows", "StepRun")
+        current = system_queryset(attempt_model, using=using, lock=("self",)).filter(
+            pk=recovery_step_run.current_attempt_id,
+        ).first()
+        if (
+            current is None
+            or current.step_run_id != recovery_step_run.pk
+            or current.cause != AttemptCause.MANUAL_RETRY
+            or current.recovery_mode != RecoveryMode.FRESH
+            or current.recovery_source_attempt_id != recovery_run.recovery_source_attempt_id
+            or current.started_at is None
+            or current.result_recorded_at is not None
+            or current.lease_revoked_at is not None
+        ):
+            raise ValidationError({
+                "parent_step_run": "Recovery child handoff requires the active exact source attempt."
+            })
+        parent = recovery_step_run
+        seen: set[int] = set()
+        while (
+            current.cause == AttemptCause.MANUAL_RETRY
+            and current.recovery_mode == RecoveryMode.FRESH
+            and current.recovery_source_attempt_id is not None
+        ):
+            if current.pk in seen:
+                raise ValidationError({"parent_step_run": "Recovery attempt lineage contains a cycle."})
+            seen.add(current.pk)
+            source = system_queryset(
+                attempt_model, using=using, lock=("self",)
+            ).select_related("step_run").get(pk=current.recovery_source_attempt_id)
+            source_parent = source.step_run
+            if (
+                source_parent.step_id != parent.step_id
+                or source_parent.map_index != parent.map_index
+                or source_parent.current_attempt_id != source.pk
+                or source_parent.status not in {StepRunStatus.FAILED, StepRunStatus.CANCELED}
+                or source.input_present != current.input_present
+                or not json_values_equal(source.input, current.input)
+            ):
+                raise ValidationError({
+                    "parent_step_run": "Recovery child handoff source identity changed."
+                })
+            parent = system_queryset(
+                step_run_model, using=using, lock=("self",)
+            ).get(pk=source_parent.pk)
+            current = source
+        return parent
 
     def reprocess(self, source_run: Any, *, actor: Any, request_key: str) -> Any:
         """Start an idempotent new current-publication run for the same subject.
@@ -1526,7 +1595,7 @@ class WorkflowRunManager(AngeeManager.from_queryset(WorkflowRunQuerySet)):  # ty
             retained = system_queryset(self.model, using=using, lock=("self",)).filter(
                 parent_step_run=parent_step_run,
             ).first()
-        elif run_dedup_key:
+        if retained is None and run_dedup_key:
             retained = system_queryset(self.model, using=using, lock=("self",)).filter(
                 dedup_key=run_dedup_key,
             ).first()

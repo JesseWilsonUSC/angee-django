@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from threading import Barrier
 
 import pytest
@@ -135,6 +136,204 @@ def test_recovery_reuses_exact_input_and_records_nonduplicated_artifacts(
     assert [(artifact.declaration_index, artifact.label) for artifact in artifacts] == [
         (0, "Recovered workflow")
     ]
+
+
+def test_fresh_recovery_reuses_original_child_handoff_across_multiple_failures(
+    workflow_engine_tables: None,
+    no_workflow_queue: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del workflow_engine_tables, no_workflow_queue
+    actor = get_user_model().objects.create_user(username="recovery-child-owner")
+    source_run, source_step_run, source_attempt, child_head, child = _failed_child_handoff(
+        actor=actor, dedup_key="recovery-child:stable",
+    )
+
+    class FreshChildHandoff(StepImpl):
+        failures_remaining = 1
+        children: list[int] = []
+
+        @classmethod
+        def recovery_capability(cls, *, attempt: object) -> RecoveryCapability:
+            del attempt
+            return RecoveryCapability(RecoveryMode.FRESH)
+
+        def run(self, step_run: object, *, now: object) -> StepResult:
+            del now
+            retained = engine.start(
+                child_head, subject=None, actor=actor,
+                parent_step_run=step_run, dedup_key="recovery-child:stable",
+                origin=RunOrigin.WORKFLOW,
+                input=JsonPresence(True, {"child": "retained"}),
+            )
+            self.children.append(retained.pk)
+            if self.failures_remaining:
+                type(self).failures_remaining -= 1
+                raise RuntimeError("uncertain after child handoff")
+            return StepResult.done(
+                {"child_id": retained.pk}, outcome="done",
+                artifacts=(ArtifactSpec(retained, "Retained child workflow"),),
+            )
+
+    step = source_step_run.step
+    monkeypatch.setattr(type(step), "resolve_impl", lambda self, field: FreshChildHandoff)
+    first_recovery, first_attempt = _execute_recovery(source_attempt, actor=actor, request_key="first")
+    assert first_attempt.result_kind == AttemptResultKind.ERROR
+    assert "uncertain after child handoff" in first_attempt.error
+
+    second_recovery, second_attempt = _execute_recovery(
+        first_attempt, actor=actor, request_key="second",
+    )
+    assert second_attempt.result_kind == AttemptResultKind.DONE
+    assert FreshChildHandoff.children == [child.pk, child.pk]
+    with system_context(reason="recovery child handoff inspection"):
+        retained = list(WorkflowRun.objects.filter(dedup_key="recovery-child:stable"))
+        child.refresh_from_db()
+    assert [row.pk for row in retained] == [child.pk]
+    assert child.parent_step_run_id == source_step_run.pk
+    assert source_run.same_execution_lineage(first_recovery)
+    assert first_recovery.same_execution_lineage(second_recovery)
+    assert child.parent_step_run.run.same_execution_lineage(second_recovery)
+
+
+def test_fresh_recovery_child_handoff_rejects_changed_or_unrelated_identity(
+    workflow_engine_tables: None,
+    no_workflow_queue: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del workflow_engine_tables, no_workflow_queue
+    actor = get_user_model().objects.create_user(username="recovery-child-mismatch-owner")
+    _source_run, source_step_run, source_attempt, child_head, child = _failed_child_handoff(
+        actor=actor, dedup_key="recovery-child:mismatch",
+    )
+
+    class ChangedChildHandoff(StepImpl):
+        @classmethod
+        def recovery_capability(cls, *, attempt: object) -> RecoveryCapability:
+            del attempt
+            return RecoveryCapability(RecoveryMode.FRESH)
+
+        def run(self, step_run: object, *, now: object) -> StepResult:
+            del now
+            engine.start(
+                child_head, subject=None, actor=actor,
+                parent_step_run=step_run, dedup_key="recovery-child:mismatch",
+                origin=RunOrigin.WORKFLOW,
+                input=JsonPresence(True, {"child": "changed"}),
+            )
+            return StepResult.done(outcome="unreachable")
+
+    monkeypatch.setattr(
+        type(source_step_run.step), "resolve_impl", lambda self, field: ChangedChildHandoff,
+    )
+    _recovery, attempt = _execute_recovery(
+        source_attempt, actor=actor, request_key="changed-child",
+    )
+    assert attempt.result_kind == AttemptResultKind.ERROR
+    assert "different immutable facts" in attempt.error
+    with system_context(reason="unrelated child parent fixture"):
+        unrelated_run = WorkflowRun.objects.create(
+            workflow=source_step_run.run.workflow, status="running", created_by=actor,
+        )
+        unrelated_parent = StepRun.objects.create(
+            run=unrelated_run, step=source_step_run.step, status="started",
+        )
+    with pytest.raises(ValidationError, match="different immutable facts"):
+        engine.start(
+            child_head, subject=None, actor=actor,
+            parent_step_run=unrelated_parent, dedup_key="recovery-child:mismatch",
+            origin=RunOrigin.WORKFLOW,
+            input=JsonPresence(True, {"child": "retained"}),
+        )
+    with system_context(reason="mismatched child handoff inspection"):
+        assert WorkflowRun.objects.filter(dedup_key="recovery-child:mismatch").count() == 1
+    assert child.parent_step_run_id == source_step_run.pk
+
+
+def test_fresh_recovery_keeps_new_downstream_child_on_the_recovery_run(
+    workflow_engine_tables: None,
+    no_workflow_queue: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del workflow_engine_tables, no_workflow_queue
+    actor = get_user_model().objects.create_user(username="recovery-downstream-child-owner")
+    child_head = _published_wait_workflow(actor=actor)
+    with system_context(reason="downstream recovery child fixture"):
+        source_workflow, recovered_step = _draft(name="Recovered predecessor", owner=actor)
+        downstream_step = Step.objects.create(
+            workflow=source_workflow, key="handoff", name="Handoff", step_class="handler",
+        )
+        Edge.objects.create(
+            workflow=source_workflow, source=recovered_step, target=downstream_step,
+        )
+        source_run = WorkflowRun.objects.create(
+            workflow=source_workflow, status="running", created_by=actor,
+            input_present=True, input={"parent": "retained"},
+        )
+        recovered_step_run = StepRun.objects.create(
+            run=source_run, step=recovered_step, status="scheduled",
+        )
+    source_attempt = StepAttempt.objects.claim(
+        recovered_step_run,
+        input=AttemptInput(True, {"parent": "retained"}, {"kind": "run_input"}),
+        claimed_at=timezone.now(),
+    ).attempt
+    StepAttempt.objects.admit_invocation(
+        source_attempt.pk, lease_token=source_attempt.lease_token, at=timezone.now(),
+    )
+    StepAttempt.objects.finalize(
+        source_attempt.pk, lease_token=source_attempt.lease_token,
+        result=AttemptResult(AttemptResultKind.ERROR, error="recover predecessor"),
+        recorded_at=timezone.now(),
+    )
+
+    class RecoveredPredecessor(StepImpl):
+        @classmethod
+        def recovery_capability(cls, *, attempt: object) -> RecoveryCapability:
+            del attempt
+            return RecoveryCapability(RecoveryMode.FRESH)
+
+        def run(self, step_run: object, *, now: object) -> StepResult:
+            del step_run, now
+            return StepResult.done(outcome="done")
+
+    class FirstDownstreamHandoff(StepImpl):
+        def run(self, step_run: object, *, now: object) -> StepResult:
+            del now
+            child = engine.start(
+                child_head, subject=None, actor=actor,
+                parent_step_run=step_run, dedup_key="recovery-child:downstream",
+                origin=RunOrigin.WORKFLOW,
+            )
+            return StepResult.done(
+                {"child_id": child.pk}, outcome="done",
+                artifacts=(ArtifactSpec(child, "Downstream child workflow"),),
+            )
+
+    monkeypatch.setattr(
+        type(recovered_step), "resolve_impl",
+        lambda self, field: (
+            RecoveredPredecessor if self.pk == recovered_step.pk else FirstDownstreamHandoff
+        ),
+    )
+    recovery, recovered_attempt = _execute_recovery(
+        source_attempt, actor=actor, request_key="recover-predecessor",
+    )
+    assert recovered_attempt.result_kind == AttemptResultKind.DONE
+    engine.advance(recovery.pk)
+    with system_context(reason="downstream recovery child invocation"):
+        downstream = StepRun.objects.get(run=recovery, step=downstream_step)
+        attempt = downstream.current_attempt
+        dispatch = WorkflowDispatch.objects.get(step_attempt=attempt)
+    assert engine.execute_dispatch(
+        dispatch.pk, attempt.pk, attempt.lease_token,
+    )["executed"] == 1
+    with system_context(reason="downstream recovery child result"):
+        attempt.refresh_from_db()
+        child = WorkflowRun.objects.get(dedup_key="recovery-child:downstream")
+    assert attempt.result_kind == AttemptResultKind.DONE
+    assert child.parent_step_run_id == downstream.pk
+    assert child.parent_step_run.run.same_execution_lineage(recovery)
 
 
 def test_repair_test_retains_exact_source_attempt_and_original_input(
@@ -979,6 +1178,81 @@ def test_selected_map_body_requires_one_raw_item_fixture(
             scope=WorkflowTestScope.NODE,
             selected_step=body,
         )
+
+
+def _failed_child_handoff(
+    *, actor: object, dedup_key: str,
+) -> tuple[WorkflowRun, StepRun, StepAttempt, Workflow, WorkflowRun]:
+    """Retain a child created immediately before its parent operation failed."""
+
+    child_head = _published_wait_workflow(actor=actor)
+    with system_context(reason="failed child handoff fixture"):
+        source_workflow, source_step = _draft(name="Recovery parent", owner=actor)
+        source_run = WorkflowRun.objects.create(
+            workflow=source_workflow, status="running", created_by=actor,
+            input_present=True, input={"parent": "retained"},
+        )
+        source_step_run = StepRun.objects.create(
+            run=source_run, step=source_step, status="scheduled",
+        )
+    source_attempt = StepAttempt.objects.claim(
+        source_step_run,
+        input=AttemptInput(True, {"parent": "retained"}, {"kind": "run_input"}),
+        claimed_at=timezone.now(),
+    ).attempt
+    StepAttempt.objects.admit_invocation(
+        source_attempt.pk, lease_token=source_attempt.lease_token, at=timezone.now(),
+    )
+    child = engine.start(
+        child_head, subject=None, actor=actor,
+        parent_step_run=source_step_run, dedup_key=dedup_key,
+        origin=RunOrigin.WORKFLOW,
+        input=JsonPresence(True, {"child": "retained"}),
+    )
+    StepAttempt.objects.finalize(
+        source_attempt.pk,
+        lease_token=source_attempt.lease_token,
+        result=AttemptResult(AttemptResultKind.ERROR, error="uncertain child handoff"),
+        recorded_at=timezone.now(),
+    )
+    source_step_run.refresh_from_db()
+    assert source_step_run.status == "failed"
+    return source_run, source_step_run, source_attempt, child_head, child
+
+
+def _published_wait_workflow(*, actor: object) -> Workflow:
+    with system_context(reason="recovery child workflow fixture"):
+        workflow = Workflow.objects.create(name="Recovery child", created_by=actor)
+        Step.objects.create(
+            workflow=workflow, key="entry", name="Entry", step_class="wait",
+            config={"until": (timezone.now() + timedelta(hours=1)).isoformat()},
+            is_entry=True,
+        )
+        workflow.publish()
+    return workflow
+
+
+def _execute_recovery(
+    source_attempt: StepAttempt, *, actor: object, request_key: str,
+) -> tuple[WorkflowRun, StepAttempt]:
+    recovery = WorkflowRun.objects.start_recovery(
+        source_attempt, request_key=request_key, actor=actor,
+    )
+    with system_context(reason="child handoff recovery dispatch"):
+        advance = WorkflowDispatch.objects.get(
+            run=recovery, kind=WorkflowDispatchKind.ADVANCE,
+        )
+    assert engine.advance_dispatch(advance.pk)["claimed"] == 1
+    with system_context(reason="child handoff recovery invocation"):
+        recovered_step = StepRun.objects.get(run=recovery)
+        attempt = recovered_step.current_attempt
+        execute = WorkflowDispatch.objects.get(step_attempt=attempt)
+    assert engine.execute_dispatch(
+        execute.pk, attempt.pk, attempt.lease_token,
+    )["executed"] == 1
+    with system_context(reason="child handoff recovery result"):
+        attempt.refresh_from_db()
+    return recovery, attempt
 
 
 def _draft(name: str = "Testable draft", *, owner: object | None = None) -> tuple[Workflow, Step]:
