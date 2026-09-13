@@ -223,7 +223,8 @@ workspaces:
 
 # Jobs finish successfully before their dependents start. Re-running the entry
 # job with chained_restart applies this same graph to the running application.
-# Provision owns Django build, migrations, permissions, resources, and schema.
+# `manage.py angee provision` owns runtime preparation and the fresh
+# post-build process boundary.
 jobs:
 {% if stack_flavor == "framework" %}
   # Install at the host's JS workspace owner, including its addon packages.

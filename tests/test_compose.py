@@ -12,7 +12,7 @@ import pytest
 from django.apps import AppConfig, apps
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
-from django.core.management.base import CommandError, SystemCheckError
+from django.core.management.base import BaseCommand, CommandError, SystemCheckError
 from django.db import OperationalError, models
 
 import angee.compose as compose_package
@@ -967,6 +967,7 @@ def _provision_options(**overrides: Any) -> dict[str, Any]:
         "bootstrap_admin": False,
         "force_rebac": False,
         "wait_db": 60,
+        "post_build": False,
     }
     options.update(overrides)
     return options
@@ -1055,9 +1056,11 @@ def test_provision_defers_checks_only_across_the_schema_identity_transition() ->
         ["makemigrations", "--skip-checks"],
         ["migrate", "--noinput", "--skip-checks"],
     ]
-    assert plan.index(["migrate", "--noinput", "--skip-checks"]) < plan.index(
-        ["rebac", "sync", "--yes"]
-    ) < plan.index(["check"])
+    assert (
+        plan.index(["migrate", "--noinput", "--skip-checks"])
+        < plan.index(["rebac", "sync", "--yes"])
+        < plan.index(["check"])
+    )
     assert plan.index(["check"]) < plan.index(["resources", "load"])
 
 
@@ -1076,9 +1079,7 @@ def test_provision_plan_can_cross_an_old_persisted_rebac_identity() -> None:
         definition__resource_type="agents/skill",
         name="source",
     )
-    source.allowed_subjects = [
-        {"type": "integrate/source", "relation": "", "wildcard": False}
-    ]
+    source.allowed_subjects = [{"type": "integrate/source", "relation": "", "wildcard": False}]
     source.save(update_fields=["allowed_subjects"])
 
     with pytest.raises(SystemCheckError, match=r"rebac\.E009"):
@@ -1094,52 +1095,313 @@ def test_provision_plan_can_cross_an_old_persisted_rebac_identity() -> None:
     ]
 
 
-def test_provision_runs_every_step_as_a_fresh_child_interpreter(
+def test_provision_builds_then_starts_one_post_build_child(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Each step spawns ``python <manage.py> <step>`` in order, streaming output."""
+    """The parent builds once, then crosses one fresh-registry boundary."""
 
-    calls: list[list[str]] = []
+    events: list[object] = []
 
     def fake_run(argv: list[str], check: bool = False) -> SimpleNamespace:
-        calls.append(argv)
+        events.append(("child", argv, check))
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr("angee.compose.management.commands.angee.subprocess.run", fake_run)
 
     command = Command()
-    monkeypatch.setattr(command, "_wait_for_database", lambda seconds: None)
-    command._handle_provision(_provision_options())
+    messages: list[str] = []
+    monkeypatch.setattr(command.stdout, "write", lambda message, *args, **kwargs: messages.append(message))
+    monkeypatch.setattr(command, "_wait_for_database", lambda seconds: events.append(("wait", seconds)))
+    monkeypatch.setattr(command, "_run_step", lambda step: events.append(("step", step)))
+    options = _provision_options(
+        demo=True,
+        force_rebac=True,
+        bootstrap_admin=True,
+        wait_db=12,
+    )
+
+    command._handle_provision(options)
 
     manage_py = Command._manage_py_path()
-    assert calls == [[sys.executable, manage_py, *step] for step in Command._provision_plan(_provision_options())]
+    assert events == [
+        ("wait", 12),
+        ("step", ["angee", "build"]),
+        (
+            "child",
+            [
+                sys.executable,
+                manage_py,
+                "angee",
+                "provision",
+                "--post-build",
+                "--demo",
+                "--force-rebac",
+                "--bootstrap-admin",
+            ],
+            False,
+        ),
+    ]
+    assert messages[-1] == "angee provision: ok"
 
 
-def test_provision_aborts_on_the_first_failed_step(
+def test_provision_reports_a_failed_post_build_child(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A non-zero child exit stops provision and names the failing step."""
+    """A non-zero child result stops the parent and reports the process boundary."""
 
-    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        "angee.compose.management.commands.angee.subprocess.run",
+        lambda argv, check=False: SimpleNamespace(returncode=7),
+    )
+    command = Command()
+    monkeypatch.setattr(command, "_wait_for_database", lambda seconds: None)
+    monkeypatch.setattr(command, "_run_step", lambda step: None)
 
-    def fake_run(argv: list[str], check: bool = False) -> SimpleNamespace:
-        calls.append(argv)
-        returncode = 1 if argv[2:] == ["makemigrations", "--skip-checks"] else 0
-        return SimpleNamespace(returncode=returncode)
+    with pytest.raises(CommandError, match=r"post-build commands failed \(exit 7\)"):
+        command._handle_provision(_provision_options())
 
-    monkeypatch.setattr("angee.compose.management.commands.angee.subprocess.run", fake_run)
+
+def test_provision_build_failure_never_starts_the_post_build_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fresh process boundary is crossed only after a successful build."""
+
+    def fail_build(step: list[str]) -> None:
+        raise CommandError("build failed")
 
     command = Command()
     monkeypatch.setattr(command, "_wait_for_database", lambda seconds: None)
+    monkeypatch.setattr(command, "_run_step", fail_build)
+    monkeypatch.setattr(
+        "angee.compose.management.commands.angee.subprocess.run",
+        lambda *args, **kwargs: pytest.fail("a failed build must not spawn the post-build child"),
+    )
 
-    with pytest.raises(CommandError, match="step 'makemigrations --skip-checks' failed"):
+    with pytest.raises(CommandError, match="build failed"):
         command._handle_provision(_provision_options())
 
-    # Stops at the failing step: build, makemigrations.
-    assert [argv[2:] for argv in calls] == [
-        ["angee", "build"],
+
+def test_provision_post_build_runs_remaining_steps_in_order_without_respawning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The child reuses one populated registry and never repeats parent work."""
+
+    calls: list[list[str]] = []
+    options = _provision_options(post_build=True, demo=True, bootstrap_admin=True)
+    command = Command()
+    messages: list[str] = []
+    monkeypatch.setattr(command.stdout, "write", lambda message, *args, **kwargs: messages.append(message))
+    monkeypatch.setattr(command, "_run_step", lambda step: calls.append(step))
+    monkeypatch.setattr(
+        command,
+        "_wait_for_database",
+        lambda seconds: pytest.fail("the post-build child must not wait for the database"),
+    )
+    monkeypatch.setattr(
+        "angee.compose.management.commands.angee.subprocess.run",
+        lambda *args, **kwargs: pytest.fail("the post-build child must not spawn another child"),
+    )
+
+    command._handle_provision(options)
+
+    assert calls == Command._provision_plan(options)[1:]
+    assert "angee provision: ok" not in messages
+
+
+def test_provision_post_build_aborts_on_the_first_failed_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An in-process command failure stops the remaining post-build sequence."""
+
+    calls: list[list[str]] = []
+
+    def fake_step(step: list[str]) -> None:
+        calls.append(step)
+        if step[0] == "migrate":
+            raise CommandError("angee provision: step 'migrate --noinput --skip-checks' failed: boom")
+
+    command = Command()
+    monkeypatch.setattr(command, "_run_step", fake_step)
+
+    with pytest.raises(CommandError, match="step 'migrate --noinput --skip-checks' failed"):
+        command._handle_provision(_provision_options(post_build=True))
+
+    assert calls == [
         ["makemigrations", "--skip-checks"],
+        ["migrate", "--noinput", "--skip-checks"],
     ]
+
+
+def test_provision_run_step_preserves_each_commands_cli_check_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Checked commands receive policy; commands opting out receive no unknown option."""
+
+    calls: list[tuple[str, tuple[str, ...], bool | None]] = []
+
+    def fake_call_command(command: BaseCommand, *args: str, **options: Any) -> None:
+        calls.append((command.__class__.__module__, args, options.get("skip_checks")))
+
+    monkeypatch.setattr("angee.compose.management.commands.angee.call_command", fake_call_command)
+    command = Command()
+    for step in Command._provision_plan(_provision_options()):
+        command._run_step(step)
+
+    policies = [(module.rsplit(".", 1)[-1], policy) for module, _args, policy in calls]
+    assert policies == [
+        ("angee", None),
+        ("makemigrations", True),
+        ("migrate", True),
+        ("reconcile_permissions", None),
+        ("rebac", False),
+        ("check", None),
+        ("resources", None),
+        ("schema", None),
+    ]
+
+
+def test_provision_run_step_calls_actual_check_free_angee_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A check-free command executes without the parser-rejected ``skip_checks`` option."""
+
+    handled: list[dict[str, Any]] = []
+    monkeypatch.setattr(Command, "_handle_build", lambda self, options: handled.append(options))
+
+    Command()._run_step(["angee", "build"])
+
+    assert len(handled) == 1
+    assert handled[0]["check"] is False
+
+
+def test_provision_run_step_names_a_failing_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Native command exceptions retain the provision step that raised them."""
+
+    def fail(*args: Any, **options: Any) -> None:
+        raise RuntimeError("broken schema")
+
+    monkeypatch.setattr("angee.compose.management.commands.angee.call_command", fail)
+
+    with pytest.raises(CommandError, match="step 'schema' failed: broken schema"):
+        Command()._run_step(["schema"])
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_provision_run_step_flushes_command_output_before_returning(
+    monkeypatch: pytest.MonkeyPatch,
+    fails: bool,
+) -> None:
+    """Delegated output is flushed after success and before propagating failure."""
+
+    events: list[str] = []
+
+    def run(*args: Any, **options: Any) -> None:
+        events.append("command-output")
+        if fails:
+            raise RuntimeError("failed")
+
+    command = Command()
+    monkeypatch.setattr(command.stdout, "flush", lambda: events.append("stdout-flush"))
+    monkeypatch.setattr(command.stderr, "flush", lambda: events.append("stderr-flush"))
+    monkeypatch.setattr("angee.compose.management.commands.angee.call_command", run)
+
+    if fails:
+        with pytest.raises(CommandError, match="step 'schema' failed: failed"):
+            command._run_step(["schema"])
+    else:
+        command._run_step(["schema"])
+
+    assert events == [
+        "stdout-flush",
+        "command-output",
+        "stdout-flush",
+        "stderr-flush",
+    ]
+
+
+@pytest.mark.parametrize("exit_code", [0, None])
+def test_provision_run_step_accepts_successful_system_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    exit_code: int | None,
+) -> None:
+    """Commands may use either successful SystemExit convention."""
+
+    def exit_successfully(*args: Any, **kwargs: Any) -> None:
+        raise SystemExit(exit_code)
+
+    monkeypatch.setattr("angee.compose.management.commands.angee.call_command", exit_successfully)
+
+    Command()._run_step(["schema"])
+
+
+def test_provision_run_step_names_a_nonzero_system_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A command's nonzero SystemExit becomes a step-specific provision error."""
+
+    def exit_with_failure(*args: Any, **kwargs: Any) -> None:
+        raise SystemExit(4)
+
+    monkeypatch.setattr("angee.compose.management.commands.angee.call_command", exit_with_failure)
+
+    with pytest.raises(CommandError, match=r"step 'schema' failed \(exit 4\)"):
+        Command()._run_step(["schema"])
+
+
+def test_provision_run_step_explicitly_runs_delegated_prechecks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Passing ``skip_checks=False`` defeats ``call_command``'s skip-by-default trap."""
+
+    lifecycle: list[str] = []
+
+    class CheckedCommand(BaseCommand):
+        requires_system_checks = ["models"]
+
+        def add_arguments(self, parser: Any) -> None:
+            parser.add_argument("operation")
+            parser.add_argument("--yes", action="store_true")
+
+        def check(self, **kwargs: Any) -> list[object]:
+            lifecycle.append("check")
+            return []
+
+        def handle(self, *args: Any, **options: Any) -> None:
+            lifecycle.append("handle")
+
+    monkeypatch.setattr("angee.compose.management.commands.angee.get_commands", lambda: {"rebac": "fake"})
+    monkeypatch.setattr(
+        "angee.compose.management.commands.angee.load_command_class",
+        lambda app_name, name: CheckedCommand(),
+    )
+
+    Command()._run_step(["rebac", "sync", "--yes"])
+
+    assert lifecycle == ["check", "handle"]
+
+
+def test_provision_parser_accepts_the_internal_post_build_entrypoint() -> None:
+    """Django's native parser carries flags into the internal child invocation."""
+
+    parser = Command().create_parser("manage.py", "angee")
+
+    options = vars(parser.parse_args(["provision", "--post-build", "--demo", "--force-rebac", "--bootstrap-admin"]))
+
+    assert options["post_build"] is True
+    assert options["demo"] is True
+    assert options["force_rebac"] is True
+    assert options["bootstrap_admin"] is True
+
+
+def test_provision_help_hides_the_internal_post_build_entrypoint(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The implementation-only child switch stays out of the public CLI help."""
+
+    parser = Command().create_parser("manage.py", "angee")
+
+    with pytest.raises(SystemExit, match="0"):
+        parser.parse_args(["provision", "--help"])
+
+    assert "--post-build" not in capsys.readouterr().out
 
 
 class _FakeConnection:
