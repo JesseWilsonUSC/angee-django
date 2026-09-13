@@ -9,7 +9,12 @@ from angee.messaging.models import Channel as AbstractChannel
 from angee.messaging.models import Fragment as AbstractFragment
 from angee.messaging.models import Message as AbstractMessage
 from angee.messaging.models import MessageSubtype as AbstractMessageSubtype
+from angee.messaging.models import Part as AbstractPart
 from angee.messaging.models import Thread as AbstractThread
+from angee.messaging.models import ThreadAttachment as AbstractThreadAttachment
+from angee.messaging.models import ThreadFollower as AbstractThreadFollower
+from angee.messaging.models import ThreadNotification as AbstractThreadNotification
+from angee.messaging.models import TrackingValue as AbstractTrackingValue
 from angee.parties.models import Directory as AbstractDirectory
 from angee.parties.models import Folder as AbstractContactFolder
 from angee.parties.models import Handle as AbstractHandle
@@ -135,3 +140,63 @@ class Message(MessagePublic, AbstractMessage):
         app_label = "messaging"
         db_table = "test_messaging_message"
         rebac_resource_type = "messaging/message"
+
+
+class ThreadAttachment(AbstractThreadAttachment):
+    """Concrete record-thread attachment shared by the bare test runtime."""
+
+    class Meta(AbstractThreadAttachment.Meta):
+        """Django model options for the canonical test thread attachment."""
+
+        abstract = False
+        app_label = "messaging"
+        db_table = "test_messaging_thread_attachment"
+        rebac_resource_type = "messaging/thread_attachment"
+
+
+class ThreadFollower(AbstractThreadFollower):
+    """Concrete record-thread follower shared by the bare test runtime."""
+
+    class Meta(AbstractThreadFollower.Meta):
+        """Django model options for the canonical test thread follower."""
+
+        abstract = False
+        app_label = "messaging"
+        db_table = "test_messaging_thread_follower"
+        rebac_resource_type = "messaging/thread_follower"
+
+
+class Part(AbstractPart):
+    """Concrete message part shared by the bare test runtime."""
+
+    class Meta(AbstractPart.Meta):
+        """Django model options for the canonical test message part."""
+
+        abstract = False
+        app_label = "messaging"
+        db_table = "test_messaging_part"
+        rebac_resource_type = "messaging/part"
+
+
+class ThreadNotification(AbstractThreadNotification):
+    """Concrete notification shared by the bare test runtime."""
+
+    class Meta(AbstractThreadNotification.Meta):
+        """Django model options for the canonical test notification."""
+
+        abstract = False
+        app_label = "messaging"
+        db_table = "test_messaging_thread_notification"
+        rebac_resource_type = "messaging/thread_notification"
+
+
+class TrackingValue(AbstractTrackingValue):
+    """Concrete tracking value shared by the bare test runtime."""
+
+    class Meta(AbstractTrackingValue.Meta):
+        """Django model options for the canonical test tracking value."""
+
+        abstract = False
+        app_label = "messaging"
+        db_table = "test_messaging_tracking_value"
+        rebac_resource_type = "messaging/tracking_value"
