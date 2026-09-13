@@ -21,7 +21,7 @@ vi.mock("@angee/ui", () => ({
   createNamespaceT: (
     _namespace: string,
     fallback: Record<string, string>,
-  ) => (key: string) => fallback[key] ?? key,
+  ) => () => (key: string) => fallback[key] ?? key,
   MutationDialog: (props: Record<string, unknown>) => {
     mocks.mutationProps = props;
     return null;
