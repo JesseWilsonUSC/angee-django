@@ -327,7 +327,7 @@ class ExtractionServiceTests(TestCase):
             )
             self.assertEqual(first.result, config["result"])
             self.assertIsNone(first.model_id)
-            self.assertEqual(first.provenance["document"], {"route": "fake"})
+            self.assertEqual(first.provenance["document"], {"route": "fake", "pipeline_duration_ms": 0})
             self.assertEqual(first.parts.count(), 1)
             self.assertEqual(first.parts.get().claims["/number"], [{"part_position": 0}])
             self.assertEqual(revised.revision, first.revision + 1)

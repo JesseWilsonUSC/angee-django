@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import io
+from contextlib import nullcontext
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from django.core.exceptions import ValidationError
@@ -19,6 +21,7 @@ from angee.workflows_ocr.engines import (
     PageResult,
 )
 from angee.workflows_ocr.routing import acquire_native_parts
+from angee.workflows_ocr import service
 from angee.workflows_ocr.service import _merge, _validated_schema
 from angee.workflows_ocr_glm.engine import GlmOllamaEngine
 from tests.ocr_engines import FakeOcrEngine
@@ -61,6 +64,63 @@ def test_schema_owner_requires_object_root() -> None:
     assert _validated_schema(SCHEMA) == SCHEMA
     with pytest.raises(ValidationError, match="root must have type object"):
         _validated_schema({"$id": "bad", "type": "array"})
+
+
+def test_reextract_uses_newest_lineage_revision_and_reuses_newest_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Recovery advances only within the original frozen extraction policy."""
+
+    target = SimpleNamespace(has_access=lambda _permission: True)
+    original = SimpleNamespace(
+        status="failed",
+        lineage_key="lineage",
+        engine="inference_document",
+        model_id=1,
+        recognition_model_id=2,
+        schema_digest="schema",
+        engine_config={"timeout": 30},
+    )
+    sources = MagicMock()
+    sources.select_related.return_value.order_by.return_value = []
+    different_model = SimpleNamespace(
+        status="succeeded",
+        revision=4,
+        engine="inference_document",
+        model_id=99,
+        recognition_model_id=2,
+        schema_digest="schema",
+        engine_config={"timeout": 30},
+    )
+    latest = SimpleNamespace(
+        status="succeeded",
+        revision=3,
+        engine="inference_document",
+        model_id=1,
+        recognition_model_id=2,
+        schema_digest="schema",
+        engine_config={"timeout": 30, "retry_of_revision": 2},
+        sources=sources,
+        target=target,
+        model=None,
+        recognition_model=None,
+    )
+    manager = MagicMock()
+    manager.filter.return_value.order_by.return_value = [different_model, latest]
+    extraction_model = SimpleNamespace(_base_manager=manager)
+    monkeypatch.setattr(service.apps, "get_model", lambda *_args: extraction_model)
+    monkeypatch.setattr(service, "system_context", lambda **_kwargs: nullcontext())
+    extract_call = MagicMock()
+    monkeypatch.setattr(service, "extract", extract_call)
+
+    assert service.reextract(original) is latest
+    extract_call.assert_not_called()
+
+    latest.status = "failed"
+    latest.schema = SCHEMA
+    retried = SimpleNamespace(status="succeeded")
+    extract_call.return_value = retried
+
+    assert service.reextract(original) is retried
+    assert extract_call.call_args.kwargs["config"] == {"timeout": 30, "retry_of_revision": 3}
 
 
 def test_inference_mapping_uses_catalogue_model_without_provider_restriction() -> None:
