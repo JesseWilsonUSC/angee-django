@@ -22,7 +22,8 @@ export function RestartNotice(): ReactNode {
   const run = useJobRunOperation({ enabled: visible });
   const operation = run.operation;
   const restartJob = connection?.restartJob;
-  const applicationRestart = operation?.rootJob === restartJob && operation.chainedRestart
+  const applicationRestart = operation && restartJob
+    && operation.rootJob === restartJob && operation.chainedRestart
     ? operation
     : null;
   useEffect(() => {
@@ -78,11 +79,12 @@ export function RestartNotice(): ReactNode {
     );
   }
   if (pending.isFetching && !pending.data) return null;
-  if (!pending.error && pending.data?.platform_explorer == null) return null;
-  if (pending.error || pending.data?.platform_explorer.pending_addon_changes == null) {
+  const explorer = pending.data?.platform_explorer;
+  if (!pending.error && explorer == null) return null;
+  if (pending.error || explorer?.pending_addon_changes == null) {
     return <Banner tone="warning" title={t("restart.statusUnavailable.title")}>{pending.error?.message ?? t("restart.statusUnavailable.description")}</Banner>;
   }
-  if (pending.data.platform_explorer.pending_addon_changes) {
+  if (explorer.pending_addon_changes) {
     return (
       <Banner
         tone="warning"
