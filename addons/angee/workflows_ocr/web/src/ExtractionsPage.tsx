@@ -41,7 +41,7 @@ const RECORD_TABS: readonly RecordTabDescriptor[] = [{
 }];
 
 export function ExtractionsPage(): React.ReactElement {
-  return <ResourceList resource={EXTRACTION_MODEL} scope="local" placement="inline" hideCreate recordTabs={RECORD_TABS} defaultRecordTab="evidence">
+  return <ResourceList resource={EXTRACTION_MODEL} placement="inline" routed hideCreate recordTabs={RECORD_TABS} defaultRecordTab="evidence">
     <List resource={EXTRACTION_MODEL}>
       <Column field="revision" />
       <Column field="status" />
