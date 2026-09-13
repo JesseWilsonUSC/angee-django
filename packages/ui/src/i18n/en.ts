@@ -4,8 +4,6 @@
 export const enUiMessages: Record<string, string> = {
   "access.title": "Share {label}",
   "access.directOnly": "Manage direct access to the selected records.",
-  "access.share": "Share",
-  "access.selection": "{count} selected records",
   "access.relation": "Access",
   "access.recipientType": "Recipient type",
   "access.recipient": "Recipient",

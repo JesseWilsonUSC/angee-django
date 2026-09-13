@@ -20,7 +20,6 @@ export const enWorkflowsMessages: Record<string, string> = {
   "subjectHistory.decision": "Resolve {action}",
   "subjectHistory.decisionTarget": "Open decision target",
   "subjectHistory.recipients": "Recipients: {recipients}",
-  "subjectHistory.decisionUnavailable": "A pending decision target is unavailable.",
   "subjectHistory.outputs": "Outputs",
   "subjectHistory.output": "Open output",
   "subjectHistory.outputUnavailable": "Output unavailable",
@@ -403,7 +402,6 @@ export const enWorkflowsMessages: Record<string, string> = {
   "inbox.sourceExecution": "Execution {id}",
   "inbox.sourceAttempt": "Attempt {id}",
   "json.label": "JSON",
-  "json.invalid": "Invalid JSON",
 };
 
 export const useWorkflowsT = createNamespaceT("workflows", enWorkflowsMessages);

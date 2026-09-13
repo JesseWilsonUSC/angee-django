@@ -2172,8 +2172,8 @@ describe("ResourceList", () => {
     // with the free-text search box's `iContains` on the same field; the chip
     // labels that distinction.
     expect(
-      await screen.findByText("Title contains (case-sensitive) Fir"),
-    ).toBeTruthy();
+      await screen.findAllByText("Title contains (case-sensitive) Fir"),
+    ).toHaveLength(2);
   });
 
   test("saves and reapplies the current resource-view search", async () => {
@@ -2273,7 +2273,10 @@ describe("ResourceList", () => {
         name: "Filter and group",
       }),
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Month" }));
+    const groupPicker = await screen.findByRole("heading", { name: "Group by" });
+    fireEvent.click(
+      within(groupPicker.parentElement!).getByRole("button", { name: "Month" }),
+    );
 
     await waitFor(() =>
       expect(screen.getByText("Updated At · Month")).toBeTruthy(),
@@ -2355,7 +2358,10 @@ describe("ResourceList", () => {
         name: "Filter and group",
       }),
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Month" }));
+    const groupPicker = await screen.findByRole("heading", { name: "Group by" });
+    fireEvent.click(
+      within(groupPicker.parentElement!).getByRole("button", { name: "Month" }),
+    );
 
     await waitFor(() =>
       expect(screen.getByText("Updated At · Month")).toBeTruthy(),

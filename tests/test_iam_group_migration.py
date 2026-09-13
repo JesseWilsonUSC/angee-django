@@ -10,6 +10,7 @@ from django.contrib.auth.models import Group as DjangoGroup
 from django.core.exceptions import ImproperlyConfigured
 from django.db import connection, models
 from django.db.migrations.state import ProjectState
+from rebac import system_context
 
 from angee.iam.runtime_migrations.adopt_auth_groups import (
     Migration,
@@ -70,8 +71,9 @@ def test_group_adoption_preserves_primary_keys_and_resets_sequence() -> None:
     adopted = Group._base_manager.get(pk=source.pk)
     assert adopted.name == source.name
     assert adopted.description == ""
-    assert adopted.sqid.startswith("grp_")
+    assert adopted.sqid.startswith("igr_")
 
     copy_auth_groups(apps, SimpleNamespace(connection=connection))
-    created = Group._base_manager.create(name="New reviewers")
+    with system_context(reason="test.iam.group.sequence"):
+        created = Group._base_manager.create(name="New reviewers")
     assert created.pk > source.pk

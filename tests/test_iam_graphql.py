@@ -1491,7 +1491,7 @@ def test_iam_group_public_identity_is_sqid_addressable() -> None:
 
     assert public_data_id_field(iam_schema.Group).name == "sqid"
     assert public_id_of(group) == group_id
-    assert group_id.startswith("grp_")
+    assert group_id.startswith("igr_")
     assert public_id_for(iam_schema.Group, group.pk) == group_id
     with system_context(reason="test.iam.group.identity.lookup"):
         resolved = instance_from_public_id(iam_schema.Group, group_id)

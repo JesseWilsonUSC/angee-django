@@ -29,7 +29,7 @@ describe("assignment subjects", () => {
         },
       ],
       groups: [{
-        id: "grp_finance",
+        id: "igr_finance",
         name: "Finance",
         assignment_subject: "auth/group:7#member",
       }],
@@ -48,7 +48,7 @@ describe("assignment subjects", () => {
         label: "Finance",
         group: "Groups",
         kind: "group",
-        id: "grp_finance",
+        id: "igr_finance",
       },
     ]);
   });

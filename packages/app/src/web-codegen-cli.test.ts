@@ -37,6 +37,10 @@ describe("angee-web-codegen", () => {
     ] as const) {
       const entryDir = join(web, "node_modules", pkg, "src");
       await mkdir(entryDir, { recursive: true });
+      await writeFile(
+        join(entryDir, "..", "package.json"),
+        JSON.stringify({ name: pkg, exports: {} }),
+      );
       await writeFile(join(entryDir, `index${extension}`), "export default {};\n");
     }
     await writeFile(
@@ -72,6 +76,10 @@ describe("angee-web-codegen", () => {
     await mkdir(manifestDir, { recursive: true });
     await mkdir(web, { recursive: true });
     await mkdir(join(addon, "src"), { recursive: true });
+    await writeFile(
+      join(addon, "package.json"),
+      JSON.stringify({ name: "@demo/addon", exports: {} }),
+    );
     await writeFile(join(addon, "src", "index.tsx"), "export default {};\n");
     await writeFile(
       join(addon, "src", "documents.demo.ts"),

@@ -64,7 +64,6 @@ export const enIamMessages: Record<string, string> = {
   "overview.grant.role": "Role",
   "overview.grant.selectRole": "Select role",
   "overview.grant.submit": "Grant",
-  "overview.grant.failedTitle": "Role was not granted",
   "overview.grant.error": "Could not grant role.",
 
   // Overview dashboard — peek panels.
