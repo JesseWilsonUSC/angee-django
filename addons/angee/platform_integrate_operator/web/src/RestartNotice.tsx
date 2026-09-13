@@ -1,5 +1,5 @@
 import { useAuthoredQuery } from "@angee/refine";
-import { PendingAddonChanges } from "@angee/platform";
+import { PendingAddonChanges, PLATFORM_ADDON_MUTATION_INVALIDATES } from "@angee/platform";
 import {
   useJobRunOperation,
   useOperatorConnection,
@@ -17,7 +17,10 @@ export function RestartNotice(): ReactNode {
   const visible = useChromeMenuTree().isSettingsActive(pathname);
   const routeHref = useRouteHref();
   const operationsHref = routeHref("operator.operations");
-  const pending = useAuthoredQuery(PendingAddonChanges, undefined, { enabled: visible });
+  const pending = useAuthoredQuery(PendingAddonChanges, undefined, {
+    enabled: visible,
+    models: PLATFORM_ADDON_MUTATION_INVALIDATES,
+  });
   const connection = useOperatorConnection();
   const run = useJobRunOperation({ enabled: visible });
   const operation = run.operation;

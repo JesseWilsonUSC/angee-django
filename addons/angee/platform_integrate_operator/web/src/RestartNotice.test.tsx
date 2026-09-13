@@ -22,7 +22,10 @@ vi.mock("@angee/refine", () => ({
   }),
 }));
 
-vi.mock("@angee/platform", () => ({ PendingAddonChanges: {} }));
+vi.mock("@angee/platform", () => ({
+  PendingAddonChanges: {},
+  PLATFORM_ADDON_MUTATION_INVALIDATES: ["platform.Addon"],
+}));
 
 vi.mock("@angee/operator/runtime", () => ({
   useOperatorConnection: () => mocks.connection,
