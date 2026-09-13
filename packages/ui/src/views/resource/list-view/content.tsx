@@ -174,7 +174,7 @@ export function ListViewContent<TRow extends Row = Row>({
     },
     [cardActions, renderRowActions],
   );
-  const contributedActions = source ? null : (
+  const contributedActions = (
     <ResourceViewActions
       value={{
         resource: modelMetadata?.resource.modelLabel ?? resource,
