@@ -54,8 +54,8 @@ type MergeField = CommonField | PersonField;
 
 interface FieldComparison {
   name: MergeField;
-  left: unknown;
-  right: unknown;
+  left: string | null;
+  right: string | null;
 }
 
 interface UnionItem<T> {
@@ -86,7 +86,7 @@ function fieldComparisons(
   ];
 }
 
-function sameScalar(left: unknown, right: unknown): boolean {
+function sameScalar(left: string | null, right: string | null): boolean {
   return (left ?? "") === (right ?? "");
 }
 
