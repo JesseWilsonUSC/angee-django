@@ -39,7 +39,15 @@ from angee.workflows_ocr.routing import (
     derive_text_claims,
     recognize_pages,
 )
-from angee.workflows_ocr.service import _document_sources, _merge, extract, model_deployment_identity, reextract
+from angee.workflows_ocr.service import (
+    _document_sources,
+    _merge,
+    _unchanged_claims,
+    extract,
+    model_deployment_identity,
+    reextract,
+    revise,
+)
 from angee.workflows_ocr.steps import OcrExtractConfig, OcrExtractStepImpl
 from angee.workflows_ocr_glm.engine import GlmOllamaEngine
 from tests.conftest import _clear_model_tables, _create_missing_tables, make_integration
@@ -48,6 +56,7 @@ from tests.ocr_models import OCR_MODELS, Extraction, ExtractionPage, ExtractionS
 from tests.test_agents_graphql import AGENTS_GRAPHQL_MODELS
 from tests.test_integrate_vcs import VCS_TEST_MODELS
 from tests.test_messaging import MESSAGING_TEST_MODELS
+from tests.workflows import Decision, Step, StepRun, Workflow, WorkflowRun
 
 
 @pytest.fixture()
@@ -114,6 +123,13 @@ class PageAggregationTests(SimpleTestCase):
         self.assertEqual(text[claims["/quantity"][0]["start"] : claims["/quantity"][0]["end"]], "1")
         self.assertEqual(text[claims["/unit_price"][0]["start"] : claims["/unit_price"][0]["end"]], "87.10")
 
+    def test_claim_retention_rejects_non_ascii_array_pointer_indices(self) -> None:
+        claims = {"/rows/０": [{"part_position": 0}]}
+        self.assertEqual(
+            _unchanged_claims(claims, before={"rows": ["same"]}, after={"rows": ["same"]}),
+            {},
+        )
+
     def test_missing_models_retain_acquired_evidence(self) -> None:
         part = DocumentPart(0, 0, "text/plain", "native_text", "Invoice 22121", "test", "a" * 64)
         with self.assertRaises(DocumentPipelineError) as mapping_error:
@@ -174,7 +190,7 @@ def _png(text: str) -> bytes:
     return output.getvalue()
 
 
-@pytest.mark.usefixtures("ocr_tables")
+@pytest.mark.usefixtures("ocr_tables", "workflow_engine_tables")
 class ExtractionServiceTests(TestCase):
     """Exercise the service against the concrete composed runtime models."""
 
@@ -271,6 +287,46 @@ class ExtractionServiceTests(TestCase):
                 engine="fake",
                 config=config,
             )
+
+    def _decision(
+        self,
+        extraction: Any,
+        *,
+        payload: dict[str, Any] | None = None,
+        verdict: str = "completed",
+    ) -> Any:
+        with system_context(reason="workflows_ocr correction authority"):
+            workflow = Workflow.objects.create(name="OCR correction authority")
+            step = Step.objects.create(
+                workflow=workflow,
+                key="review",
+                name="Review",
+                step_class="handler",
+                config={},
+                is_entry=True,
+            )
+            run = WorkflowRun.objects.create(workflow=workflow, status="succeeded", created_by=self.owner)
+            step_run = StepRun.objects.create(
+                run=run,
+                step=step,
+                status="succeeded",
+            )
+            decision = Decision.objects.create(
+                step_run=step_run,
+                action="correct_source_facts",
+                payload=payload or {
+                    "extraction_id": str(extraction.sqid),
+                    "extraction_revision": extraction.revision,
+                },
+                verdict=verdict,
+                resolution={"note": "Reviewed source facts"},
+                resolved_by=str(to_subject_ref(self.owner)) if verdict == "completed" else "",
+                created_by=self.owner,
+            )
+            write_relationships([
+                RelationshipTuple(to_object_ref(decision), "assignee", to_subject_ref(self.owner))
+            ])
+        return decision
 
     def test_deployment_allowlist_blocks_unapproved_models_and_endpoint_repointing(self) -> None:
         with actor_context(self.owner):
@@ -385,6 +441,168 @@ class ExtractionServiceTests(TestCase):
             self.assertEqual(revised.recognition_model_id, self.model.pk)
             self.assertEqual(revised.provenance["configured_model_roles"], ["recognition"])
             self.assertEqual(revised.provenance["used_model_roles"], [])
+
+    def test_human_correction_clones_parts_retains_unchanged_claims_and_reuses_without_engine(self) -> None:
+        with actor_context(self.owner):
+            original = extract(
+                files=self.files,
+                schema=SCHEMA,
+                model=None,
+                authorized_target=self.drive,
+                engine="fake_document",
+                config={
+                    "result": {"number": "OLD", "rows": ["same"]},
+                    "source_text": "OLD same",
+                },
+            )
+        decision = self._decision(original)
+        original_result = dict(original.result)
+        original_provenance = dict(original.provenance)
+
+        with (
+            actor_context(self.owner),
+            patch("angee.workflows_ocr.service._engine_class") as engine_class,
+            patch("angee.workflows_ocr.service._document_sources") as acquire_sources,
+        ):
+            corrected = revise(
+                original,
+                result={"number": "NEW", "rows": ["same"]},
+                decision=decision,
+            )
+            repeated = revise(
+                original,
+                result={"number": "NEW", "rows": ["same"]},
+                decision=decision,
+            )
+        engine_class.assert_not_called()
+        acquire_sources.assert_not_called()
+        self.assertEqual(repeated.pk, corrected.pk)
+        self.assertEqual(corrected.revision, original.revision + 1)
+        self.assertEqual(corrected.result, {"number": "NEW", "rows": ["same"]})
+        self.assertEqual(corrected.provenance["claims"], {"/rows": [{"part_position": 0}]})
+        self.assertEqual(corrected.provenance["used_model_roles"], [])
+        self.assertEqual(
+            corrected.provenance["corrections"][-1],
+            {
+                "kind": "human_correction",
+                "original_extraction_id": str(original.sqid),
+                "original_extraction_revision": original.revision,
+                "decision_id": str(decision.sqid),
+                "decision_resolved_by": str(to_subject_ref(self.owner)),
+                "recorded_by": str(to_subject_ref(self.owner)),
+                "corrected_paths": ["/number"],
+                "result_digest": corrected.provenance["corrections"][-1]["result_digest"],
+            },
+        )
+        with system_context(reason="verify cloned extraction evidence"):
+            self.assertEqual(
+                list(original.sources.values_list("position", "file_id", "message_part_id", "content_hash")),
+                list(corrected.sources.values_list("position", "file_id", "message_part_id", "content_hash")),
+            )
+            part_fields = (
+                "source__position", "position", "source_page", "mime_type", "kind", "method",
+                "content_hash", "width", "height", "dpi", "value", "metadata", "duration_ms",
+            )
+            self.assertEqual(
+                list(original.parts.values_list(*part_fields)),
+                list(corrected.parts.values_list(*part_fields)),
+            )
+            self.assertEqual(corrected.parts.get(position=0).claims, {"/rows": [{"part_position": 0}]})
+        original.refresh_from_db()
+        self.assertEqual(original.result, original_result)
+        self.assertEqual(original.provenance, original_provenance)
+        self.assertEqual(Extraction._base_manager.count(), 2)
+
+    def test_human_correction_clones_ordered_page_evidence(self) -> None:
+        original = self._extract(config={"result": {"number": "OLD", "rows": ["row"]}})
+        decision = self._decision(original)
+        with actor_context(self.owner):
+            corrected = revise(
+                original,
+                result={"number": "NEW", "rows": ["row"]},
+                decision=decision,
+            )
+        with system_context(reason="verify cloned page evidence"):
+            page_fields = (
+                "source__position", "position", "source_page", "width", "height", "dpi",
+                "duration_ms", "result", "engine_metadata",
+            )
+            self.assertEqual(
+                list(original.pages.values_list(*page_fields)),
+                list(corrected.pages.values_list(*page_fields)),
+            )
+
+    def test_human_correction_rejects_invalid_authority_schema_result_and_stale_reuse(self) -> None:
+        with actor_context(self.owner):
+            original = extract(
+                files=self.files[:1],
+                schema=SCHEMA,
+                model=None,
+                authorized_target=self.drive,
+                engine="fake_document",
+                config={"result": {"number": "OLD", "rows": []}, "source_text": "OLD"},
+            )
+        wrong_revision = self._decision(
+            original,
+            payload={"extraction_id": str(original.sqid), "extraction_revision": original.revision + 1},
+        )
+        pending = self._decision(original, verdict="pending")
+        decision = self._decision(original)
+        with actor_context(self.owner):
+            with self.assertRaisesRegex(ValidationError, "different extraction revision"):
+                revise(original, result={"number": "NEW", "rows": []}, decision=wrong_revision)
+            with self.assertRaisesRegex(ValidationError, "must be completed"):
+                revise(original, result={"number": "NEW", "rows": []}, decision=pending)
+            with self.assertRaisesRegex(ValidationError, "does not match"):
+                revise(original, result={"number": 1, "rows": []}, decision=decision)
+            corrected = revise(original, result={"number": "NEW", "rows": []}, decision=decision)
+            with self.assertRaisesRegex(ValidationError, "different correction revision"):
+                revise(original, result={"number": "OTHER", "rows": []}, decision=decision)
+            stale_decision = self._decision(original)
+            with self.assertRaisesRegex(ValidationError, "no longer the current"):
+                revise(original, result={"number": "OTHER", "rows": []}, decision=stale_decision)
+        self.assertEqual(corrected.revision, original.revision + 1)
+        self.assertEqual(Extraction._base_manager.count(), 2)
+
+    def test_human_correction_requires_all_reads_and_current_source_identity(self) -> None:
+        with actor_context(self.owner):
+            original = extract(
+                files=self.files[:1],
+                schema=SCHEMA,
+                model=None,
+                authorized_target=self.files[1],
+                engine="fake_document",
+                config={"result": {"number": "OLD", "rows": []}, "source_text": "OLD"},
+            )
+        decision = self._decision(original)
+        with actor_context(self.stranger), self.assertRaisesRegex(
+            DjangoPermissionDenied, "extraction is required"
+        ):
+            revise(original, result={"number": "NEW", "rows": []}, decision=decision)
+        with system_context(reason="grant correction extraction read"):
+            write_relationships([
+                RelationshipTuple(to_object_ref(original), "viewer", to_subject_ref(self.stranger)),
+            ])
+        with actor_context(self.stranger), self.assertRaisesRegex(DjangoPermissionDenied, "target"):
+            revise(original, result={"number": "NEW", "rows": []}, decision=decision)
+        with system_context(reason="grant correction target read"):
+            write_relationships([
+                RelationshipTuple(to_object_ref(self.files[1]), "viewer", to_subject_ref(self.stranger)),
+            ])
+        with actor_context(self.stranger), self.assertRaisesRegex(DjangoPermissionDenied, "source"):
+            revise(original, result={"number": "NEW", "rows": []}, decision=decision)
+        with system_context(reason="grant correction source read"):
+            write_relationships([
+                RelationshipTuple(to_object_ref(self.files[0]), "viewer", to_subject_ref(self.stranger)),
+            ])
+        with actor_context(self.stranger), self.assertRaisesRegex(DjangoPermissionDenied, "Decision"):
+            revise(original, result={"number": "NEW", "rows": []}, decision=decision)
+
+        file_model = apps.get_model("storage", "File")
+        with system_context(reason="workflows_ocr correction source mismatch"):
+            file_model._base_manager.filter(pk=self.files[0].pk).update(content_hash="0" * 64)
+        with actor_context(self.owner), self.assertRaisesRegex(ValidationError, "file source identity"):
+            revise(original, result={"number": "NEW", "rows": []}, decision=decision)
 
     def test_retained_message_part_expansion_preserves_evidence_and_is_idempotent(self) -> None:
         channel = make_integration("retained-part-repair")
