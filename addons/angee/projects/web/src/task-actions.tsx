@@ -111,18 +111,17 @@ export function useTaskFormDeclaration(): React.ReactElement {
           The work addon contributes queue, stage, cycle and estimate into the
           same column from its own manifest. */}
       <Group label={t("task.group.properties")} columns={1} placement="properties">
-        <Field name="assignee" />
-        <Field name="delegate" />
         <Field name="priority" widget="priority" options={priorityOptions} />
+        <Field name="assignee" />
         <Field name="due_date" />
-        <Field name="recurrence" />
-      </Group>
-      <Group label={t("task.group.placement")} columns={2}>
         <Field name="project" />
+      </Group>
+      {/* Everything a reader does not need on every visit sits behind one tab. */}
+      <Group label={t("task.group.more")} columns={2}>
+        <Field name="delegate" />
+        <Field name="recurrence" />
         <Field name="milestone" />
         <Field name="parent" />
-      </Group>
-      <Group label={t("task.group.ordering")} columns={2}>
         <Field name="sort_order" label={t("common.order")} createOnly />
         <Field
           name="sub_sort_order"
