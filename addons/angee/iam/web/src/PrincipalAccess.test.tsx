@@ -76,6 +76,10 @@ vi.mock("@angee/ui", () => {
   });
   return {
     Code: ({ children }: { children?: ReactNode }) => <code>{children}</code>,
+    createNamespaceT: (
+      _namespace: string,
+      fallback: Record<string, string>,
+    ) => (key: string) => fallback[key] ?? key,
     InlineEmpty: ({ label }: { label: ReactNode }) => <div>{label}</div>,
     RowsListView: (props: Record<string, unknown>) => {
       mocks.listProps.push(props);
