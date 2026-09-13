@@ -25,6 +25,7 @@ const dndMocks = vi.hoisted(() => {
     setActivatorNodeRef: vi.fn(),
     onDragPointerDown: vi.fn(),
     onDragKeyDown: vi.fn(),
+    navigate: vi.fn(),
     useSensor: vi.fn((sensor: unknown, options?: unknown) => ({ sensor, options })),
     useSensors: vi.fn((...sensors: unknown[]) => sensors),
     useDraggable: vi.fn(() => ({
@@ -57,7 +58,7 @@ const dndMocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => dndMocks.navigate }));
 vi.mock("../../i18n", () => ({ useUiT: () => (key: string) => key }));
 vi.mock("@dnd-kit/core", () => ({
   DndContext: (props: {
@@ -100,6 +101,7 @@ beforeEach(() => {
   dndMocks.setActivatorNodeRef.mockClear();
   dndMocks.onDragPointerDown.mockClear();
   dndMocks.onDragKeyDown.mockClear();
+  dndMocks.navigate.mockClear();
 });
 afterEach(() => cleanup());
 
@@ -357,6 +359,56 @@ describe("BoardView", () => {
     expect(card?.getAttribute("data-sortable")).toBe(null);
     expect(document.querySelectorAll("[data-sortable='true']").length).toBe(1);
     expect(card?.querySelector("a")?.getAttribute("draggable")).toBe("false");
+  });
+
+  test("a drop inside its own lane does not open the dragged card's record", () => {
+    const sortable = (isDragging: boolean) => ({
+      attributes: { "data-sortable": "true" },
+      listeners: {
+        onPointerDown: (event: unknown) => dndMocks.onDragPointerDown(event),
+        onKeyDown: (event: unknown) => dndMocks.onDragKeyDown(event),
+      },
+      setNodeRef: vi.fn(),
+      setActivatorNodeRef: vi.fn((node) => dndMocks.setActivatorNodeRef(node)),
+      transform: null,
+      transition: undefined,
+      isDragging,
+    });
+    const props = {
+      groups: [lane([{ id: "1", label: "First", sort_order: 1024 }])],
+      dragEnabled: true,
+      rankField: "sort_order",
+      onCardMove: vi.fn(),
+      rowHref: () => "/records/1",
+    };
+    const original = dndMocks.useSortable.getMockImplementation();
+    try {
+      dndMocks.useSortable.mockImplementation(() => sortable(true));
+      const view = renderBoard(props);
+      dndMocks.useSortable.mockImplementation(() => sortable(false));
+      view.rerender(
+        <BoardView<DemoRow>
+          columns={COLUMNS}
+          resourceView={RESOURCE_VIEW}
+          selectedIds={new Set()}
+          interactive={false}
+          emptyContent="empty"
+          {...props}
+        />,
+      );
+
+      // A drop that stays in its lane ends with a pointerup over the same card
+      // link, which the browser turns into a click: that click is the drag's.
+      fireEvent.click(screen.getByRole("link"));
+      expect(dndMocks.navigate).not.toHaveBeenCalled();
+
+      // The next press starts clean, so a plain click still opens the record.
+      fireEvent.pointerDown(document.querySelector("article") as Element);
+      fireEvent.click(screen.getByRole("link"));
+      expect(dndMocks.navigate).toHaveBeenCalledWith({ to: "/records/1" });
+    } finally {
+      if (original) dndMocks.useSortable.mockImplementation(original);
+    }
   });
 
   test("wires a card drag handle as the keyboard activator", () => {

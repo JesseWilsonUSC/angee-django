@@ -116,6 +116,14 @@ function BoardRowCardContent<TRow extends Row>({
     transition,
     isDragging,
   } = drag;
+  // A drop ends with a pointerup over the card that was dragged, and when it
+  // stays in its lane the browser turns that into a click on the card's link.
+  // Remember that a drag happened so the click it leaves behind does not open
+  // the record; the next pointerdown starts clean.
+  const draggedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (isDragging) draggedRef.current = true;
+  }, [isDragging]);
   const style = dragEnabled && transform
     ? {
         transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
@@ -133,6 +141,15 @@ function BoardRowCardContent<TRow extends Row>({
       // control. They stay on the grip, whose keydown bubbles to this handler.
       // dnd-kit's activation distance keeps a click a click.
       {...(dragEnabled ? listeners : {})}
+      onPointerDownCapture={() => {
+        draggedRef.current = false;
+      }}
+      onClickCapture={(event) => {
+        if (!draggedRef.current) return;
+        draggedRef.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       className={cn(
         "board-card-grid grid min-w-0 gap-2 rounded-8 border border-border-subtle bg-sheet p-3 shadow-xs",
         isDragging
