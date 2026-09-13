@@ -2279,9 +2279,6 @@ describe("ResourceList", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByText("Updated At · Month")).toBeTruthy(),
-    );
-    await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Groups 1-2 / 4 groups" }),
       ).toBeTruthy(),
@@ -2338,8 +2335,9 @@ describe("ResourceList", () => {
   });
 
   test("lets the seeded default group granularity be changed", async () => {
+    const onUrlUpdate = vi.fn();
     render(
-      <TestUrlState>
+      <TestUrlState onUrlUpdate={onUrlUpdate}>
         <ResourceList
           resource="notes.Note"
           columns={[...columns, { field: "updatedAt", header: "Updated At" }]}
@@ -2360,12 +2358,17 @@ describe("ResourceList", () => {
     );
     const groupPicker = await screen.findByRole("heading", { name: "Group by" });
     fireEvent.click(
+      within(groupPicker.parentElement!).getByRole("button", { name: "Day" }),
+    );
+    fireEvent.click(
       within(groupPicker.parentElement!).getByRole("button", { name: "Month" }),
     );
 
-    await waitFor(() =>
-      expect(screen.getByText("Updated At · Month")).toBeTruthy(),
-    );
+    await waitFor(() => {
+      const latest = onUrlUpdate.mock.calls.at(-1)?.[0];
+      expect(latest?.searchParams.get("group")).toBe("updatedAt:month");
+      expect(latest?.searchParams.get("then")).toBeNull();
+    });
   });
 });
 
