@@ -122,12 +122,6 @@ export function useTaskFormDeclaration(): React.ReactElement {
         <Field name="recurrence" />
         <Field name="milestone" />
         <Field name="parent" />
-        <Field name="sort_order" label={t("common.order")} createOnly />
-        <Field
-          name="sub_sort_order"
-          label={t("common.subtaskOrder")}
-          createOnly
-        />
         <Field name="dropped_reason" readOnly />
         <Field name="done_at" readOnly />
         <Field name="dropped_at" readOnly />
