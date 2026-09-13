@@ -526,7 +526,32 @@ class _FakeOllamaClient:
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
         self.models = _FakeOllamaModels()
+        self.show_calls: list[str] = []
         self.instances.append(self)
+
+    def post(self, path: str, *, cast_to: Any, body: dict[str, Any]) -> dict[str, Any]:
+        """Return native Ollama metadata or simulate an optional lookup failure."""
+
+        assert path == "../api/show"
+        assert cast_to is dict
+        model_id = body["model"]
+        assert body == {"model": model_id, "verbose": False}
+        self.show_calls.append(model_id)
+        if model_id == "nomic-embed-text:latest":
+            raise RuntimeError("native metadata unavailable")
+        if model_id == "llama3.2:latest":
+            return {
+                "details": {"family": "llama"},
+                "model_info": {"llama.context_length": 131072},
+                "parameters": "temperature 0.8\nnum_ctx 32768",
+            }
+        return {
+            "details": {},
+            "model_info": {
+                "qwen.context_length": 65536,
+                "qwen.vision.context_length": 8192,
+            },
+        }
 
 
 @pytest.mark.django_db(transaction=True)
@@ -677,10 +702,24 @@ def test_ollama_backend_lists_tagged_models_without_a_credential(monkeypatch: An
     assert {spec.config["source"] for spec in specs} == {"ollama"}
     assert all(spec.model_use == "" for spec in specs)
     assert all("model_use" not in spec.upsert_defaults() for spec in specs)
-    assert _FakeOllamaClient.instances[-1].kwargs == {
+    client = _FakeOllamaClient.instances[-1]
+    assert client.kwargs == {
         "api_key": "not-required",
         "base_url": "http://localhost:11434/v1",
     }
+    assert client.show_calls == [
+        "llama3.2:latest",
+        "nomic-embed-text:latest",
+        "qwen2.5-coder:7b",
+    ]
+    by_handle = {spec.handle: spec for spec in specs}
+    assert by_handle["llama3.2:latest"].context_window == 131072
+    assert by_handle["ollama/llama3.2:latest"].context_window == 131072
+    assert by_handle["llama3.2:latest"].config["ollama_num_ctx"] == 32768
+    assert by_handle["ollama/llama3.2:latest"].config["ollama_num_ctx"] == 32768
+    assert by_handle["nomic-embed-text:latest"].context_window == 0
+    assert by_handle["qwen2.5-coder:7b"].context_window == 0
+    assert all(spec.max_output_tokens == 0 for spec in specs)
 
 
 @pytest.mark.django_db(transaction=True)
