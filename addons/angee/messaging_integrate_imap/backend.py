@@ -13,9 +13,10 @@ Correctness rests on three facts. UIDVALIDITY is checked every run: a changed
 value invalidates that mailbox's UID space, so its cursor resets and the folder
 refetches in full — the ``(platform, external_id)`` ingest idempotency converges
 the refetch instead of duplicating it. UIDNEXT (from STATUS, no SELECT) pre-screens
-each unchanged mailbox so an idle folder costs one round-trip. And the cursor
-advances only in memory during a run — ``Bridge.record_sync`` persists it after
-the whole run succeeds, so a crash can re-fetch but never skip mail.
+each unchanged mailbox so an idle folder costs one round-trip. The backend
+advances its cursor in memory; ``Channel._drain`` persists it only after the
+corresponding batch is ingested locally. A crash can therefore re-fetch an
+unfinished batch without skipping mail or restarting a completed backfill.
 
 ``fetch_messages`` follows the seam's paging contract (one bounded batch per
 call — ``config["batch_size"]``, default 200, with body pulls additionally split
