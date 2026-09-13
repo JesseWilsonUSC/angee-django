@@ -102,12 +102,11 @@ describe("useOperatorRows", () => {
     expect(result.current.error).toBe(error);
   });
 
-  test("keeps stale snapshot rows and suppresses transient query errors", () => {
+  test("keeps stale snapshot rows while exposing transient query errors", () => {
+    const error = new Error("temporary network error");
     transportMocks.snapshotResult = snapshotResult({
       result: {
-        error: new Error(
-          "temporary network error",
-        ) as OperatorSnapshotResult["result"]["error"],
+        error: error as OperatorSnapshotResult["result"]["error"],
       },
     });
 
@@ -118,7 +117,7 @@ describe("useOperatorRows", () => {
     );
 
     expect(result.current.rows.map((row) => row.name)).toEqual(["api"]);
-    expect(result.current.error).toBeNull();
+    expect(result.current.error).toBe(error);
   });
 
   test("preserves snapshot refetch for action sections", () => {
