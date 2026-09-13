@@ -320,16 +320,35 @@ const metadata = schemaFieldMetadataFromDataResources([fileResource]);
 const provider = {
   getApiUrl: () => "test://files",
   getList: async ({ meta, pagination }: GetListParams) => {
-    const where = (meta?.gqlVariables?.where ?? {}) as Record<string, { _eq?: unknown }>;
-    const rows = storageData.files.filter((row) => Object.entries(where).every(([field, comparison]) =>
-      !("_eq" in comparison) || row[field as keyof typeof row] === comparison._eq,
-    )).sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+    const where = meta?.gqlVariables?.where;
+    const rows = storageData.files
+      .filter((row) => matchesProviderWhere(row, where))
+      .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
     const size = pagination?.pageSize ?? 50;
     const start = ((pagination?.currentPage ?? 1) - 1) * size;
     return { data: rows.slice(start, start + size), total: rows.length };
   },
   getOne: vi.fn(), create: vi.fn(), update: vi.fn(), deleteOne: vi.fn(),
 } as DataProvider;
+
+function matchesProviderWhere(
+  row: ReturnType<typeof file>,
+  where: unknown,
+): boolean {
+  if (!where || typeof where !== "object" || Array.isArray(where)) return true;
+  return Object.entries(where).every(([field, comparison]) => {
+    if (field === "_and") {
+      return Array.isArray(comparison)
+        && comparison.every((clause) => matchesProviderWhere(row, clause));
+    }
+    if (!comparison || typeof comparison !== "object" || Array.isArray(comparison)) {
+      return true;
+    }
+    return !("_eq" in comparison)
+      || row[field as keyof typeof row] === comparison._eq;
+  });
+}
+
 function pageTree() {
   return (
     <Refine resources={[...refineResourcesFromDataResources([fileResource])]} dataProvider={{ default: provider, console: provider }} options={{ disableTelemetry: true, reactQuery: { clientConfig: { defaultOptions: { queries: { retry: false, gcTime: 0 } } } } }}>
