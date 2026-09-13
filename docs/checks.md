@@ -115,7 +115,7 @@ schema-independent; addon fragments need the composed host's generated documents
 | Distribution import checks | Framework source root, after builds | `node packages/scripts/check-dist-imports.mjs` |
 | UI export checks | Framework source root, after builds | `node packages/ui/scripts/check-views-exports.mjs` |
 | Package/exports architecture | Framework source root | `pnpm --config.verify-deps-before-run=false --fail-if-no-match --filter @angee/app exec vitest run src/architecture-guardrails.test.ts` |
-| All composed fragment types | Stack root, after SDL/codegen | `pnpm --config.verify-deps-before-run=false -r run typecheck` |
+| All composed fragment types | Stack root, after SDL/codegen | `pnpm --config.verify-deps-before-run=false --dir web run typecheck` |
 | All composed fragment tests | Stack root, after SDL/codegen | `pnpm --config.verify-deps-before-run=false -r run test` |
 
 The framework root has no generic `build` script. Package-filtered builds and the

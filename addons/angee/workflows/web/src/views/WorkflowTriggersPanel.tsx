@@ -3,7 +3,7 @@ import { useAuthoredQuery } from "@angee/refine";
 import type { ActionFieldName } from "@angee/gql/console/actions";
 import {
   Badge, Button, Collapsible, Column, EmptyState, ErrorBanner, errorMessage, Field, Form, Group, List,
-  JsonValueView, LoadingPanel, ResourceList, REFINE_CREATE_ID, SegmentedControl, formatDateTime, registerForm, slotContents,
+  JsonValueView, LoadingPanel, ResourceList, REFINE_CREATE_ID, SegmentedControl, formatDateTime, jsonValueFromUnknown, registerForm, slotContents,
   TextLink, useImplConfigFields, useFormViewValues,
   useRouteHref, useSlot, useActionOutcomeMutation, useActionResultRun,
   type RecordToolbarContext, type RegisteredFormProps,
@@ -232,7 +232,7 @@ function TriggerRawConfig({
       </Collapsible.Trigger>
       <Collapsible.Panel>
         <section aria-label={t("triggers.ruleJson")}>
-          <JsonValueView value={values.config} />
+          <JsonValueView value={jsonValueFromUnknown(values.config)} />
         </section>
       </Collapsible.Panel>
     </Collapsible>
