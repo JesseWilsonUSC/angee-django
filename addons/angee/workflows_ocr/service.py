@@ -276,8 +276,9 @@ def revise(extraction: Any, *, result: Mapping[str, Any], decision: Any) -> Any:
 
     The new revision clones retained source, page, and part evidence without
     reacquiring sources or invoking an engine. Claims survive only where their
-    JSON-pointer value is unchanged. The original revision remains immutable;
-    exact retries reuse one result while stale or competing corrections fail.
+    JSON-pointer value and every containing array element are unchanged. The
+    original revision remains immutable; exact retries reuse one result while
+    stale or competing corrections fail.
     """
 
     actor = current_actor()
@@ -442,6 +443,8 @@ def _retained_source_facts(sources: Sequence[Any]) -> list[dict[str, Any]]:
 
 
 def _unchanged_claims(claims: Any, *, before: Any, after: Any) -> dict[str, Any]:
+    """Retain equal leaf claims only while indexed container identity is stable."""
+
     if not isinstance(claims, Mapping):
         raise ValidationError({"extraction": "The retained extraction claims are invalid."})
     retained: dict[str, Any] = {}
@@ -456,7 +459,7 @@ def _unchanged_claims(claims: Any, *, before: Any, after: Any) -> dict[str, Any]
         ):
             raise ValidationError({"extraction": "The retained extraction claims are invalid."})
         old_value = _json_pointer_value(before, pointer)
-        new_value = _json_pointer_value(after, pointer)
+        new_value = _json_pointer_value(after, pointer, array_element_baseline=before)
         if (
             old_value is not _MISSING
             and new_value is not _MISSING
@@ -469,8 +472,11 @@ def _unchanged_claims(claims: Any, *, before: Any, after: Any) -> dict[str, Any]
 _MISSING = object()
 
 
-def _json_pointer_value(value: Any, pointer: str) -> Any:
+def _json_pointer_value(
+    value: Any, pointer: str, *, array_element_baseline: Any = _MISSING,
+) -> Any:
     current = value
+    baseline = array_element_baseline
     for encoded in pointer.removeprefix("/").split("/"):
         if "~" in encoded:
             index = 0
@@ -483,6 +489,10 @@ def _json_pointer_value(value: Any, pointer: str) -> Any:
             if token not in current:
                 return _MISSING
             current = current[token]
+            if baseline is not _MISSING:
+                if not isinstance(baseline, Mapping) or token not in baseline:
+                    return _MISSING
+                baseline = baseline[token]
         elif isinstance(current, list):
             if not token.isascii() or not token.isdigit() or (token.startswith("0") and token != "0"):
                 return _MISSING
@@ -490,6 +500,12 @@ def _json_pointer_value(value: Any, pointer: str) -> Any:
             if index >= len(current):
                 return _MISSING
             current = current[index]
+            if baseline is not _MISSING:
+                if not isinstance(baseline, list) or index >= len(baseline):
+                    return _MISSING
+                baseline = baseline[index]
+                if not json_values_equal(current, baseline):
+                    return _MISSING
         else:
             return _MISSING
     return current

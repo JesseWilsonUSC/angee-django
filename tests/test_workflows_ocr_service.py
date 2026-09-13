@@ -130,6 +130,38 @@ class PageAggregationTests(SimpleTestCase):
             {},
         )
 
+    def test_claim_retention_drops_equal_leaves_under_reordered_array_elements(self) -> None:
+        claims = {
+            "/currency": [{"part_position": 0}],
+            "/documents/0/quantity": [{"part_position": 1}],
+            "/documents/1/quantity": [{"part_position": 2}],
+            "/documents/2/quantity": [{"part_position": 3}],
+        }
+        before = {
+            "currency": "EUR",
+            "documents": [
+                {"identity": "A", "quantity": 1},
+                {"identity": "B", "quantity": 1},
+                {"identity": "C", "quantity": 2},
+            ],
+        }
+        after = {
+            "currency": "EUR",
+            "documents": [
+                {"identity": "B", "quantity": 1},
+                {"identity": "A", "quantity": 1},
+                {"identity": "C", "quantity": 2},
+            ],
+        }
+
+        self.assertEqual(
+            _unchanged_claims(claims, before=before, after=after),
+            {
+                "/currency": [{"part_position": 0}],
+                "/documents/2/quantity": [{"part_position": 3}],
+            },
+        )
+
     def test_missing_models_retain_acquired_evidence(self) -> None:
         part = DocumentPart(0, 0, "text/plain", "native_text", "Invoice 22121", "test", "a" * 64)
         with self.assertRaises(DocumentPipelineError) as mapping_error:
