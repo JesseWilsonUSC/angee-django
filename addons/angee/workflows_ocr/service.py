@@ -302,8 +302,8 @@ def _message_part_hash(part: Any) -> str:
         raise ValidationError({"message_parts": "Text message parts require a retained fragment."})
     if not str(part.type).startswith("text/"):
         raise ValidationError({"message_parts": "Only textual message parts can be extraction sources."})
-    if str(part.role) not in {"body", "title", "header"}:
-        raise ValidationError({"message_parts": "Quoted and signature message parts cannot be extraction sources."})
+    if str(part.role) not in {"body", "title", "quoted", "signature", "header"}:
+        raise ValidationError({"message_parts": "The message part has an unsupported textual role."})
     if len(part.fragment.text.encode()) > int(settings.ANGEE_OCR_MAX_BYTES):
         raise ValidationError({"message_parts": "An extraction source exceeds the configured byte limit."})
     return str(part.fragment.hash)

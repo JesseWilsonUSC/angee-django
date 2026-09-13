@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from PIL import Image
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 
@@ -38,6 +38,75 @@ SCHEMA = {
 
 def _page(source: int, page: int) -> PageImage:
     return PageImage(source, page, "image/jpeg", b"synthetic", 10, 10, 200)
+
+
+def _message_part(
+    *, role: str = "body", mime_type: str = "text/plain", text: str = "retained message evidence",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        pk=1,
+        sqid="prt_retained",
+        fragment_id=1,
+        fragment=SimpleNamespace(text=text, hash=hashlib.sha256(text.encode()).hexdigest()),
+        role=role,
+        type=mime_type,
+        has_access=lambda _permission: True,
+    )
+
+
+@pytest.mark.parametrize("role", ["body", "title", "quoted", "signature", "header"])
+def test_retained_textual_message_roles_are_authorized_source_evidence(role: str) -> None:
+    part = _message_part(role=role)
+
+    source = service._document_sources((), (part,))[0]
+
+    assert source.source_position == 0
+    assert source.message_part is part
+    assert source.content == part.fragment.text
+    assert source.content_hash == part.fragment.hash
+    assert service._source_fact(source) == {
+        "position": 0,
+        "message_part": "prt_retained",
+        "content_hash": part.fragment.hash,
+    }
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"role": "attachment"}, "unsupported textual role"),
+        ({"type": "application/json"}, "Only textual message parts"),
+        ({"fragment_id": None}, "require a retained fragment"),
+    ],
+)
+def test_message_part_sources_reject_unsupported_contracts(change: dict[str, object], message: str) -> None:
+    part = _message_part()
+    for field, value in change.items():
+        setattr(part, field, value)
+
+    with pytest.raises(ValidationError, match=message):
+        service._document_sources((), (part,))
+
+
+def test_message_part_sources_reject_tampered_hashes_and_byte_overflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tampered = _message_part()
+    tampered.fragment.hash = "0" * 64
+    with pytest.raises(ValidationError, match="no longer matches"):
+        service._document_sources((), (tampered,))
+
+    monkeypatch.setattr(service.settings, "ANGEE_OCR_MAX_BYTES", 4)
+    with pytest.raises(ValidationError, match="configured byte limit"):
+        service._document_sources((), (_message_part(text="five!"),))
+
+
+def test_message_part_source_requires_actor_read_access() -> None:
+    denied = _message_part()
+    denied.has_access = lambda _permission: False
+
+    with pytest.raises(PermissionDenied, match="every extraction source"):
+        service._authorize((), (denied,), SimpleNamespace(has_access=lambda _permission: True))
 
 
 def test_fake_engine_addresses_pages_by_source_and_page_without_collisions() -> None:

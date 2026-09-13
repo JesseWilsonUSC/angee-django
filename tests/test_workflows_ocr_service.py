@@ -13,7 +13,8 @@ from unittest.mock import patch
 import pytest
 from django.apps import apps
 from django.contrib.auth import get_user_model
-from django.core.exceptions import PermissionDenied as DjangoPermissionDenied, ValidationError
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import IntegrityError, connection, models
 from django.test import SimpleTestCase, override_settings
@@ -38,7 +39,7 @@ from angee.workflows_ocr.routing import (
     derive_text_claims,
     recognize_pages,
 )
-from angee.workflows_ocr.service import _document_sources, model_deployment_identity, _merge, extract, reextract
+from angee.workflows_ocr.service import _document_sources, _merge, extract, model_deployment_identity, reextract
 from angee.workflows_ocr.steps import OcrExtractConfig, OcrExtractStepImpl
 from angee.workflows_ocr_glm.engine import GlmOllamaEngine
 from tests.conftest import _clear_model_tables, _create_missing_tables, make_integration
