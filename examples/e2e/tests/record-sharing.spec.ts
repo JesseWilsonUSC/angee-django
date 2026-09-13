@@ -46,7 +46,9 @@ test.describe("shared record access", () => {
     await notes.shareButton.click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("heading")).toContainText(/^Share /);
-    await dialog.getByRole("button", { name: "Recipient" }).click();
+    await dialog
+      .getByRole("button", { name: "Recipient", exact: true })
+      .click();
     await expect(
       page.getByRole("option", { name: "Demo Agent", exact: true }),
     ).toBeVisible({ timeout: 20_000 });
