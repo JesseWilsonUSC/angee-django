@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import {
   Outlet,
   RouterProvider,
@@ -11,6 +11,7 @@ import {
 } from "@tanstack/react-router";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -21,7 +22,7 @@ import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { parseFlatSearch, stringifyFlatSearch } from "../create-app";
 import { setThemePreference, storedThemePreference } from "@angee/ui/lib/theme";
 import { baseIcons } from "@angee/ui/chrome/icon-registry";
-import { ConsoleLayout } from "@angee/ui/layouts/ConsoleLayout";
+import { CONSOLE_NOTICE_SLOT, ConsoleLayout } from "@angee/ui/layouts/ConsoleLayout";
 import { ControlBand } from "@angee/ui/layouts/ControlBand";
 import { PrimaryPanePublisher } from "@angee/ui/layouts/primary-pane-context";
 import { Statusline, StatusSegment } from "@angee/ui/layouts/Statusline";
@@ -170,7 +171,11 @@ function runtimeForConsoleTest(
   };
 }
 
-function renderInRouter(children: ReactNode, initialPath = "/notes") {
+function renderInRouter(
+  children: ReactNode,
+  initialPath = "/notes",
+  runtime?: Partial<AppRuntime>,
+) {
   const rootRoute = createRootRoute({
     component: () => <Outlet />,
   });
@@ -213,13 +218,19 @@ function renderInRouter(children: ReactNode, initialPath = "/notes") {
   });
 
   return render(
-    <ConsoleTestRuntime>
+    <ConsoleTestRuntime runtime={runtime}>
       <RouterProvider router={router} />
     </ConsoleTestRuntime>,
   );
 }
 
-function ConsoleTestRuntime({ children }: { children: ReactNode }): ReactNode {
+function ConsoleTestRuntime({
+  children,
+  runtime,
+}: {
+  children: ReactNode;
+  runtime?: Partial<AppRuntime>;
+}): ReactNode {
   const [preferences, setPreferences] = useState<RuntimeUserPreferences>({
     "chrome.rail": {
       order: [],
@@ -233,11 +244,14 @@ function ConsoleTestRuntime({ children }: { children: ReactNode }): ReactNode {
     },
     [],
   );
-  const runtime = useMemo(
-    () => runtimeForConsoleTest(preferences, patchPreferences),
-    [patchPreferences, preferences],
+  const resolvedRuntime = useMemo(
+    () => ({
+      ...runtimeForConsoleTest(preferences, patchPreferences),
+      ...runtime,
+    }),
+    [patchPreferences, preferences, runtime],
   );
-  return <AppRuntimeProvider runtime={runtime}>{children}</AppRuntimeProvider>;
+  return <AppRuntimeProvider runtime={resolvedRuntime}>{children}</AppRuntimeProvider>;
 }
 
 describe("ConsoleLayout", () => {
@@ -440,6 +454,47 @@ describe("ConsoleLayout", () => {
     expect(screen.getByRole("main").contains(button)).toBe(false);
   });
 
+  test("keeps a delayed console notice above an already-mounted control band", async () => {
+    let revealNotice: () => void = () => undefined;
+    const noticeRequested = new Promise<void>((resolve) => {
+      revealNotice = resolve;
+    });
+    function DelayedNotice() {
+      const [visible, setVisible] = useState(false);
+      useEffect(() => {
+        void noticeRequested.then(() => setVisible(true));
+      }, []);
+      return visible ? <div>Restart notice</div> : null;
+    }
+    const runtime: Partial<AppRuntime> = {
+      slots: [{
+        slot: CONSOLE_NOTICE_SLOT,
+        id: "test.delayed-notice",
+        content: <DelayedNotice />,
+      }],
+    };
+    const { container } = renderInRouter(
+      <ConsoleLayout>
+        <ControlBand><button type="button">Page filters</button></ControlBand>
+      </ConsoleLayout>,
+      "/notes",
+      runtime,
+    );
+
+    const filters = await screen.findByRole("button", { name: "Page filters" });
+    expect(screen.queryByText("Restart notice")).toBeNull();
+    await act(async () => {
+      revealNotice();
+      await noticeRequested;
+    });
+    const notice = await screen.findByText("Restart notice");
+    const host = container.querySelector(".area-control");
+    expect(host?.contains(notice)).toBe(true);
+    expect(host?.contains(filters)).toBe(true);
+    expect(notice.compareDocumentPosition(filters) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .not.toBe(0);
+  });
+
   test("keeps the primary pane's controls local when the main collection opens a record", async () => {
     function Page() {
       const [reading, setReading] = useState(false);
@@ -460,7 +515,7 @@ describe("ConsoleLayout", () => {
     expect(screen.getByRole("region", { name: "Finder" }).contains(finder)).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Read record" }));
     await screen.findByText("Message record");
-    expect(host?.childNodes.length).toBe(0);
+    expect(host?.querySelector("[data-console-controls]")?.childNodes.length).toBe(0);
     expect(screen.getByRole("button", { name: "Finder filters" })).toBe(finder);
     expect(screen.getByRole("region", { name: "Finder" }).contains(finder)).toBe(true);
   });
@@ -537,8 +592,12 @@ describe("ConsoleLayout", () => {
     );
     await screen.findByText("Body content");
 
-    // Empty host → the auto-height grid row collapses to zero (no grey band).
-    expect(container.querySelector(".area-control")?.children.length).toBe(0);
+    // Empty display:contents hosts contribute no box, so the auto-height grid
+    // row still collapses to zero without a grey band.
+    const control = container.querySelector(".area-control");
+    expect(control?.textContent).toBe("");
+    expect(control?.querySelector("[data-console-notices]")?.className).toContain("contents");
+    expect(control?.querySelector("[data-console-controls]")?.className).toContain("contents");
   });
 
   test("renders the band inline when there is no layout above", () => {

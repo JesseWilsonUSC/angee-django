@@ -1249,6 +1249,24 @@ def test_appgraph_preserves_authored_app_config_root_declaration() -> None:
     assert configs["angee.iam"].angee_root_declaration == declaration
 
 
+def test_appgraph_distinguishes_project_roots_from_injected_runtime_roots() -> None:
+    """Framework defaults run but do not become project-authored drift facts."""
+
+    declaration = "angee.iam.apps.IAMConfig"
+    configs = {
+        config.name: config
+        for config in AppGraph().resolve(
+            ["django.contrib.contenttypes", declaration],
+            declared_roots=[declaration],
+        )
+    }
+
+    assert configs["angee.iam"].angee_root_declaration == declaration
+    assert configs["angee.iam"].angee_addon_root is True
+    assert configs["django.contrib.contenttypes"].angee_root_declaration is None
+    assert configs["django.contrib.contenttypes"].angee_addon_root is False
+
+
 def test_appgraph_rejects_duplicate_dependencies() -> None:
     """Repeated dependencies are rejected at their declaring owner."""
 

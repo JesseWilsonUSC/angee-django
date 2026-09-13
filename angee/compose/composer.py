@@ -31,31 +31,21 @@ class Composer:
 
         self.namespace = namespace
 
-    def compose_settings(self) -> None:
+    def compose_settings(self, *, project_apps: object | None = None) -> None:
         """Apply Angee's composed settings into ``namespace``."""
 
         installed_apps = self.namespace.get("INSTALLED_APPS")
         if installed_apps is None:
             raise ImproperlyConfigured("settings must define INSTALLED_APPS")
-        root_apps: tuple[str | AppConfig, ...]
-        if isinstance(installed_apps, str | AppConfig):
-            root_apps = (installed_apps,)
-        else:
-            if not isinstance(installed_apps, Iterable):
-                raise ImproperlyConfigured("INSTALLED_APPS must be a string or iterable of app entries")
-            root_entries: list[str | AppConfig] = []
-            for entry in installed_apps:
-                if not isinstance(entry, str | AppConfig):
-                    raise ImproperlyConfigured("INSTALLED_APPS must contain app paths or AppConfig instances")
-                root_entries.append(entry)
-            root_apps = tuple(root_entries)
+        root_apps = self._app_entries(installed_apps)
+        declared_apps = None if project_apps is None else self._app_entries(project_apps)
 
         runtime_setting = self.namespace.get("ANGEE_RUNTIME_DIR")
         if runtime_setting is None:
             raise ImproperlyConfigured("settings must define ANGEE_RUNTIME_DIR")
         runtime_dir = resolve_path(runtime_setting)
 
-        app_configs = AppGraph().resolve(root_apps)
+        app_configs = AppGraph().resolve(root_apps, declared_roots=declared_apps)
         self.namespace["INSTALLED_APPS"] = list(app_configs)
         self._set_composer_setting("ROOT_URLCONF", "angee.urls")
         self._set_composer_setting("ASGI_APPLICATION", "angee.asgi.application")
@@ -68,6 +58,19 @@ class Composer:
         autoconfig = AutoConfig(self.namespace, reserved_settings=COMPOSER_OWNED_SETTINGS)
         for app_config in app_configs:
             autoconfig.update_app(app_config)
+
+    @staticmethod
+    def _app_entries(value: object) -> tuple[str | AppConfig, ...]:
+        """Validate and freeze one Django app declaration collection."""
+
+        if isinstance(value, str | AppConfig):
+            return (value,)
+        if not isinstance(value, Iterable):
+            raise ImproperlyConfigured("INSTALLED_APPS must be a string or iterable of app entries")
+        entries = tuple(value)
+        if not all(isinstance(entry, str | AppConfig) for entry in entries):
+            raise ImproperlyConfigured("INSTALLED_APPS must contain app paths or AppConfig instances")
+        return entries
 
     def _set_composer_setting(self, key: str, value: object) -> None:
         """Assign a Composer-owned setting, rejecting conflicting project values."""

@@ -42,6 +42,7 @@ class ProjectContract:
 
         self.namespace = namespace
         self.env = environ.Env()
+        self._project_apps: object = ()
 
     def compose(self) -> None:
         """Populate ``namespace`` from project settings, defaults, and addon contracts."""
@@ -50,7 +51,7 @@ class ProjectContract:
 
         root = self.load()
         prepend_import_paths((*self.namespace.get("ANGEE_ADDON_DIRS", ()), root))
-        Composer(self.namespace).compose_settings()
+        Composer(self.namespace).compose_settings(project_apps=self._project_apps)
 
     def load(self) -> Path:
         """Load project settings and defaults without composing the Django app graph.
@@ -70,6 +71,7 @@ class ProjectContract:
         yamlconf.load_project(project_settings, root)
         yamlconf.reject_unexpected_sources(project_settings, root, settings_module)
         project_yaml_settings = yamlconf.project_yaml_settings(project_settings, root)
+        self._project_apps = getattr(project_settings, "INSTALLED_APPS", ())
         self._apply_defaults(project_settings, root)
         self.namespace[PROJECT_YAML_SETTINGS] = project_yaml_settings
         return root

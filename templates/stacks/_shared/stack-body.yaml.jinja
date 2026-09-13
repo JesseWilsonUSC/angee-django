@@ -393,6 +393,8 @@ services:
   # Dedicated queue workers retain their own pool and concurrency policy.
   celery-{{ role }}:
 {% include "../../_shared/python-runtime.yaml.jinja" %}
+    # Let Celery finish a warm shutdown, then bound native supervisor updates.
+    stop_grace_period: 30s
 {% if runtime_mode == "process" %}    command: ["uv", "run", "celery", "-A", "angee.jobs.celery:app", {% if role == "beat" %}"beat"{% else %}"worker"{% endif %}{% if role != "worker" and role != "beat" %}, "-Q", "{{ role }}", "--pool", "threads", "--concurrency", "8"{% endif %}, "--loglevel=INFO"]
     after: [provision]
 {% else %}    command:

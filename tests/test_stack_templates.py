@@ -172,23 +172,31 @@ def _render_jinja_set_tags(text: str, variables: dict[str, str]) -> str:
 def _apply_set_line(line: str, variables: dict[str, str]) -> None:
     """Walk one `{% if/elif/else/set/endif %}` line as a mini branch evaluator."""
 
-    active: bool | None = None  # None ⇒ unconditional (a bare `{% set %}` line)
-    branch_taken = False
+    frames: list[dict[str, bool]] = []
     for body in _JINJA_TAG.findall(line):
         if body.startswith("if "):
-            active = _eval_condition(body[len("if ") :], variables)
-            branch_taken = active
+            parent = _parent_active(frames)
+            active = parent and _eval_condition(body[len("if ") :], variables)
+            frames.append({"active": active, "matched": active, "parent": parent})
         elif body.startswith("elif "):
-            active = not branch_taken and _eval_condition(body[len("elif ") :], variables)
-            branch_taken = branch_taken or active
+            frame = frames[-1]
+            active = (
+                frame["parent"]
+                and not frame["matched"]
+                and _eval_condition(body[len("elif ") :], variables)
+            )
+            frame["active"] = active
+            frame["matched"] = frame["matched"] or active
         elif body == "else":
-            active = not branch_taken
-            branch_taken = True
+            frame = frames[-1]
+            frame["active"] = frame["parent"] and not frame["matched"]
+            frame["matched"] = True
         elif body == "endif":
-            active = None
-        elif body.startswith("set ") and active is not False:
+            frames.pop()
+        elif body.startswith("set ") and _parent_active(frames):
             name, _, expr = body[len("set ") :].partition("=")
             variables[name.strip()] = _eval_expr(expr, variables)
+    assert not frames
 
 
 def _render_conditionals(text: str, variables: dict[str, str]) -> str:
@@ -308,7 +316,7 @@ def _eval_atom(atom: str, variables: dict[str, str]) -> str:
     atom = atom.strip()
     if atom.startswith('"') and atom.endswith('"'):
         return atom[1:-1]
-    return variables[atom]
+    return variables.get(atom, "")
 
 
 # --- per-template renderers ----------------------------------------------------
@@ -890,7 +898,7 @@ def test_dev_stack_keeps_the_process_only_frontend_services() -> None:
     assert "storybook" in stack["services"]
     assert "caddy" not in stack["services"]
     assert stack["services"]["frontend"]["command"] == ["pnpm", "--dir", "web", "dev"]
-    assert "provision" in stack["services"]["frontend"]["after"]
+    assert stack["services"]["frontend"]["after"] == ["django", "operator", "codegen"]
 
     # Storybook runs in the STACK workspace (deps installed the monorepo
     # storybook package as a member) — a private install inside a slot would fork
@@ -1079,7 +1087,7 @@ def test_dev_stack_docker_mode_is_containerized_framework_dev() -> None:
     # `corepack enable` does not reach sibling containers.
     assert storybook["command"][-1].startswith("corepack enable pnpm;")
     assert "exec pnpm --filter @angee/storybook dev --no-open --host 0.0.0.0" in storybook["command"][-1]
-    assert storybook["after"] == ["frontend"]
+    assert storybook["after"] == ["deps"]
     assert storybook["ports"] == ["${ports.storybook}:6006"]
 
     assert stack["ingress"] == {
@@ -1131,7 +1139,8 @@ def test_readiness_is_owned_by_long_running_http_and_django_services() -> None:
         assert framework["services"][name]["after"] == ["provision", "redis"]
         assert instance["services"][name]["after"] == ["provision", "redis"]
     assert framework["services"]["frontend"]["after"] == ["django", "codegen"]
-    for name in ("storybook", "playwright-server", "playwright-mcp"):
+    assert framework["services"]["storybook"]["after"] == ["deps"]
+    for name in ("playwright-server", "playwright-mcp"):
         assert framework["services"][name]["after"] == ["frontend"]
     assert instance["jobs"]["frontend-build"]["depends_on"] == ["provision", "operator-schema"]
     assert instance["services"]["caddy"]["after"] == ["frontend-build"]
@@ -1410,10 +1419,13 @@ def test_celery_queue_workers_render_in_both_modes() -> None:
             "celery-worker",
             "celery-beat",
         }
+        assert stack["services"]["celery-worker"]["stop_grace_period"] == "30s"
+        assert stack["services"]["celery-beat"]["stop_grace_period"] == "30s"
 
     dev = _render_dev_stack(celery_queues="whatsapp")
     dev_service = dev["services"]["celery-whatsapp"]
     assert dev_service["runtime"] == "local"
+    assert dev_service["stop_grace_period"] == "30s"
     command = dev_service["command"]
     assert command[command.index("-Q") + 1] == "whatsapp"
     assert command[command.index("--pool") + 1] == "threads"

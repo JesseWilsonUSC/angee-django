@@ -20,7 +20,7 @@ from angee.operator.daemon import OperatorDaemon, OperatorDaemonError, OperatorD
 from angee.operator.models import OperatorConnection as _AbstractOperatorConnection
 from angee.operator.models import OperatorRole as _AbstractOperatorRole
 
-_CONNECTION_QUERY = "{ operatorConnection { endpoint token } }"
+_CONNECTION_QUERY = "{ operatorConnection { endpoint token restartJob } }"
 _ACTOR = SubjectRef.of("auth/user", "abc")
 
 
@@ -438,6 +438,7 @@ class _StubDaemon:
     """Stand-in daemon that returns a fixed token without any network call."""
 
     endpoint = "http://localhost:9000/graphql"
+    restart_job = "provision"
 
     def __init__(self, token: str | None) -> None:
         self._token = token
@@ -515,6 +516,7 @@ def test_connection_returns_minted_token_for_authorized_actor(monkeypatch: pytes
         "operatorConnection": {
             "endpoint": "http://localhost:9000/graphql",
             "token": "minted-xyz",
+            "restartJob": "provision",
         }
     }
     assert stub.minted_for == "auth/user:abc"
