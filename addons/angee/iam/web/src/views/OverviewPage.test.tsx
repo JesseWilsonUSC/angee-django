@@ -43,7 +43,9 @@ describe("IAM overview page", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "Grant" }).at(-1)!);
     fireEvent.click(await screen.findByRole("button", { name: "Choose group" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Grant" }).at(-1)!);
+    const submit = screen.getAllByRole("button", { name: "Grant" }).at(-1)!;
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(submit);
 
     await waitFor(() => expect(mocks.grantRole).toHaveBeenCalledWith({
       subject: "auth/group:7#member",
@@ -56,6 +58,7 @@ describe("IAM overview page", () => {
     renderPage(<OverviewPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Grant" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Role" }));
     expect(await screen.findByRole("option", { name: "angee / Reader" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "angee / Admin" })).toBeNull();
     expect(screen.queryByRole("option", { name: "angee / Removed" })).toBeNull();

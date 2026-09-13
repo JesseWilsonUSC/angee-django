@@ -45,7 +45,7 @@ export function AddIntegrationPage(): React.ReactElement {
     return (
       <EmptyState
         fill
-        icon="integrate"
+        icon="connect"
         title={t("integrations.add.title")}
         description={t("integrations.add.description")}
         actions={capabilities.length > 0 ? capabilities.map((capability) => (
@@ -62,7 +62,7 @@ export function AddIntegrationPage(): React.ReactElement {
     return (
       <EmptyState
         fill
-        icon={selected.icon ?? "integrate"}
+        icon={selected.icon ?? "connect"}
         title={selected.label}
         description={t("integrations.add.connectDescription")}
         actions={(
