@@ -74,6 +74,7 @@ export function authoredQueryOptions<TDocument extends AuthoredDocument>(
   document: TDocument,
   variables?: AuthoredVariables<TDocument>,
   models: readonly string[] = [],
+  records: readonly { model: string; id: string }[] = [],
 ): UnusedSkipTokenOptions<
   DocumentData<TDocument>, Error, DocumentData<TDocument>,
   ReturnType<typeof authoredQueryKey<TDocument>>
@@ -85,7 +86,7 @@ export function authoredQueryOptions<TDocument extends AuthoredDocument>(
   const queryKey = authoredQueryKey(document, variables, dataProviderName);
   return queryOptions({
     queryKey,
-    meta: sharedAuthoredMeta(client, queryKey, models),
+    meta: sharedAuthoredMeta(client, queryKey, models, records),
     queryFn: (context) => requestAuthoredData<DocumentData<TDocument>>(
       dataProvider,
       dataProviderName,
@@ -106,6 +107,7 @@ export function sharedAuthoredMeta(
   client: QueryClient,
   queryKey: QueryKey,
   models: readonly string[],
+  records: readonly { model: string; id: string }[] = [],
 ) {
   const defaulted = client.defaultQueryOptions({ queryKey });
   const query = client.getQueryCache().build(client, defaulted);
@@ -117,7 +119,28 @@ export function sharedAuthoredMeta(
   const previous = Array.isArray(meta.angeeModels)
     ? meta.angeeModels as string[]
     : [];
+  const previousRecords = Array.isArray(meta.angeeRecords) ? meta.angeeRecords : [];
+  const previousBroad = Array.isArray(meta.angeeBroadModels)
+    ? meta.angeeBroadModels as string[]
+    : previous.length > 0 && !Array.isArray(meta.angeeRecords)
+      ? previous
+      : [];
   meta.angeeModels = [...new Set([...previous, ...models])].sort();
+  const exactModels = new Set(records.map((record) => record.model));
+  const broadModels = [...new Set([
+    ...previousBroad,
+    ...models.filter((model) => !exactModels.has(model)),
+  ])].sort();
+  const exactRecords = [...new Map([...previousRecords, ...records].map((record) => {
+      const value = record as { model: string; id: string };
+      return [`${value.model}:${value.id}`, value];
+    })).values()].filter((record) => !broadModels.includes(record.model));
+  if (broadModels.length > 0) meta.angeeBroadModels = broadModels;
+  if (exactRecords.length > 0) {
+    meta.angeeRecords = exactRecords;
+  } else {
+    delete meta.angeeRecords;
+  }
   if (query.meta !== meta) query.setOptions({ ...query.options, meta });
   return meta;
 }

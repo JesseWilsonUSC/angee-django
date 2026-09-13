@@ -1,7 +1,7 @@
 import { InfiniteQueryObserver, isCancelledError, QueryClient, QueryObserver } from "@tanstack/react-query";
 import { expect, test } from "vitest";
 
-import { invalidateAuthoredQueries } from "./query-invalidation";
+import { invalidateAuthoredQueries, invalidateAuthoredQueriesForChange } from "./query-invalidation";
 
 function pending<T>() {
   let resolve!: (value: T) => void;
@@ -12,6 +12,42 @@ function pending<T>() {
 function client() {
   return new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
 }
+
+test("an unrelated row event does not starve an exact record's pending first request", async () => {
+  const cache = client();
+  const first = pending<number>();
+  let requests = 0;
+  let firstSignal!: AbortSignal;
+  const options = {
+    queryKey: ["decision", "wdc_current"],
+    meta: {
+      angeeModels: ["workflows.Decision"],
+      angeeRecords: [{ model: "workflows.Decision", id: "wdc_current" }],
+    },
+    queryFn: ({ signal }: { signal: AbortSignal }) => {
+      requests++;
+      if (requests === 1) {
+        firstSignal = signal;
+        return first.promise;
+      }
+      return Promise.resolve(requests);
+    },
+  };
+  const observer = new QueryObserver(cache, options);
+  const unsubscribe = observer.subscribe(() => undefined);
+  try {
+    await invalidateAuthoredQueriesForChange(cache, "workflows.Decision", "wdc_other");
+    expect(requests).toBe(1);
+    expect(firstSignal.aborted).toBe(false);
+    await invalidateAuthoredQueriesForChange(cache, "workflows.Decision", "wdc_current");
+    expect(requests).toBe(2);
+    expect(firstSignal.aborted).toBe(true);
+    expect(observer.getCurrentResult().data).toBe(2);
+  } finally {
+    first.resolve(1);
+    unsubscribe(); cache.clear();
+  }
+});
 
 test("a model event during the initial request replaces its snapshot and discards a late response", async () => {
   const cache = client();

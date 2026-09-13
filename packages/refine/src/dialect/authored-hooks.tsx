@@ -19,6 +19,7 @@ import {
 } from "../query-invalidation";
 import {
   useStableArray,
+  useStableValue,
 } from "../stable-deps";
 import type {
   DocumentData,
@@ -55,6 +56,8 @@ export interface AuthoredOperationOptions {
 
 export interface AuthoredQueryOptions extends AuthoredOperationOptions {
   enabled?: boolean;
+  /** Exact rows whose live changes invalidate this read; omitted keeps model-wide semantics. */
+  records?: readonly { model: string; id: string }[];
   /**
    * Exact canonical model labels this bespoke read depends on; local writes and
    * live changes refetch it. This metadata-free package does no alias resolution:
@@ -84,7 +87,8 @@ export function useAuthoredQuery<TDocument extends AuthoredDocument>(
   const dataProvider = useDataProvider();
   const client = useQueryClient();
   const models = useStableArray(options.models ?? []);
-  const configured = authoredQueryOptions(client, dataProvider, provider, document, variables, models);
+  const records = useStableValue(options.records, []);
+  const configured = authoredQueryOptions(client, dataProvider, provider, document, variables, models, records);
   const result = useQuery({
     ...configured, enabled: options.enabled ?? true,
   });

@@ -21,7 +21,7 @@ import {
   recordValue,
   stringValue,
 } from "./dialect/wire";
-import { invalidateAuthoredQueries } from "./query-invalidation";
+import { invalidateAuthoredQueries, invalidateAuthoredQueriesForChange } from "./query-invalidation";
 
 type FetchFn = typeof globalThis.fetch;
 type GraphQLWsClient = ReturnType<typeof graphqlWS.createClient>;
@@ -348,8 +348,10 @@ function invalidateAuthoredQueriesForEvent(
   event: LiveEvent,
 ): void {
   const model = stringValue(recordValue(event.payload)?.model);
+  const id = stringValue(recordValue(event.payload)?.id);
   if (!queryClient || !model) return;
-  void invalidateAuthoredQueries(queryClient, [model]);
+  if (id) void invalidateAuthoredQueriesForChange(queryClient, model, id);
+  else void invalidateAuthoredQueries(queryClient, [model]);
 }
 
 function hasuraOptions(

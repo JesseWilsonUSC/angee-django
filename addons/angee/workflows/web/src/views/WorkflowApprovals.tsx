@@ -149,7 +149,7 @@ function TargetedRecordDecisionTask({ recordId, reload, target, onDirtyChange }:
   const decision = useAuthoredQuery(
     TargetedWorkflowDecisionDocument,
     { id: recordId, targetModel: target.model, targetId: target.id },
-    { dataProviderName: "public", models: [DECISION_MODEL] },
+    { dataProviderName: "public", models: [DECISION_MODEL], records: [{ model: DECISION_MODEL, id: recordId }] },
   );
   return <DecisionTaskResult context={{ recordId, reload }} approval={decision.data?.workflow_decisions[0]} onDirtyChange={onDirtyChange}
     fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} />;
@@ -161,7 +161,7 @@ function TargetedTabDecisionTask({ recordId, reload, target, onDirtyChange }: {
   const decision = useAuthoredQuery(
     TargetedTabWorkflowDecisionDocument,
     { id: recordId, targetModel: target.model, targetId: target.id, targetTab: target.tab },
-    { dataProviderName: "public", models: [DECISION_MODEL] },
+    { dataProviderName: "public", models: [DECISION_MODEL], records: [{ model: DECISION_MODEL, id: recordId }] },
   );
   return <DecisionTaskResult context={{ recordId, reload }} approval={decision.data?.workflow_decisions[0]} onDirtyChange={onDirtyChange}
     fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} />;
@@ -171,7 +171,7 @@ function GlobalDecisionTask(context: RecordPanelContext & { onDirtyChange: (dirt
   const decision = useAuthoredQuery(
     WorkflowDecisionDocument,
     { id: context.recordId },
-    { dataProviderName: "public", models: [DECISION_MODEL] },
+    { dataProviderName: "public", models: [DECISION_MODEL], records: [{ model: DECISION_MODEL, id: context.recordId }] },
   );
   return <DecisionTaskResult context={context} approval={decision.data?.workflow_decisions[0]} onDirtyChange={context.onDirtyChange}
     fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} />;
@@ -181,7 +181,7 @@ function ScopedDecisionTask({ recordId, reload, runId, onDirtyChange }: RecordPa
   const decision = useAuthoredQuery(
     ScopedWorkflowDecisionDocument,
     { id: recordId, run: runId },
-    { dataProviderName: "public", models: [DECISION_MODEL] },
+    { dataProviderName: "public", models: [DECISION_MODEL], records: [{ model: DECISION_MODEL, id: recordId }] },
   );
   return <DecisionTaskResult context={{ recordId, reload }} approval={decision.data?.workflow_decisions[0]} onDirtyChange={onDirtyChange}
     fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} />;
