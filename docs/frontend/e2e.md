@@ -120,6 +120,7 @@ The harness reads these environment variables:
 |---|---|---|
 | `ANGEE_UI_PORT` | Port the Vite SPA serves on | `5173` |
 | `E2E_BASE_URL` | Full SPA origin (overrides `ANGEE_UI_PORT`) | derived |
+| `E2E_ADMIN_PASSWORD` | Password for the stack's configured admin account | `admin` |
 | `E2E_WS_ENDPOINT` | Playwright browser-server websocket URL | local browser |
 | `E2E_WS_TOKEN` | Operator route bearer for the websocket edge | unset |
 | `CI` | Enables one retry and `forbidOnly` | unset |
