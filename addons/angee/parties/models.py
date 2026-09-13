@@ -408,6 +408,7 @@ class Handle(SqidMixin, AuditMixin, AngeeModel):
     """
 
     runtime = True
+    rebac_grantable = {"reader": "write"}
 
     class Platform(models.TextChoices):
         """The kind of channel a handle reaches a party through."""
