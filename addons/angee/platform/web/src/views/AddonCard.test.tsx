@@ -177,9 +177,12 @@ describe("AddonCardActions", () => {
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
 
-  test("previews before revision-bound install", async () => {
-    render(<AddonCardActions row={row({ state: "disabled" })} context={CONTEXT} />);
-    fireEvent.click(screen.getByRole("button", { name: "Install" }));
+  test.each([
+    ["disabled", "Install"],
+    ["removed", "Reinstall"],
+  ])("previews before revision-bound install from %s", async (state, label) => {
+    render(<AddonCardActions row={row({ state })} context={CONTEXT} />);
+    fireEvent.click(screen.getByRole("button", { name: label }));
     expect(mocks.mutate).not.toHaveBeenCalled();
     const confirmation = screen.getAllByRole("button", { name: "Install" }).at(-1);
     if (!confirmation) throw new Error("Install confirmation is missing.");
@@ -209,10 +212,15 @@ describe("AddonCardActions", () => {
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
 
-  test("does not offer Install for a historical removed row", () => {
-    const { container } = render(
-      <AddonCardActions row={row({ state: "removed" })} context={CONTEXT} />,
-    );
-    expect(container.textContent).toBe("");
+  test("keeps reinstall blocked when the server cannot find the addon source", () => {
+    mocks.preview.can_apply = false;
+    mocks.preview.refusal = "angee.notes is not available to install.";
+    render(<AddonCardActions row={row({ state: "removed" })} context={CONTEXT} />);
+    fireEvent.click(screen.getByRole("button", { name: "Reinstall" }));
+    expect(screen.getByText(mocks.preview.refusal)).toBeTruthy();
+    const confirmation = screen.getByRole("button", { name: "Install" });
+    expect((confirmation as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(confirmation);
+    expect(mocks.mutate).not.toHaveBeenCalled();
   });
 });
