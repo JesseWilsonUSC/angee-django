@@ -119,7 +119,8 @@ class Command(BaseCommand):
         4. ``migrate --noinput --skip-checks`` with checks deferred on every provision.
         5. ``reconcile_permissions`` — prune stale package-managed REBAC schema
            only after identity migrations have preserved moved rows.
-        6. ``rebac sync --yes`` (``--force-overwrite`` when ``--force-rebac``).
+        6. ``rebac --skip-checks sync --yes`` (``--force-overwrite`` when
+           ``--force-rebac``) — replace old persisted policy before validating it.
         7. ``check`` — enforce the complete model and persisted-REBAC contract
            after migration and sync, before user data or schema output proceeds.
         8. ``resources load`` (``--include-demo`` when ``--demo``).
@@ -164,7 +165,7 @@ class Command(BaseCommand):
         a step here — it runs in-process before the plan executes.
         """
 
-        rebac_sync = ["rebac", "sync", "--yes"]
+        rebac_sync = ["rebac", "--skip-checks", "sync", "--yes"]
         if options["force_rebac"]:
             rebac_sync.append("--force-overwrite")
         resources_load = ["resources", "load"]

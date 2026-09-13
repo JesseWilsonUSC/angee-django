@@ -46,7 +46,7 @@ class Group(SqidMixin, AngeeModel):
     """Named IAM principal set materialized into composed runtimes."""
 
     runtime = True
-    sqid_prefix = "grp_"
+    sqid_prefix = "igr_"
 
     name = models.CharField(max_length=150, unique=True)
     description = models.TextField(blank=True, default="")

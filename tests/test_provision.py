@@ -14,7 +14,12 @@ import strawberry
 from django.core.management import call_command
 from django.test import override_settings
 from django.test.utils import override_system_checks
+from rebac.backends import reset_backend
+from rebac.checks import check_universal_admin_in_roles
+from rebac.errors import SchemaError
+from rebac.models import SchemaRelation
 
+from angee.compose.management.commands.angee import Command
 from angee.graphql.checks import check_graphql_schemas
 from angee.graphql.schema import GraphQLSchemas, SchemaParts
 
@@ -96,7 +101,7 @@ def test_provision_builds_then_runs_one_fresh_post_build_process(tmp_path: Path)
         ["makemigrations", "--skip-checks"],
         ["migrate", "--noinput", "--skip-checks"],
         ["reconcile_permissions"],
-        ["rebac", "sync", "--yes", "--force-overwrite"],
+        ["rebac", "--skip-checks", "sync", "--yes", "--force-overwrite"],
         ["check"],
         ["resources", "load", "--include-demo"],
         ["schema"],
@@ -159,6 +164,30 @@ def test_rebac_sync_invalidates_the_native_backend_cache() -> None:
     before = backend()
     call_command("rebac", "sync", "--yes", verbosity=0)
     assert backend() is not before
+
+
+@pytest.mark.django_db
+def test_provision_sync_replaces_invalid_historical_subject_sets_before_checks() -> None:
+    """Old permission usersets cannot prevent sync from installing their replacement."""
+
+    call_command("rebac", "sync", "--yes", verbosity=0)
+    relation = SchemaRelation.objects.get(definition__resource_type="storage/role", name="includes")
+    relation.allowed_subjects = [{"type": "storage/role", "relation": "effective_member", "wildcard": False}]
+    relation.save(update_fields=["allowed_subjects"])
+    reset_backend()
+
+    # Exercise a native schema-reading check without requiring a fully composed
+    # concrete model graph in this bare test host.
+    with (
+        override_settings(REBAC_UNIVERSAL_ADMIN_ROLE="angee/role:admin"),
+        override_system_checks([check_universal_admin_in_roles]),
+    ):
+        with pytest.raises(SchemaError, match="names a permission"):
+            call_command("check", verbosity=0)
+        command = Command()
+        plan = command._provision_plan({"force_rebac": True, "demo": False, "bootstrap_admin": False})
+        command._run_step(next(step for step in plan if step[0] == "rebac"))
+        command._run_step(["check"])
 
 
 @pytest.mark.django_db

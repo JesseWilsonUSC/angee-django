@@ -182,7 +182,7 @@ test("native Router preserves page-one and favorite clears with a later initial 
     { id: "favorite:all", label: "All notes", pageSize: 20 },
   ]));
   await act(async () => f.view().applyFavorite(favorite!));
-  expect(f.router.state.location.search).toEqual({ page: "1", sort: "", filter: "", keep: "external" });
+  expect(f.router.state.location.search).toEqual({ page: "1", sort: "", filter: "", group: "", keep: "external" });
   expect(f.view().state).toMatchObject({ pagination: { pageIndex: 0 }, sorting: [], filter: {} });
   await waitFor(() => expect(f.calls.at(-1)).toMatchObject({ pagination: { currentPage: 1 }, filters: [], sorters: [] }));
   expect(f.history.length).toBe(1);
@@ -201,7 +201,7 @@ test("native Router preserves calendar resets relative to page-owned defaults", 
 
   await act(async () => f.view().applyFavorite({ id: "favorite:calendar", label: "Calendar", pageSize: 20, view: "calendar" }));
   expect(f.view().state).toMatchObject({ mode: "month", anchor: today, pagination: { pageIndex: 0 } });
-  expect(f.router.state.location.search).toEqual({ page: "1", sort: "", mode: "month", anchor: today, keep: "external" });
+  expect(f.router.state.location.search).toEqual({ page: "1", sort: "", group: "", mode: "month", anchor: today, keep: "external" });
 
   await act(async () => f.view().setMode("week"));
   await act(async () => f.view().setAnchor("2000-01-01"));

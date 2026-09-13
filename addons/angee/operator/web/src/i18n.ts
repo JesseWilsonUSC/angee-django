@@ -41,10 +41,6 @@ export const enOperatorMessages: Record<string, string> = {
     "Pick a service or workspace to stream its logs.",
 
   // Transport / connection states.
-  "transport.connecting": "Connecting to operator",
-  "transport.unavailable.title": "Operator daemon unavailable",
-  "transport.unavailable.description":
-    "Operator daemon is not configured for this user.",
   "transport.unknownError": "Unknown operator error.",
 
   // Overview.

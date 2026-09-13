@@ -179,7 +179,13 @@ def test_runtime_composes_additive_grants_without_parent_authority() -> None:
 
     module = ModuleType("tests.grant_composition")
     parent = _source_model(module, "GrantParent", "tests", runtime=True, rebac_grantable={"viewer": "share"})
-    donor = _source_model(module, "GrantDonor", "tests", extends="tests.GrantParent", rebac_grantable={"reviewer": "write"})
+    donor = _source_model(
+        module,
+        "GrantDonor",
+        "tests",
+        extends="tests.GrantParent",
+        rebac_grantable={"reviewer": "write"},
+    )
     child = type("GrantChild", (models.Model,), {
         "__module__": module.__name__, "runtime": True, "extends": "tests.GrantParent",
         "Meta": type("Meta", (), {"abstract": True, "app_label": "tests"}),
@@ -201,7 +207,13 @@ def test_runtime_rejects_conflicting_donor_grant_authority() -> None:
 
     module = ModuleType("tests.grant_conflict")
     source = _source_model(module, "GrantSource", "tests", runtime=True, rebac_grantable={"reviewer": "admin"})
-    donor = _source_model(module, "GrantConflict", "tests", extends="tests.GrantSource", rebac_grantable={"reviewer": "write"})
+    donor = _source_model(
+        module,
+        "GrantConflict",
+        "tests",
+        extends="tests.GrantSource",
+        rebac_grantable={"reviewer": "write"},
+    )
     with pytest.raises(ImproperlyConfigured, match="conflicting rebac_grantable"):
         ModelComposition({"tests": (source,)}, {"tests.grantsource": (donor,)}, model_owners={donor: module.__name__})
 
@@ -1027,7 +1039,7 @@ def test_provision_plan_default_flags_covers_the_no_flag_lifecycle() -> None:
         ["makemigrations", "--skip-checks"],
         ["migrate", "--noinput", "--skip-checks"],
         ["reconcile_permissions"],
-        ["rebac", "sync", "--yes"],
+        ["rebac", "--skip-checks", "sync", "--yes"],
         ["check"],
         ["resources", "load"],
         ["schema"],
@@ -1048,8 +1060,8 @@ def test_provision_plan_force_rebac_force_overwrites_the_sync() -> None:
 
     plan = Command._provision_plan(_provision_options(force_rebac=True))
 
-    assert ["rebac", "sync", "--yes", "--force-overwrite"] in plan
-    assert ["rebac", "sync", "--yes"] not in plan
+    assert ["rebac", "--skip-checks", "sync", "--yes", "--force-overwrite"] in plan
+    assert ["rebac", "--skip-checks", "sync", "--yes"] not in plan
 
 
 def test_provision_plan_bootstrap_admin_appends_a_final_step() -> None:
@@ -1071,7 +1083,7 @@ def test_provision_plan_combines_every_flag() -> None:
         ["makemigrations", "--skip-checks"],
         ["migrate", "--noinput", "--skip-checks"],
         ["reconcile_permissions"],
-        ["rebac", "sync", "--yes", "--force-overwrite"],
+        ["rebac", "--skip-checks", "sync", "--yes", "--force-overwrite"],
         ["check"],
         ["resources", "load", "--include-demo"],
         ["schema"],
@@ -1101,10 +1113,11 @@ def test_provision_defers_checks_only_across_the_schema_identity_transition() ->
     assert [step for step in plan if "--skip-checks" in step] == [
         ["makemigrations", "--skip-checks"],
         ["migrate", "--noinput", "--skip-checks"],
+        ["rebac", "--skip-checks", "sync", "--yes"],
     ]
     assert (
         plan.index(["migrate", "--noinput", "--skip-checks"])
-        < plan.index(["rebac", "sync", "--yes"])
+        < plan.index(["rebac", "--skip-checks", "sync", "--yes"])
         < plan.index(["check"])
     )
     assert plan.index(["check"]) < plan.index(["resources", "load"])
@@ -1136,7 +1149,7 @@ def test_provision_plan_can_cross_an_old_persisted_rebac_identity() -> None:
         ["makemigrations", "--skip-checks"],
         ["migrate", "--noinput", "--skip-checks"],
         ["reconcile_permissions"],
-        ["rebac", "sync", "--yes"],
+        ["rebac", "--skip-checks", "sync", "--yes"],
         ["check"],
     ]
 
@@ -1299,7 +1312,7 @@ def test_provision_run_step_preserves_each_commands_cli_check_policy(
         ("makemigrations", True),
         ("migrate", True),
         ("reconcile_permissions", None),
-        ("rebac", False),
+        ("rebac", True),
         ("check", None),
         ("resources", None),
         ("schema", None),

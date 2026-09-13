@@ -46,7 +46,7 @@ describe("group access tabs", () => {
     mocks.mutationProps = null;
     mocks.queryData = {
       groups_by_pk: {
-        id: "grp_1",
+        id: "igr_1",
         members: [{
           id: "member-1",
           subject: "auth/user:9",
@@ -70,14 +70,14 @@ describe("group access tabs", () => {
   });
 
   test("removes the exact canonical member tuple", () => {
-    render(<GroupMembersTab recordId="grp_1" />);
+    render(<GroupMembersTab recordId="igr_1" />);
     const [remove] = mocks.listProps[0]?.rowActions as Array<{
       variables: (row: Record<string, string>) => unknown;
     }>;
     expect(remove.variables((mocks.queryData as {
       groups_by_pk: { members: Record<string, string>[] };
     }).groups_by_pk.members[0]!)).toEqual({
-      group_id: "grp_1",
+      group_id: "igr_1",
       subject: "auth/user:9",
       caveat_name: "office-hours",
     });
@@ -85,18 +85,18 @@ describe("group access tabs", () => {
 
   test("adds the selected canonical subject with an explicit empty caveat", async () => {
     mocks.add.mockResolvedValue({ add_group_member: true });
-    render(<GroupMembersTab recordId="grp_1" />);
+    render(<GroupMembersTab recordId="igr_1" />);
     const submit = mocks.mutationProps?.onSubmit as (values: { subject: string }) => Promise<void>;
     await submit({ subject: "auth/user:9" });
     expect(mocks.add).toHaveBeenCalledWith({
-      group_id: "grp_1",
+      group_id: "igr_1",
       subject: "auth/user:9",
       caveat_name: "",
     });
   });
 
   test("links a binding through its backend-projected target model and public id", () => {
-    render(<GroupBindingsTab recordId="grp_1" />);
+    render(<GroupBindingsTab recordId="igr_1" />);
     const [resource] = mocks.listProps[0]?.columns as Array<{
       render: (row: Record<string, unknown>) => ReactNode;
     }>;

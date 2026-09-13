@@ -103,7 +103,11 @@ const dashboards = defineBaseAddon({
   menus,
   i18n: { dashboards: enDashboardsMessages },
   dashboards: [overview],
-  icons: { dashboards: LayoutDashboard, "dashboard-diagnostics": Gauge },
+  icons: {
+    dashboard: LayoutDashboard,
+    dashboards: LayoutDashboard,
+    "dashboard-diagnostics": Gauge,
+  },
   slots: [
     {
       slot: DASHBOARD_STORE_SLOT,
