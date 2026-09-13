@@ -1,7 +1,7 @@
 import * as v from "valibot";
 import type { CrudFilter } from "@refinedev/core";
 
-import { JsonValueSchema, type JsonValue } from "../../widgets/json-value";
+import { JsonValueSchema } from "../../widgets/json-value";
 
 const NonEmptyString = v.pipe(v.string(), v.minLength(1));
 const FieldTypeSchema = v.picklist(["string", "integer", "number", "boolean", "object", "array", "any"]);

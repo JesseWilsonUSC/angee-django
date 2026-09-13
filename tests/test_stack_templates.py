@@ -12,6 +12,7 @@ compute, never a value re-derived here.
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -33,6 +34,7 @@ DEV_PNPM_WORKSPACE = DEV_TEMPLATE.with_name("pnpm-workspace.yaml.jinja")
 DEV_AGENTS_TEMPLATE = DEV_TEMPLATE.with_name("AGENTS.md.jinja")
 DEV_CLAUDE_TEMPLATE = DEV_TEMPLATE.with_name("CLAUDE.md")
 DEV_STACK_GITIGNORE = DEV_TEMPLATE.with_name(".gitignore.jinja")
+DEV_PACKAGE_TEMPLATE = DEV_TEMPLATE.with_name("package.json.jinja")
 DEV_TEMPLATES_SYMLINK = DEV_TEMPLATE.with_name("templates")
 SHARED_BODY = ROOT / "templates" / "stacks" / "_shared" / "stack-body.yaml.jinja"
 SHARED_AGENTS = ROOT / "templates" / "stacks" / "_shared" / "AGENTS.md.jinja"
@@ -810,6 +812,19 @@ def test_project_template_addon_profiles_and_workspace_dirs() -> None:
 
 
 # --- dev (process) contracts ---------------------------------------------------
+
+
+def test_dev_stack_declares_generated_graphql_type_dependencies() -> None:
+    rendered = (
+        DEV_PACKAGE_TEMPLATE.read_text(encoding="utf-8")
+        .replace("{{ project_name }}", "example")
+        .replace("{{ web_path }}", "web")
+    )
+    package = json.loads(rendered)
+    assert package["dependencies"] == {
+        "@angee/ui": "workspace:*",
+        "@graphql-typed-document-node/core": "^3.2.0",
+    }
 
 
 def test_dev_stack_has_explicit_lifecycle_job_graph() -> None:

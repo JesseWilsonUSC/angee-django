@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   listProps: [] as Record<string, unknown>[],
   queryOptions: null as Record<string, unknown> | null,
-  queryVariables: null as Record<string, unknown> | undefined,
+  queryVariables: undefined as Record<string, unknown> | undefined,
   record: { assignment_subject: "auth/user:usr_alice" } as Record<string, unknown> | null,
 }));
 
@@ -123,6 +123,7 @@ describe("principal access tab", () => {
     const [target] = mocks.listProps[1]?.columns as Array<{
       render: (row: Record<string, unknown>) => ReactNode;
     }>;
+    if (!target) throw new Error("expected the target column");
     const [grant] = mocks.listProps[1]?.rows as Record<string, unknown>[];
     const rendered = render(<>{target.render(grant!)}</>);
     expect(rendered.getByRole("link").getAttribute("href")).toBe("/projects/prj_1");

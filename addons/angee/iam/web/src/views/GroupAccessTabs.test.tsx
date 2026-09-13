@@ -2,6 +2,7 @@
 
 import { render } from "@testing-library/react";
 import type { ReactNode } from "react";
+import type { RecordPanelContext } from "@angee/ui";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -40,6 +41,15 @@ vi.mock("@angee/ui", () => ({
 
 import { GroupMembersTab } from "./GroupAccessTabs";
 
+function recordPanelContext(recordId: string): RecordPanelContext {
+  return {
+    recordId,
+    reload: vi.fn(),
+    form: {} as RecordPanelContext["form"],
+    focusField: vi.fn(),
+  };
+}
+
 describe("group access tabs", () => {
   beforeEach(() => {
     mocks.add.mockReset();
@@ -62,10 +72,11 @@ describe("group access tabs", () => {
   });
 
   test("removes the exact canonical member tuple", () => {
-    render(<GroupMembersTab recordId="igr_1" />);
+    render(<GroupMembersTab {...recordPanelContext("igr_1")} />);
     const [remove] = mocks.listProps[0]?.rowActions as Array<{
       variables: (row: Record<string, string>) => unknown;
     }>;
+    if (!remove) throw new Error("expected the remove-member action");
     expect(remove.variables((mocks.queryData as {
       groups_by_pk: { members: Record<string, string>[] };
     }).groups_by_pk.members[0]!)).toEqual({
@@ -77,7 +88,7 @@ describe("group access tabs", () => {
 
   test("adds the selected canonical subject with an explicit empty caveat", async () => {
     mocks.add.mockResolvedValue({ add_group_member: true });
-    render(<GroupMembersTab recordId="igr_1" />);
+    render(<GroupMembersTab {...recordPanelContext("igr_1")} />);
     const submit = mocks.mutationProps?.onSubmit as (values: { subject: string }) => Promise<void>;
     await submit({ subject: "auth/user:9" });
     expect(mocks.add).toHaveBeenCalledWith({
