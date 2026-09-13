@@ -675,6 +675,8 @@ def test_ollama_backend_lists_tagged_models_without_a_credential(monkeypatch: An
         "ollama/qwen2.5-coder:7b",
     ]
     assert {spec.config["source"] for spec in specs} == {"ollama"}
+    assert all(spec.model_use == "" for spec in specs)
+    assert all("model_use" not in spec.upsert_defaults() for spec in specs)
     assert _FakeOllamaClient.instances[-1].kwargs == {
         "api_key": "not-required",
         "base_url": "http://localhost:11434/v1",

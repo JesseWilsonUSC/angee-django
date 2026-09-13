@@ -649,12 +649,12 @@ class AngeeResource(resources.ModelResource):
         catalogue_model = cast(type[AngeeModel], model)
         if not catalogue_model.is_catalogue_model():
             return
-        declared_tier = str(catalogue_model.get_catalogue_tier())
-        if self.entry.tier == declared_tier:
+        declared_tiers = catalogue_model.get_catalogue_tiers()
+        if self.entry.tier in declared_tiers:
             return
         raise ResourceLoadError(
             f"{self.entry.display}: catalogue tier mismatch for {model._meta.label}; "
-            f"manifest tier {self.entry.tier!r}, model declares {declared_tier!r}"
+            f"manifest tier {self.entry.tier!r}, model declares {declared_tiers!r}"
         )
 
     def _restore_auto_fields(

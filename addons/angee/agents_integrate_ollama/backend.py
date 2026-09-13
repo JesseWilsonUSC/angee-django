@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, ClassVar
 
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -9,6 +10,7 @@ from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from angee.agents_integrate_openai.backend import OpenAIInferenceBackend
+from angee.agents.backends import InferenceModelSpec
 
 
 class OllamaInferenceBackend(OpenAIInferenceBackend):
@@ -27,6 +29,31 @@ class OllamaInferenceBackend(OpenAIInferenceBackend):
     model_allow_prefixes: ClassVar[tuple[str, ...]] = ()
     model_deny_prefixes: ClassVar[tuple[str, ...]] = ()
     api_key_env: ClassVar[tuple[str, ...]] = ()
+
+    def _model_specs(
+        self,
+        *,
+        handle: str,
+        display_name: str = "",
+        description: str = "",
+        model_use: str = "",
+        context_window: int = 0,
+        max_output_tokens: int = 0,
+        capabilities: Mapping[str, Any] | None = None,
+        config: Mapping[str, Any] | None = None,
+    ) -> list[InferenceModelSpec]:
+        """Preserve curated modality when Ollama's catalogue omits that fact."""
+
+        return super()._model_specs(
+            handle=handle,
+            display_name=display_name,
+            description=description,
+            model_use=model_use,
+            context_window=context_window,
+            max_output_tokens=max_output_tokens,
+            capabilities=capabilities,
+            config=config,
+        )
 
     def _build_model(self, handle: str, client: Any) -> OpenAIChatModel:
         """Declare Ollama's OpenAI-compatible native JSON-schema envelope."""

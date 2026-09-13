@@ -55,10 +55,12 @@ def render_models(composition: ModelComposition, label: str, *, runtime_module: 
                 meta_lines.append(f"        {option} = {value!r}")
         body_lines: list[str] = []
         if source.__dict__.get("catalogue", False):
+            catalogue_tiers = source.__dict__.get("catalogue_tiers")
             body_lines.extend(
                 [
                     "    catalogue = True",
                     f"    catalogue_tier = {source.__dict__.get('catalogue_tier', CATALOGUE_TIERS[0])!r}",
+                    *([f"    catalogue_tiers = {catalogue_tiers!r}"] if catalogue_tiers is not None else []),
                     "",
                 ]
             )

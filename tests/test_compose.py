@@ -484,6 +484,7 @@ def test_runtime_carries_catalogue_markers_on_emitted_concrete_model(tmp_path: P
             "runtime": True,
             "catalogue": True,
             "catalogue_tier": "install",
+            "catalogue_tiers": ("install", "demo"),
             "name": models.CharField(max_length=32),
             "Meta": type("Meta", (), {"abstract": True, "app_label": "catalogue"}),
         },
@@ -516,8 +517,10 @@ def test_runtime_carries_catalogue_markers_on_emitted_concrete_model(tmp_path: P
 
     assert "catalogue = True" in parent_body
     assert "catalogue_tier = 'install'" in parent_body
+    assert "catalogue_tiers = ('install', 'demo')" in parent_body
     assert "catalogue = True" not in child_body
     assert "catalogue_tier" not in child_body
+    assert "catalogue_tiers" not in child_body
 
 
 def test_runtime_renders_materialized_child_extension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

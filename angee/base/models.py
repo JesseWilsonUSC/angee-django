@@ -338,6 +338,9 @@ class AngeeModel(TimestampMixin, RebacMixin):
     catalogue_tier: str = CATALOGUE_TIERS[0]
     """Resource tier the catalogue rows belong to; read non-inherited."""
 
+    catalogue_tiers: tuple[str, ...] | None = None
+    """Optional allowed tiers for catalogues whose rows span install and demo."""
+
     rebac_grantable: Mapping[str, str] = {}
     """Direct relations clients may manage, mapped to their required permission.
 
@@ -380,6 +383,20 @@ class AngeeModel(TimestampMixin, RebacMixin):
         """Return this class's declared catalogue tier, defaulting to master."""
 
         return str(cls.__dict__.get("catalogue_tier", CATALOGUE_TIERS[0]))
+
+    @classmethod
+    def get_catalogue_tiers(cls) -> tuple[str, ...]:
+        """Return every resource tier this catalogue accepts.
+
+        Most catalogues belong to one tier.  A catalogue whose rows legitimately
+        mix platform-required and optional examples may declare ``catalogue_tiers``
+        while retaining ``catalogue_tier`` as its default authoring tier.
+        """
+
+        declared = cls.__dict__.get("catalogue_tiers")
+        if declared is None:
+            return (cls.get_catalogue_tier(),)
+        return cast(tuple[str, ...], declared)
 
     @classmethod
     def get_rebac_grantable(cls) -> dict[str, str]:
@@ -532,13 +549,24 @@ class AngeeModel(TimestampMixin, RebacMixin):
 
         if not cls.is_catalogue_model():
             return []
-        tier = cls.get_catalogue_tier()
-        if tier in CATALOGUE_TIERS:
+        default_tier = cls.get_catalogue_tier()
+        declared = cls.__dict__.get("catalogue_tiers")
+        tiers = (default_tier,) if declared is None else declared
+        if (
+            default_tier in CATALOGUE_TIERS
+            and isinstance(tiers, tuple)
+            and bool(tiers)
+            and all(isinstance(tier, str) and tier in CATALOGUE_TIERS for tier in tiers)
+            and len(set(tiers)) == len(tiers)
+            and default_tier in tiers
+        ):
             return []
         expected = ", ".join(repr(value) for value in CATALOGUE_TIERS)
         return [
             checks.Error(
-                f"{cls._meta.label}.catalogue_tier must be one of {expected}; got {tier!r}.",
+                f"{cls._meta.label}.catalogue_tier must be a member of its nonempty, unique "
+                f"catalogue_tiers tuple and every tier must be one of {expected}; "
+                f"got default {default_tier!r} and tiers {tiers!r}.",
                 obj=cls,
                 id="angee.E014",
             )
