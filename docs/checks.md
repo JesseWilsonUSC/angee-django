@@ -72,6 +72,7 @@ They are distinct lifecycle operations, not a mandatory sequence for every task:
 
 | Purpose | Command | Prerequisite / effect |
 |---|---|---|
+| Prepare the complete runtime | `uv run manage.py angee provision` | Builds, then runs the remaining preparation in one fresh process; the [command owner](../angee/compose/management/commands/angee.py) defines ordering and options |
 | Build composed runtime | `uv run manage.py angee build` | Updates generated runtime and host dependency declarations and materializes pending addon migrations |
 | Check composition drift | `uv run --locked manage.py angee build --check` | Checks composer-owned artifacts/dependency projection/migration history; Django bootstrap can repair runtime sources before dispatch |
 | Author schema migrations | `uv run manage.py makemigrations <app-labels>` | After composition; preserves existing migration history |
@@ -79,7 +80,7 @@ They are distinct lifecycle operations, not a mandatory sequence for every task:
 | Sync permissions | `uv run manage.py rebac sync` | After migrations when permissions change |
 | Load declared resource data | `uv run manage.py resources load` | After migrations when resource data changes |
 | Validate runtime contracts | `uv run --locked manage.py check` | Includes construction of every named GraphQL schema; run against deployment code and settings before starting writer tiers |
-| Emit GraphQL SDL | `uv run manage.py schema` | A fresh process loads the emitted concrete models |
+| Emit GraphQL SDL | `uv run manage.py schema` | Uses the emitted concrete models; provision reuses its post-build registry and checked schemas |
 | Check GraphQL SDL | `uv run --locked manage.py schema --check` | Separate from the composer drift check |
 
 Run only lifecycle steps needed for the change and within the user's authorized

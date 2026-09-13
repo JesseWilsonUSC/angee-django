@@ -30,10 +30,9 @@ class WorkflowsConfig(AppConfig):
 def _register_checks(*functions: Callable[..., list[checks.CheckMessage]]) -> None:
     """Register workflow checks once per process.
 
-    The event-trigger check queries the trigger table, so it registers under
-    ``Tags.database`` — Django runs database-tagged checks only for ``migrate``
-    and ``check --database``, when a database is expected, instead of on every
-    ``manage.py`` invocation.
+    The event-trigger check queries the trigger table and is classified under
+    ``Tags.database`` for explicit tag selection. Unfiltered system checks also
+    include it; the tag does not restrict it to commands given ``--database``.
     """
 
     global _CHECKS_REGISTERED

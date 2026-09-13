@@ -219,9 +219,8 @@ workspaces:
 
 {% if runtime_mode == "process" %}
 # The compose/build/serve lifecycle. JOBS run once in depends_on order; SERVICES
-# stay up. `manage.py angee provision` owns the whole first-run DAG (wait-for-db,
-# angee build, reconcile_permissions, makemigrations, migrate, rebac sync, resources
-# load, schema) in one command, so the eight-job DAG collapses to a single job.
+# stay up. `manage.py angee provision` owns runtime preparation and its post-build
+# process boundary, so this stack declares one job rather than repeating steps.
 jobs:
   # Install the JS workspace that OWNS the project's web package, so the frontend
   # and codegen have their node_modules. Runs at source://app: pnpm walks up to the
