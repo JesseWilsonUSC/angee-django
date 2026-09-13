@@ -38,7 +38,10 @@ class AppearanceIntegrateQuery:
             try:
                 count = cache.incr(rate_key)
             except ValueError:
-                raise GraphQLError("Appearance analysis is temporarily unavailable.", extensions={"code": "SERVICE_UNAVAILABLE"})
+                raise GraphQLError(
+                    "Appearance analysis is temporarily unavailable.",
+                    extensions={"code": "SERVICE_UNAVAILABLE"},
+                )
         if count > 10:
             raise GraphQLError("Appearance analysis rate limit exceeded.", extensions={"code": "RATE_LIMITED"})
         try:

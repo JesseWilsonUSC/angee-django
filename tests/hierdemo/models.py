@@ -12,9 +12,10 @@ carries no ``addon.toml``, so the composer never sees them.
 
 from __future__ import annotations
 
+from django.db import models
+
 from angee.base.mixins import HierarchyMixin, HierarchyQuerySet
 from angee.base.models import AngeeDataModel, AngeeManager, AngeeQuerySet
-from django.db import models
 
 
 class HierNodeQuerySet(HierarchyQuerySet["HierNode"], AngeeQuerySet["HierNode"]):

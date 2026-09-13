@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from angee.jobs.enqueue import enqueue_task
-from angee.jobs.locks import record_lock_key, task_lock
 from anymail.exceptions import AnymailAPIError
 from django.apps import apps
 from django.core.exceptions import ValidationError
@@ -15,6 +13,9 @@ from django.utils import timezone
 from rebac import system_context
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import Timeout as RequestsTimeout
+
+from angee.jobs.enqueue import enqueue_task
+from angee.jobs.locks import record_lock_key, task_lock
 
 logger = logging.getLogger(__name__)
 

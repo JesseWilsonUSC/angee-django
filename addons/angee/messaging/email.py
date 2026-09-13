@@ -120,7 +120,7 @@ class AnymailEmailChannelBackend(ChannelBackend):
         return str(config.get("from_email") or getattr(settings, "DEFAULT_FROM_EMAIL", ""))
 
     def _recipients(self, message: Any, participants: list[Any]) -> dict[str, list[str]]:
-        recipients = {"to": [], "cc": [], "bcc": []}
+        recipients: dict[str, list[str]] = {"to": [], "cc": [], "bcc": []}
         for participant in participants:
             role = str(participant.role)
             if role not in recipients:

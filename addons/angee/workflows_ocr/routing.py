@@ -207,7 +207,7 @@ def recognize_pages(
             stage="recognition_config", code="model_missing",
         )
     started = time.monotonic()
-    parts = []
+    parts: list[DocumentPart] = []
     for page in pages:
         remaining = timeout - (time.monotonic() - started)
         if remaining <= 0:

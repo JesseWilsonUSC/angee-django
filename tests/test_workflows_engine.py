@@ -1038,14 +1038,30 @@ def test_linked_business_workflow_can_start_its_error_workflow(
     """Business child linkage must not suppress the child's error handling."""
 
     del workflow_engine_tables, no_workflow_queue, handler_calls
-    recovery = workflow_with_steps(name="Child recovery", steps=({"key": "recover", "config": {"outcome": "done"}},), edges=())
-    parent_workflow = workflow_with_steps(name="Business parent", steps=({"key": "handoff", "config": {"outcome": "done"}},), edges=())
+    recovery = workflow_with_steps(
+        name="Child recovery", steps=({"key": "recover", "config": {"outcome": "done"}},), edges=()
+    )
+    parent_workflow = workflow_with_steps(
+        name="Business parent", steps=({"key": "handoff", "config": {"outcome": "done"}},), edges=()
+    )
     parent = run_to_terminal(start_run(parent_workflow))
     with system_context(reason="test linked business child error handling"):
         draft = Workflow.objects.create(name="Business child", error_workflow=recovery.published_from)
-        Step.objects.create(workflow=draft, key="explode", name="Explode", config={"mode": "error", "error": "child failed"}, is_entry=True)
+        Step.objects.create(
+            workflow=draft,
+            key="explode",
+            name="Explode",
+            config={"mode": "error", "error": "child failed"},
+            is_entry=True,
+        )
         version = draft.publish()
-    child = engine.start(version, subject=None, actor=None, parent_step_run=step_run_for(parent, "handoff"), origin=workflow_models.RunOrigin.WORKFLOW)
+    child = engine.start(
+        version,
+        subject=None,
+        actor=None,
+        parent_step_run=step_run_for(parent, "handoff"),
+        origin=workflow_models.RunOrigin.WORKFLOW,
+    )
     run_to_terminal(child)
     with system_context(reason="test linked business child recovery"):
         error_run = WorkflowRun.objects.get(parent_step_run=step_run_for(child, "explode"))

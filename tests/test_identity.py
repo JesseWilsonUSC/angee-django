@@ -8,11 +8,11 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from angee.base.fields import SqidField
-from angee.base.identity import SqidPublicIdentity
 from django.db import models
 from django.test import override_settings
 
+from angee.base.fields import SqidField
+from angee.base.identity import SqidPublicIdentity
 from angee.graphql.node import AngeeNode
 
 _model_counter = count()

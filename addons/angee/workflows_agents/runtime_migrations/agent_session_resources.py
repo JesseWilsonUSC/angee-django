@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from django.db import migrations
+from django.db.migrations.operations.base import Operation
 from django.db.migrations.state import ProjectState
 
 
@@ -24,4 +25,4 @@ class Migration(migrations.Migration):
     """
 
     dependencies = [("resources", "__latest__")]
-    operations = []
+    operations: list[Operation] = []

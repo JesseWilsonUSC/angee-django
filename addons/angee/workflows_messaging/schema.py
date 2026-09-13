@@ -5,6 +5,7 @@ from django.apps import apps
 from strawberry import auto
 
 from angee.messaging.schema import ChannelType
+
 Trigger = apps.get_model("workflows", "Trigger")
 
 

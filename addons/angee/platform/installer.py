@@ -35,8 +35,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
-from angee.base.impl import resolve_impl_class
-from angee.fs import write_atomic
 from django.conf import settings
 from django.core.checks import CheckMessage, Error, register
 from django.core.exceptions import ImproperlyConfigured
@@ -44,6 +42,9 @@ from django.core.files import locks
 from django.utils.module_loading import import_string
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
+
+from angee.base.impl import resolve_impl_class
+from angee.fs import write_atomic
 
 _INSTALLED_APPS_KEY = "INSTALLED_APPS"
 _SETTINGS_FILENAME = "settings.yaml"

@@ -133,7 +133,7 @@ class ChangePayload:
     def as_message(self) -> dict[str, Any]:
         """Return the channel-layer dictionary representation."""
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "id": self.id,
             "action": self.action,

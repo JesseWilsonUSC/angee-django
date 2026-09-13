@@ -24,6 +24,9 @@ SETTINGS = {
         "axes.backends.AxesStandaloneBackend",
         "angee.iam.auth.ModelBackend",
     ],
+    # IAM calls REBAC actions directly and deliberately omits Django's optional
+    # has_perm/codename bridge; its absence is not a configuration defect here.
+    "SILENCED_SYSTEM_CHECKS:append": ["rebac.W001"],
 }
 """Django settings contributed when IAM is installed."""
 

@@ -12,6 +12,7 @@ import inspect
 import sys
 from collections.abc import Iterable
 from graphlib import CycleError, TopologicalSorter
+from typing import Any, cast
 
 from django.apps import AppConfig
 from django.core.exceptions import ImproperlyConfigured
@@ -74,7 +75,7 @@ class ModelComposition:
         self.models_by_label: dict[str, type[models.Model]] = {}
         for sources in self.sources_by_label.values():
             for source in sources:
-                label = source._meta.label_lower
+                label = cast(str, source._meta.label_lower)
                 previous = self.models_by_label.setdefault(label, source)
                 if previous is not source:
                     raise ImproperlyConfigured(
@@ -87,10 +88,12 @@ class ModelComposition:
                 raise ImproperlyConfigured(f"{donor.__module__}.{donor.__name__} extends unknown model {target!r}")
         graph: dict[str, tuple[str, ...]] = {}
         for label, source in sorted(self.models_by_label.items()):
-            target = extension_target(source)
-            if target is not None and target not in self.models_by_label:
-                raise ImproperlyConfigured(f"{source.__module__}.{source.__name__} extends unknown model {target!r}")
-            graph[label] = (target,) if target is not None else ()
+            parent_target = extension_target(source)
+            if parent_target is not None and parent_target not in self.models_by_label:
+                raise ImproperlyConfigured(
+                    f"{source.__module__}.{source.__name__} extends unknown model {parent_target!r}"
+                )
+            graph[label] = (parent_target,) if parent_target is not None else ()
         try:
             order = tuple(TopologicalSorter(graph).static_order())
         except CycleError as error:
@@ -99,7 +102,7 @@ class ModelComposition:
         # Each app is emitted as one Python module. Even an acyclic model graph
         # can produce mutually importing modules whose classes are only partly
         # defined; reject that unsupported declaration before writing output.
-        app_graph = {label: set() for label in self.sources_by_label}
+        app_graph: dict[str, set[str]] = {label: set() for label in self.sources_by_label}
         for label, targets in graph.items():
             app_label = self.models_by_label[label]._meta.app_label
             for target in targets:
@@ -178,7 +181,7 @@ class ModelComposition:
                 if materialized:
                     sources_by_label.setdefault(config.label, []).append(model)
                 else:
-                    extensions.setdefault(target, []).append(model)
+                    extensions.setdefault(cast(str, target), []).append(model)
                 model_owners[model] = config.name
         return cls(
             {
@@ -222,7 +225,7 @@ class ModelComposition:
         for owner in (source, *self.donors(source)):
             # Donors may be plain abstract Django models. Bind the existing
             # validator to their own declaration, without inheriting grants.
-            declaration = AngeeModel.get_rebac_grantable.__func__(owner)
+            declaration = cast(Any, AngeeModel.get_rebac_grantable).__func__(owner)
             for relation, permission in declaration.items():
                 previous = grantable.setdefault(relation, permission)
                 if previous != permission:
@@ -249,12 +252,14 @@ class ModelComposition:
         for source in self.ordered_models:
             owners: dict[str, tuple[models.Field, type[models.Model] | None]] = {}
             parent = self.parent(source)
-            inherited = fields_by_label[parent._meta.label_lower] if parent is not None else {}
+            inherited = fields_by_label[cast(str, parent._meta.label_lower)] if parent is not None else {}
             for base in (*self.donors(source), source):
                 for field in (*base._meta.local_fields, *base._meta.local_many_to_many, *base._meta.private_fields):
                     if field.name in inherited:
+                        parent_model = cast(type[models.Model], parent)
                         raise ImproperlyConfigured(
-                            f"{source._meta.label} redeclares parent field {field.name!r} from {parent._meta.label}; "
+                            f"{source._meta.label} redeclares parent field {field.name!r} "
+                            f"from {parent_model._meta.label}; "
                             "use a narrow abstract child/donor with only its contributed fields."
                         )
                     previous = owners.setdefault(field.name, (field, base))

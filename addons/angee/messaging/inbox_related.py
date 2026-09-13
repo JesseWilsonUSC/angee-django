@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from django.db import models
 from django.db.models import F, Q, Subquery, Value
@@ -78,6 +78,7 @@ class InboxRelated:
     def relations(self, text: str = "") -> Any:
         """Union produced edges with reply pointers before ordering and server paging."""
 
+        message = cast(Any, self.message)
         messages = self.inbox.messages
         if text.strip():
             messages = self.inbox.matching(messages, InboxSearch(text=text, quoted=True))
@@ -100,7 +101,7 @@ class InboxRelated:
             .values("_key", "_src", "_dst", "_kind", "_confidence", "_at")
         )
         replies = self.inbox.messages.filter(parent_id__in=Subquery(self.inbox.messages.order_by().values("pk")))
-        replies = replies.filter(Q(parent=self.message) | Q(pk=self.message.pk)).filter(
+        replies = replies.filter(Q(parent=message) | Q(pk=message.pk)).filter(
             Q(parent_id__in=ids) | Q(pk__in=ids)
         )
         replies = (
@@ -123,6 +124,8 @@ class InboxRelated:
         if self.kind in ("file", "fragment"):
             source_parts = self.parts.filter(message=self.source) if self.source is not None else self.parts.none()
             part = source_parts.order_by("position", "pk").first() or self.parts.order_by("pk").first()
+            if part is None:
+                raise ValueError("Related source unavailable.")
             file = (
                 self.inbox.collection("storage", "File").filter(pk=part.file_id).first()
                 if self.kind == "file"
@@ -142,8 +145,9 @@ class InboxRelated:
                 fragment,
             )
         if self.kind == "handles":
+            party = cast(Any, self.party)
             return InboxRelatedTarget(
-                self.target, self.kind, self.party.display_name, self.handles().count(), "handles", self.source
+                self.target, self.kind, party.display_name, self.handles().count(), "handles", self.source
             )
         count = self.participants().count() if self.kind == "participants" else self.relations().count()
         return InboxRelatedTarget(

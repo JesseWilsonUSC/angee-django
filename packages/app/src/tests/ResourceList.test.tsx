@@ -2360,6 +2360,10 @@ describe("ResourceList", () => {
     fireEvent.click(
       within(groupPicker.parentElement!).getByRole("button", { name: "Day" }),
     );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Remove Updated At · Day" }))
+        .toBeNull(),
+    );
     fireEvent.click(
       within(groupPicker.parentElement!).getByRole("button", { name: "Month" }),
     );

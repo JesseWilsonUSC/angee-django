@@ -6,9 +6,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from typing import Any
 
-from angee.base.permissions import effective_rebac_definition
-from django.core.exceptions import FieldDoesNotExist, ImproperlyConfigured
 from django.apps import apps
+from django.core.exceptions import FieldDoesNotExist, ImproperlyConfigured
 from django.db import models
 from rebac import ObjectRef, SubjectRef, current_actor
 from rebac.backends import backend
@@ -16,9 +15,10 @@ from rebac.field_visibility import check_field_access, gated_read_fields
 from rebac.resources import model_resource_type
 from rebac.schema.walker import field_gated_actions
 
-from angee.graphql.events import ChangeEvent, ChangePayload
 from angee.base.identity import instance_from_public_id
+from angee.base.permissions import effective_rebac_definition
 from angee.base.scoping import read_scoped_queryset
+from angee.graphql.events import ChangeEvent, ChangePayload
 
 
 def actor_can_read(resource: ObjectRef) -> bool:

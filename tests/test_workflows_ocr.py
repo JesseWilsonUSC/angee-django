@@ -13,6 +13,7 @@ from django.core.exceptions import ValidationError
 from PIL import Image
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 
+from angee.workflows_ocr import service
 from angee.workflows_ocr.engines import (
     DocumentPart,
     DocumentPipelineError,
@@ -22,7 +23,6 @@ from angee.workflows_ocr.engines import (
     PageResult,
 )
 from angee.workflows_ocr.routing import acquire_native_parts
-from angee.workflows_ocr import service
 from angee.workflows_ocr.service import _merge, _validated_schema
 from angee.workflows_ocr_glm.engine import GlmOllamaEngine
 from tests.ocr_engines import FakeOcrEngine

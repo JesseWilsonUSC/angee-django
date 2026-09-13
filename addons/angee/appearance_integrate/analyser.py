@@ -44,12 +44,20 @@ class WebsiteFactsParser(HTMLParser):
             self.in_style = True
         elif tag == "meta" and values.get("name", "").lower() == "theme-color":
             self.theme_color = values.get("content", "")[:32]
-        elif tag == "meta" and (values.get("property", "").lower() == "og:site_name" or values.get("name", "").lower() == "application-name"):
+        elif tag == "meta" and (
+            values.get("property", "").lower() == "og:site_name"
+            or values.get("name", "").lower() == "application-name"
+        ):
             self.site_name = values.get("content", "")[:200]
         elif tag == "link":
             rel = values.get("rel", "").lower().split()
             href = values.get("href", "")[:2048]
-            if "stylesheet" in rel and href and href not in self.stylesheets and len(self.stylesheets) < _MAX_STYLESHEETS:
+            if (
+                "stylesheet" in rel
+                and href
+                and href not in self.stylesheets
+                and len(self.stylesheets) < _MAX_STYLESHEETS
+            ):
                 self.stylesheets.append(href)
         style = values.get("style")
         if style:
@@ -72,7 +80,8 @@ def analyse_website(url: str, *, cache_partition: str) -> dict[str, object]:
     """Return cached, bounded facts for one public website URL."""
 
     normalized_url = _normalize_url(url)
-    cache_key = f"appearance:analysis:v{_ANALYSER_REVISION}:{sha256(f'{cache_partition}\0{normalized_url}'.encode()).hexdigest()}"
+    cache_identity = sha256(f"{cache_partition}\0{normalized_url}".encode()).hexdigest()
+    cache_key = f"appearance:analysis:v{_ANALYSER_REVISION}:{cache_identity}"
     cached = cache.get(cache_key)
     if isinstance(cached, dict):
         return cached
@@ -109,7 +118,9 @@ def analyse_website(url: str, *, cache_partition: str) -> dict[str, object]:
             max_redirects=3,
         )
         if sheet is None:
-            warnings.append(f"A linked stylesheet could not be analysed within the operation budget: {stylesheet_url[:200]}")
+            warnings.append(
+                f"A linked stylesheet could not be analysed within the operation budget: {stylesheet_url[:200]}"
+            )
             continue
         if "css" not in sheet.content_type.lower():
             warnings.append(f"A linked stylesheet returned an unexpected content type: {sheet.final_url[:200]}")

@@ -208,11 +208,16 @@ class ModelHistory(HistoricalRecords):
     """
 
     def finalize(self, sender: type[models.Model], **kwargs: Any) -> None:
-        if not any(
-            issubclass(base, self.cls) and base._meta.abstract
-            for base in sender.__bases__
-            if isinstance(base, type) and issubclass(base, models.Model) and base is not models.Model
-        ):
+        history_source = cast(type[models.Model], self.cls)
+        tracked_abstract_parent = False
+        for candidate in sender.__bases__:
+            if not isinstance(candidate, type) or not issubclass(candidate, models.Model):
+                continue
+            base = cast(type[models.Model], candidate)
+            if base is not models.Model and issubclass(base, history_source) and base._meta.abstract:
+                tracked_abstract_parent = True
+                break
+        if not tracked_abstract_parent:
             return
         super().finalize(sender, **kwargs)
 
