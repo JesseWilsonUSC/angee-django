@@ -10,13 +10,10 @@ import {
 } from "@angee/metadata";
 import { useActionMutation, useAuthoredQuery, useStableArray } from "@angee/refine";
 import {
-  Button,
-  Glyph,
   ManageAccessDialog,
   useActionResultRun,
   useRecordChromeContext,
   useResourceViewActionContext,
-  useUiT,
   type RecordAccessEntry,
 } from "@angee/ui";
 
@@ -74,7 +71,6 @@ function BoundShareAccess({ resource, targetIds, record, label: suppliedLabel }:
   record?: Row | null;
   label?: string;
 }): React.ReactElement {
-  const t = useUiT();
   const [open, setOpen] = React.useState(false);
   const stableTargetIds = useStableArray(targetIds);
   const invalidates = useResourceInvalidates([resource.modelLabel]);
@@ -134,20 +130,11 @@ function BoundShareAccess({ resource, targetIds, record, label: suppliedLabel }:
     ? representation
     : stableTargetIds.length === 1
       ? modelLabelSegment(resource.modelLabel)
-      : t("access.selection", { count: stableTargetIds.length }));
+      : undefined);
   return <ManageAccessDialog
     open={open}
     onOpenChange={setOpen}
-    trigger={<Button
-      type="button"
-      variant="icon"
-      size="iconMd"
-      aria-label={t("access.share")}
-      disabled={stableTargetIds.length === 0}
-    >
-      <Glyph name="share" />
-    </Button>}
-    label={label}
+    {...(label === undefined ? {} : { label })}
     targetIds={stableTargetIds}
     grantable={availableRelations}
     entries={entries}

@@ -8,6 +8,7 @@ import {
 import { DialogForm } from "../../fragments/DialogForm";
 import { ErrorBanner } from "../../fragments/ErrorBanner";
 import { InlineEmpty } from "../../fragments/InlineEmpty";
+import { Glyph } from "../../chrome/Glyph";
 import { useUiT } from "../../i18n";
 import { ControlBandProvider } from "../../layouts/ControlBand";
 import { Button } from "../../ui/button";
@@ -30,8 +31,8 @@ export type RecordAccessEntry = {
 export interface ManageAccessDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  trigger: React.ReactElement;
-  label: string;
+  trigger?: React.ReactElement;
+  label?: string;
   targetIds: readonly string[];
   grantable: readonly DataResourceGrantableRelation[];
   entries: readonly RecordAccessEntry[];
@@ -45,12 +46,24 @@ export interface ManageAccessDialogProps {
 /** Direct access for one record or a selection, over the shared collection owners. */
 export function ManageAccessDialog(props: ManageAccessDialogProps): React.ReactElement {
   const t = useUiT();
+  const label = props.label ?? t("access.selection", { count: props.targetIds.length });
+  const trigger = props.trigger ?? (
+    <Button
+      type="button"
+      variant="icon"
+      size="iconMd"
+      aria-label={t("access.share")}
+      disabled={props.targetIds.length === 0}
+    >
+      <Glyph name="share" />
+    </Button>
+  );
   return (
     <DialogForm
       open={props.open}
       onOpenChange={props.onOpenChange}
-      trigger={props.trigger}
-      title={t("access.title", { label: props.label })}
+      trigger={trigger}
+      title={t("access.title", { label })}
       description={t("access.directOnly")}
       size="lg"
     >
