@@ -54,15 +54,10 @@ from angee.messaging.backends import (
 from angee.messaging.managers import normalize_subject, strip_null_bytes
 from angee.messaging.models import MessageEdge as AbstractMessageEdge
 from angee.messaging.models import MessageStar as AbstractMessageStar
-from angee.messaging.models import Part as AbstractPart
 from angee.messaging.models import Participant as AbstractParticipant
 from angee.messaging.models import Reaction as AbstractReaction
 from angee.messaging.models import ThreadActivity as AbstractThreadActivity
-from angee.messaging.models import ThreadAttachment as AbstractThreadAttachment
 from angee.messaging.models import ThreadedModelMixin
-from angee.messaging.models import ThreadFollower as AbstractThreadFollower
-from angee.messaging.models import ThreadNotification as AbstractThreadNotification
-from angee.messaging.models import TrackingValue as AbstractTrackingValue
 from angee.parties.managers import HandleAssociationStatus
 from angee.parties.mixins import LinkSource
 from angee.parties.models import Address as AbstractAddress
@@ -91,7 +86,21 @@ from tests.conftest import (
 from tests.conftest import (
     File as StorageFile,
 )
-from tests.messaging_models import Directory, Folder, Fragment, Handle, Message, MessageSubtype, Party, Thread
+from tests.messaging_models import (
+    Directory,
+    Folder,
+    Fragment,
+    Handle,
+    Message,
+    MessageSubtype,
+    Part,
+    Party,
+    Thread,
+    ThreadAttachment,
+    ThreadFollower,
+    ThreadNotification,
+    TrackingValue,
+)
 from tests.mtidemo.models import MtiChild, MtiParent
 from tests.spaces_models import Group as SpaceGroup
 from tests.test_agents_graphql import AGENTS_GRAPHQL_MODELS, Agent
@@ -211,30 +220,6 @@ class Relationship(AbstractRelationship):
         rebac_resource_type = "parties/relationship"
 
 
-class ThreadAttachment(AbstractThreadAttachment):
-    """Concrete record-thread attachment used by messaging tests."""
-
-    class Meta(AbstractThreadAttachment.Meta):
-        """Django model options for the canonical test thread attachment."""
-
-        abstract = False
-        app_label = "messaging"
-        db_table = "test_messaging_thread_attachment"
-        rebac_resource_type = "messaging/thread_attachment"
-
-
-class ThreadFollower(AbstractThreadFollower):
-    """Concrete record-thread follower used by messaging tests."""
-
-    class Meta(AbstractThreadFollower.Meta):
-        """Django model options for the canonical test thread follower."""
-
-        abstract = False
-        app_label = "messaging"
-        db_table = "test_messaging_thread_follower"
-        rebac_resource_type = "messaging/thread_follower"
-
-
 class ThreadActivity(AbstractThreadActivity):
     """Concrete record-thread activity used by messaging tests."""
 
@@ -245,18 +230,6 @@ class ThreadActivity(AbstractThreadActivity):
         app_label = "messaging"
         db_table = "test_messaging_thread_activity"
         rebac_resource_type = "messaging/thread_activity"
-
-
-class ThreadNotification(AbstractThreadNotification):
-    """Concrete notification used by messaging tests."""
-
-    class Meta(AbstractThreadNotification.Meta):
-        """Django model options for the canonical test notification."""
-
-        abstract = False
-        app_label = "messaging"
-        db_table = "test_messaging_thread_notification"
-        rebac_resource_type = "messaging/thread_notification"
 
 
 class Reaction(AbstractReaction):
@@ -281,30 +254,6 @@ class MessageStar(AbstractMessageStar):
         app_label = "messaging"
         db_table = "test_messaging_message_star"
         rebac_resource_type = "messaging/message_star"
-
-
-class TrackingValue(AbstractTrackingValue):
-    """Concrete tracking value used by messaging tests."""
-
-    class Meta(AbstractTrackingValue.Meta):
-        """Django model options for the canonical test tracking value."""
-
-        abstract = False
-        app_label = "messaging"
-        db_table = "test_messaging_tracking_value"
-        rebac_resource_type = "messaging/tracking_value"
-
-
-class Part(AbstractPart):
-    """Concrete message body part used by messaging tests."""
-
-    class Meta(AbstractPart.Meta):
-        """Django model options for the canonical test part."""
-
-        abstract = False
-        app_label = "messaging"
-        db_table = "test_messaging_part"
-        rebac_resource_type = "messaging/part"
 
 
 class MessageEdge(AbstractMessageEdge):
