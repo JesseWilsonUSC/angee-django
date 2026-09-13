@@ -894,6 +894,7 @@ class RecordThreadInput(RecordReferenceInput):
     before: strawberry.ID | None = None
     after: strawberry.ID | None = None
     around: strawberry.ID | None = None
+    message_types: list[str] = strawberry.field(name="message_types", default_factory=list)
 
 
 @strawberry.input
@@ -1223,6 +1224,7 @@ class MessagingQuery:
             before=input.before,
             after=input.after,
             around=input.around,
+            message_types=tuple(input.message_types),
         )
 
     @strawberry.field(name="record_source_threads")
@@ -2152,6 +2154,7 @@ def _record_thread_payload(
     before: strawberry.ID | None = None,
     after: strawberry.ID | None = None,
     around: strawberry.ID | None = None,
+    message_types: tuple[str, ...] = (),
 ) -> RecordThreadPayload:
     """Return a record thread payload with follower state for the request user."""
 
@@ -2165,6 +2168,7 @@ def _record_thread_payload(
             before=before,
             after=after,
             around=around,
+            message_types=message_types,
         )
         if thread is not None
         else ([], 0)

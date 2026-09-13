@@ -2158,6 +2158,7 @@ class MessageManager(AngeeManager.from_queryset(MessageQuerySet)):  # type: igno
         before: Any | None = None,
         after: Any | None = None,
         around: Any | None = None,
+        message_types: tuple[str, ...] = (),
     ) -> tuple[list[Any], int]:
         """Return fetched chatter messages for a record, optionally search-filtered."""
 
@@ -2174,6 +2175,16 @@ class MessageManager(AngeeManager.from_queryset(MessageQuerySet)):  # type: igno
             .prefetch_related("parts__fragment", "parts__file", "tracking_values", "reactions__handle", "stars")
             .annotate(_order_at=MessageQuerySet.chronological_time())
         )
+        kinds = {
+            strip_null_bytes(value or "").strip().lower()
+            for value in message_types
+            if strip_null_bytes(value or "").strip()
+        }
+        allowed_kinds = {value for value, _label in self.model.MessageKind.choices}
+        if not kinds.issubset(allowed_kinds):
+            raise ValueError("Message type filter contains an unsupported value.")
+        if kinds:
+            queryset = queryset.filter(message_type__in=kinds)
         search = strip_null_bytes(search or "").strip()
         for term in (item for item in _WS_RE.split(search) if item):
             queryset = queryset.searching(term)

@@ -742,17 +742,27 @@ export const CancelRecordActivityDocument = graphql(`
   }
 `);
 
-// The activity tab reads only the scheduled activities, not the full message
-// feed: its own narrow window off `record_thread` so opening Activity never pulls
-// the messages / followers / recipients payload the Comments tab needs.
+// Activity reads only retained system updates plus planned activities. Ordinary
+// conversation, follower, and recipient payloads remain owned by Comments.
 export const RecordActivityThreadDocument = graphql(`
   query MessagingRecordActivityThread($modelLabel: String!, $recordId: ID!) {
-    record_thread(input: { model_label: $modelLabel, record_id: $recordId }) {
+    record_thread(
+      input: {
+        model_label: $modelLabel
+        record_id: $recordId
+        message_types: ["AUTO_COMMENT", "NOTIFICATION"]
+        message_limit: 100
+      }
+    ) {
       error
       error_code
+      message_result_count
       activity_count
       activities {
         ...RecordActivityFields
+      }
+      messages {
+        ...RecordMessageFields
       }
     }
   }
@@ -767,6 +777,7 @@ export type RecordActivityThreadPayload =
   DocumentType<typeof RecordActivityThreadDocument>["record_thread"];
 export type RecordMessageRow = NonNullable<RecordThreadPayload["messages"]>[number];
 export type RecordActivityRow = NonNullable<RecordActivityThreadPayload["activities"]>[number];
+export type RecordActivityMessageRow = NonNullable<RecordActivityThreadPayload["messages"]>[number];
 export type RecordNotificationRow = NonNullable<RecordThreadPayload["notifications"]>[number];
 export type SuggestedRecipientRow =
   NonNullable<RecordThreadPayload["suggested_recipients"]>[number];
