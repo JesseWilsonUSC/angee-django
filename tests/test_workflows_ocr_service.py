@@ -39,7 +39,7 @@ from angee.workflows_ocr.routing import (
     recognize_pages,
 )
 from angee.workflows_ocr.service import _document_sources, _merge, extract, reextract
-from angee.workflows_ocr.steps import OcrExtractStepImpl
+from angee.workflows_ocr.steps import OcrExtractConfig, OcrExtractStepImpl
 from angee.workflows_ocr_glm.engine import GlmOllamaEngine
 from tests.conftest import _clear_model_tables, _create_missing_tables, make_integration
 from tests.ocr_engines import FakeOcrEngine
@@ -475,7 +475,10 @@ class ExtractionServiceTests(TestCase):
 
     def test_recovery_retains_failed_revision_and_journals_only_the_new_reference(self) -> None:
         failed = self._extract(config={"result": {"private": "unvalidated"}})
-        run = SimpleNamespace(run=SimpleNamespace(created_by=self.owner))
+        run = SimpleNamespace(
+            run=SimpleNamespace(created_by=self.owner),
+            step=SimpleNamespace(config={"schema": {"type": "object"}, "engine": "fake"}),
+        )
         source_attempt = SimpleNamespace(output={"extraction_id": str(failed.sqid), "revision": 1})
         with patch.object(FakeOcrEngine, "extract_page", return_value=PageResult({"number": "RECOVERED", "rows": []})):
             outcome = OcrExtractStepImpl().run_recovery(
@@ -494,3 +497,11 @@ class ExtractionServiceTests(TestCase):
         self.assertEqual(failed.status, "failed")
         with self.assertRaises(ValidationError), actor_context(self.owner):
             reextract(repeated)
+
+    def test_retained_failure_outcome_is_frozen_by_step_config(self) -> None:
+        legacy = OcrExtractConfig.model_validate({"schema": {}, "engine": "fake"})
+        current = OcrExtractConfig.model_validate({
+            "schema": {}, "engine": "fake", "retained_failure_outcome": "retained_failure",
+        })
+        self.assertEqual(legacy.retained_failure_outcome, "failed")
+        self.assertEqual(current.retained_failure_outcome, "retained_failure")

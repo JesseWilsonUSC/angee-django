@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from django.apps import apps
 from pydantic import BaseModel, ConfigDict, Field
@@ -41,6 +41,7 @@ class OcrExtractConfig(BaseModel):
     schema_: dict[str, Any] = Field(alias="schema", json_schema_extra={"widget": "json"})
     engine: str
     engine_config: dict[str, Any] = Field(default_factory=dict, json_schema_extra={"widget": "json"})
+    retained_failure_outcome: Literal["failed", "retained_failure"] = "failed"
 
 
 class OcrExtractStepImpl(StepImpl):
@@ -60,6 +61,11 @@ class OcrExtractStepImpl(StepImpl):
     outcomes = (
         StepOutcome("extracted", "Extracted"),
         StepOutcome("failed", "Failed", "Extraction evidence records a bounded processing failure."),
+        StepOutcome(
+            "retained_failure",
+            "Retained failure",
+            "Extraction evidence records a bounded processing failure without matching a hard step failure.",
+        ),
     )
 
     @classmethod
@@ -110,7 +116,7 @@ class OcrExtractStepImpl(StepImpl):
             )
         return StepResult.done(
             output={"extraction_id": str(evidence.sqid), "revision": evidence.revision},
-            outcome="extracted" if evidence.status == "succeeded" else "failed",
+            outcome=("extracted" if evidence.status == "succeeded" else config.retained_failure_outcome),
             artifacts=(ArtifactSpec(evidence, "Document extraction evidence"),),
         )
 
@@ -122,10 +128,11 @@ class OcrExtractStepImpl(StepImpl):
         if actor is None:
             raise ValueError("OCR recovery requires the workflow run actor.")
         extraction_model = apps.get_model("workflows_ocr", "Extraction")
+        config = OcrExtractConfig.model_validate(step_run.step.config)
         with actor_context(actor):
             evidence = reextract(extraction_model.objects.get(sqid=source_attempt.output["extraction_id"]))
         return StepResult.done(
             output={"extraction_id": str(evidence.sqid), "revision": evidence.revision},
-            outcome="extracted" if evidence.status == "succeeded" else "failed",
+            outcome=("extracted" if evidence.status == "succeeded" else config.retained_failure_outcome),
             artifacts=(ArtifactSpec(evidence, "Document extraction evidence"),),
         )
