@@ -13,7 +13,7 @@ from unittest.mock import patch
 import pytest
 from django.apps import apps
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied, ValidationError
 from django.core.management import call_command
 from django.db import IntegrityError, connection, models
 from django.test import SimpleTestCase, override_settings
@@ -38,7 +38,7 @@ from angee.workflows_ocr.routing import (
     derive_text_claims,
     recognize_pages,
 )
-from angee.workflows_ocr.service import _document_sources, _merge, extract, reextract
+from angee.workflows_ocr.service import _document_sources, model_deployment_identity, _merge, extract, reextract
 from angee.workflows_ocr.steps import OcrExtractConfig, OcrExtractStepImpl
 from angee.workflows_ocr_glm.engine import GlmOllamaEngine
 from tests.conftest import _clear_model_tables, _create_missing_tables, make_integration
@@ -270,6 +270,47 @@ class ExtractionServiceTests(TestCase):
                 engine="fake",
                 config=config,
             )
+
+    def test_deployment_allowlist_blocks_unapproved_models_and_endpoint_repointing(self) -> None:
+        with actor_context(self.owner):
+            approved = model_deployment_identity(self.model)
+        policy = {"mapping": [approved], "recognition": []}
+        with override_settings(ANGEE_OCR_APPROVED_MODEL_DEPLOYMENTS=policy):
+            evidence = self._extract(config={"page_results": {"0:0": {"number": "LOCAL", "rows": []}}})
+        self.assertEqual(evidence.status, "succeeded")
+
+        inference_model = apps.get_model("agents", "InferenceModel")
+        with system_context(reason="test unapproved OCR deployment"):
+            unapproved = inference_model.objects.create(
+                provider=self.model.provider, name="unapproved", display_name="Unapproved",
+                config={"provider_model": "unapproved"}, created_by=self.owner,
+            )
+        with actor_context(self.owner), override_settings(ANGEE_OCR_APPROVED_MODEL_DEPLOYMENTS=policy):
+            with patch("angee.workflows_ocr.service._document_sources") as acquire_sources:
+                with self.assertRaisesRegex(DjangoPermissionDenied, "mapping model deployment is not approved"):
+                    extract(
+                        files=self.files, schema=SCHEMA, model=unapproved,
+                        authorized_target=self.drive, engine="fake", config={},
+                    )
+                acquire_sources.assert_not_called()
+
+            with patch("angee.workflows_ocr.service._document_sources") as acquire_sources:
+                with self.assertRaisesRegex(DjangoPermissionDenied, "recognition model deployment is not approved"):
+                    extract(
+                        files=self.files, schema=SCHEMA, model=self.model, recognition_model=self.model,
+                        authorized_target=self.drive, engine="fake", config={},
+                    )
+                acquire_sources.assert_not_called()
+
+        provider = self.model.provider
+        with system_context(reason="test repointed OCR deployment"):
+            provider.base_url = "https://external.invalid/v1"
+            provider.save(update_fields=("base_url", "updated_at"))
+        with override_settings(ANGEE_OCR_APPROVED_MODEL_DEPLOYMENTS=policy):
+            with patch("angee.workflows_ocr.service._document_sources") as acquire_sources:
+                with self.assertRaisesRegex(DjangoPermissionDenied, "mapping model deployment is not approved"):
+                    self._extract(config={})
+                acquire_sources.assert_not_called()
 
     def test_persists_ordered_evidence_reuses_exact_scope_and_revises_changed_config(self) -> None:
         config = {

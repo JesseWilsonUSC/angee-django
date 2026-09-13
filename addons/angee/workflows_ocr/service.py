@@ -62,6 +62,8 @@ def extract(
     for candidate in (model, recognition_model):
         if candidate is not None and not candidate.has_access("read"):
             raise PermissionDenied("Read access to every inference model is required.")
+    require_approved_model_deployment(model, role="mapping")
+    require_approved_model_deployment(recognition_model, role="recognition")
     normalized_schema = _validated_schema(schema)
     normalized_config = _json_object(config or {}, field="config")
     schema_id = str(normalized_schema.get("$id") or normalized_schema.get("x-version") or "")
@@ -349,6 +351,48 @@ def _model_fingerprint(model: Any | None) -> dict[str, Any] | None:
         "provider_config": model.provider.config,
         "model_config": model.config,
     }
+
+
+def model_deployment_identity(model: Any) -> dict[str, str]:
+    """Return the non-secret endpoint binding checked before model invocation."""
+
+    provider = model.provider
+    backend = provider.backend
+    effective_url = str(provider.base_url or getattr(backend, "default_base_url", "")).strip().rstrip("/")
+    return {
+        "model": str(model.sqid),
+        "provider": str(provider.sqid),
+        "backend": str(provider.backend_class),
+        "native_model": str(model.provider_model_name),
+        "endpoint": effective_url,
+    }
+
+
+def require_approved_model_deployment(model: Any | None, *, role: str) -> None:
+    """Fail closed when a configured OCR deployment allowlist excludes a model."""
+
+    try:
+        validate_model_deployment(model, role=role)
+    except ValueError as error:
+        raise PermissionDenied(str(error)) from error
+
+
+def validate_model_deployment(model: Any | None, *, role: str) -> None:
+    """Validate one configured model against the shared deployment allowlist."""
+
+    if model is None:
+        return
+    policy = getattr(settings, "ANGEE_OCR_APPROVED_MODEL_DEPLOYMENTS", None)
+    if policy is None:
+        return
+    if not isinstance(policy, Mapping):
+        raise ValueError("The OCR model deployment policy is invalid.")
+    approved = policy.get(role)
+    if not isinstance(approved, (list, tuple)) or not all(isinstance(item, Mapping) for item in approved):
+        raise ValueError(f"The OCR {role} deployment policy is invalid.")
+    identity = model_deployment_identity(model)
+    if not any(dict(item) == identity for item in approved):
+        raise ValueError(f"The configured OCR {role} model deployment is not approved.")
 
 
 def _validate_document_result(
