@@ -18,6 +18,10 @@ vi.mock("@angee/refine", () => ({
 vi.mock("@angee/ui", () => ({
   Button: ({ children }: { children?: ReactNode }) => <button type="button">{children}</button>,
   Code: ({ children }: { children?: ReactNode }) => <code>{children}</code>,
+  createNamespaceT: (
+    _namespace: string,
+    fallback: Record<string, string>,
+  ) => (key: string) => fallback[key] ?? key,
   MutationDialog: (props: Record<string, unknown>) => {
     mocks.mutationProps = props;
     return null;
