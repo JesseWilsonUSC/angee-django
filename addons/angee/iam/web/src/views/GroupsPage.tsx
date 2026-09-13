@@ -26,7 +26,7 @@ export function GroupsPage(): React.ReactElement {
   const accessTab = usePrincipalAccessRecordTab();
   const tabs = React.useMemo<readonly RecordTabDescriptor[]>(() => [
     { id: "members", label: t("group.members"), render: (context) => <GroupMembersTab {...context} /> },
-    ...(accessTab ? [accessTab] : []),
+    accessTab,
   ], [accessTab, t]);
   return (
     <ResourceList

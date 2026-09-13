@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  admin: true,
   listProps: [] as Record<string, unknown>[],
   queryOptions: null as Record<string, unknown> | null,
   queryVariables: null as Record<string, unknown> | undefined,
@@ -92,7 +91,6 @@ vi.mock("@angee/ui", () => {
     useRecordChromeContext: () => ({ record: mocks.record }),
     useResourceRecordHref: () => (id: string) => `/projects/${id}`,
     useResourceRoute: () => "/projects",
-    useRuntimeAuth: () => ({ hasRole: () => mocks.admin }),
   };
 });
 
@@ -100,17 +98,14 @@ import { PrincipalAccessTab, usePrincipalAccessRecordTab } from "./PrincipalAcce
 
 describe("principal access tab", () => {
   beforeEach(() => {
-    mocks.admin = true;
     mocks.listProps = [];
     mocks.queryOptions = null;
     mocks.queryVariables = undefined;
     mocks.record = { assignment_subject: "auth/user:usr_alice" };
   });
 
-  test("offers the shared record tab only to platform admins", () => {
+  test("offers the shared record tab", () => {
     expect(renderHook(() => usePrincipalAccessRecordTab()).result.current?.id).toBe("access");
-    mocks.admin = false;
-    expect(renderHook(() => usePrincipalAccessRecordTab()).result.current).toBeNull();
   });
 
   test("queries the record principal and renders roles, grants, and permission paths", () => {

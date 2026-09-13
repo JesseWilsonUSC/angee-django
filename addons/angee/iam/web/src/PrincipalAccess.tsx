@@ -8,7 +8,6 @@ import {
   useRecordChromeContext,
   useResourceRecordHref,
   useResourceRoute,
-  useRuntimeAuth,
   type ListColumn,
   type RecordTabDescriptor,
 } from "@angee/ui";
@@ -49,19 +48,16 @@ function RoutedAccessTarget({
 }
 
 /** Return the one IAM-owned Access tab for any record exposing a principal subject. */
-export function usePrincipalAccessRecordTab(): RecordTabDescriptor | null {
+export function usePrincipalAccessRecordTab(): RecordTabDescriptor {
   const t = useIamT();
-  const auth = useRuntimeAuth();
   return React.useMemo(
-    () => auth.hasRole("angee/role:admin")
-      ? {
-          id: "access",
-          label: t("principalAccess.tab"),
-          icon: "auth",
-          render: () => <PrincipalAccessTab />,
-        }
-      : null,
-    [auth, t],
+    () => ({
+      id: "access",
+      label: t("principalAccess.tab"),
+      icon: "auth",
+      render: () => <PrincipalAccessTab />,
+    }),
+    [t],
   );
 }
 
