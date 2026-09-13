@@ -15,10 +15,11 @@ import {
   redirect,
   useRouter,
 } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { createElement, type ReactNode } from "react";
 
 import type {
   BaseAddonRoute,
+  BaseLayoutProvider,
   RefineLayoutConfig,
 } from "./define-base-addon";
 import { identityQueryOptions, isUnauthorizedError } from "./providers/auth";
@@ -37,6 +38,7 @@ export function createLayoutRoutes({
   authProvider,
   queryClient,
   loginPath,
+  layoutProviders = [],
 }: {
   rootRoute: AnyRoute;
   layoutNames: readonly string[];
@@ -46,9 +48,16 @@ export function createLayoutRoutes({
   authProvider: RefineAuthProvider;
   queryClient: QueryClient;
   loginPath: string;
+  layoutProviders?: readonly BaseLayoutProvider[];
 }): Map<string, AnyRoute> {
   const layoutRoutes = new Map<string, AnyRoute>();
+  for (const provider of layoutProviders) {
+    if (!layouts[provider.layout]) {
+      throw new Error(`Layout provider "${provider.id}" references undeclared layout "${provider.layout}".`);
+    }
+  }
   for (const layoutName of layoutNames) {
+    const providers = layoutProviders.filter((provider) => provider.layout === layoutName);
     const requireAuth = layoutRequiresAuth(layoutName, layouts);
     layoutRoutes.set(
       layoutName,
@@ -67,6 +76,7 @@ export function createLayoutRoutes({
             layouts={layouts}
             schemas={schemas}
             defaultSchema={defaultSchema}
+            providers={providers}
           />
         ),
       }),
@@ -107,6 +117,16 @@ export function createAddonRouteNodes({
       parentManifestRoute,
     );
     routeNodes.set(route.name, node);
+    if (route.indexComponent) {
+      childrenByParent.set(node, [{
+        name: `${route.name}.index`,
+        route: createRoute({
+          getParentRoute: () => node,
+          path: "/",
+          component: route.indexComponent,
+        }),
+      }]);
+    }
     const children = childrenByParent.get(parentNode) ?? [];
     children.push({ name: route.name, route: node });
     childrenByParent.set(parentNode, children);
@@ -142,11 +162,13 @@ function RefineLayoutRoute({
   layouts,
   schemas,
   defaultSchema,
+  providers,
 }: {
   layoutName: string;
   layouts: Record<string, RefineLayoutConfig>;
   schemas: Readonly<Record<string, RouteSchemaConfig>>;
   defaultSchema: string;
+  providers: readonly BaseLayoutProvider[];
 }): ReactNode {
   const layout = layouts[layoutName];
   const Chrome = layout?.chrome ?? PassthroughChrome;
@@ -168,7 +190,10 @@ function RefineLayoutRoute({
     <ActiveGraphQLSchemaProvider schema={schemaName}>
       <ActiveDataProviderNameProvider name={schemaName}>
         <ModelMetadataProvider metadata={schema.fieldMetadata}>
-          {body}
+          {providers.reduceRight<ReactNode>(
+            (children, provider) => createElement(provider.component, { key: provider.id, children }),
+            body,
+          )}
         </ModelMetadataProvider>
       </ActiveDataProviderNameProvider>
     </ActiveGraphQLSchemaProvider>

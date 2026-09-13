@@ -3,8 +3,7 @@
 The :class:`~angee.platform.installer.AddonInstaller` owns the comment-preserving
 ``INSTALLED_APPS`` edit; a backend is pure transport. This one routes that transport
 through the operator daemon: the operator owns the deployment's ``settings.yaml`` and
-the rebuild lifecycle, so the read/write go over its file API and the rebuild over
-``POST /stack/build`` (which rebuilds and restarts the django service). The read's
+the settings source, so the read/write go over its file API. The read's
 ``etag`` is carried to the write so a concurrent edit fails the write rather than
 silently clobbering it.
 """
@@ -19,11 +18,11 @@ _SETTINGS_PATH = "settings.yaml"
 
 
 class OperatorInstallerBackend(AddonInstallerBackend):
-    """Production transport: edit ``app/settings.yaml`` + rebuild through the operator.
+    """Production transport for editing ``app/settings.yaml`` through the operator.
 
     ``read_settings_text`` seeds :attr:`_etag` from the operator read; the matching
     ``write_settings_text`` echoes it for the daemon's optimistic-concurrency check
-    (the two run within one ``AddonInstaller.install``/``uninstall`` call on this one
+    (the two run within one ``AddonInstaller.install``/``disable`` call on this one
     instance). An unconfigured or unreachable daemon surfaces as ``FileNotFoundError``
     on the read, which the installer turns into a clean refusal rather than a crash.
     """
@@ -55,8 +54,3 @@ class OperatorInstallerBackend(AddonInstallerBackend):
         """Write the edited ``app/settings.yaml`` back through the operator with the read etag."""
 
         self._etag = self._daemon.write_file(_SOURCE, _SETTINGS_PATH, text, self._etag)
-
-    def request_rebuild(self) -> str:
-        """Trigger the operator rebuild + restart (``POST /stack/build``)."""
-
-        return self._daemon.stack_build()

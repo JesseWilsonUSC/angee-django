@@ -11,7 +11,7 @@
 // - Chatter tabs are unique by `(model?, id)`; a second addon claiming the same
 //   scoped tab is a composition-time collision.
 //
-// The ordered lists then sort by `sequence`, never by addon order.
+// The ordered lists sort by sequence and contribution key, never by addon order.
 
 import type { I18nResources } from "@angee/refine";
 // The contribution contracts moved down into the binding (`@angee/ui` owns the
@@ -79,6 +79,15 @@ export interface AddonRoute {
   resource?: string;
 }
 
+/** A provider mounted once around one layout's chrome and routed content. */
+export interface LayoutProviderContribution {
+  id: string;
+  layout: string;
+  sequence?: number;
+  /** The rendered binding supplies the native React component type. */
+  component: unknown;
+}
+
 /** One addon's self-describing manifest. */
 export interface AddonManifest {
   id: string;
@@ -108,6 +117,7 @@ export interface AddonManifest {
    * endpoint (e.g. the operator daemon) under its own provider name.
    */
   dataProviders?: Readonly<Record<string, unknown>>;
+  layoutProviders?: readonly LayoutProviderContribution[];
   /** Code-owned dashboard defaults composed before persisted customizations. */
   dashboards?: readonly DashboardDefinition[];
   /** Namespaced widget kinds or explicit compatible replacements. */
@@ -134,6 +144,7 @@ export interface ComposedAddons {
   recordSearchKeys: readonly string[];
   drawers: readonly DrawerContribution[];
   dataProviders: Readonly<Record<string, unknown>>;
+  layoutProviders: readonly LayoutProviderContribution[];
   dashboards: DashboardRegistry;
   themes: readonly ThemeManifestContribution[];
 }
@@ -150,9 +161,9 @@ export function defineAddon(manifest: AddonManifest): AddonManifest {
 
 /**
  * Merge sequence-ordered contributions: dedupe by `keyOf` and sort by
- * `sequence`. By default later groups win (an addon overrides a default); pass
- * `uniqueKind` to instead fail fast on a duplicate key (two addons claiming one
- * key is a collision, like widgets/previews). The chatter, slot, and drawer
+ * `sequence`, then the contribution key. By default later groups win (an addon
+ * overrides a default); pass `uniqueKind` to instead fail fast on a duplicate
+ * key (two addons claiming one key is a collision, like widgets/previews). The chatter, slot, and drawer
  * merges are the same fold over different keys.
  *
  * Slots are additive extension points, so a slot entry is a unique key: a second
@@ -182,9 +193,13 @@ function mergeByKey<T extends { sequence?: number }>(
       byKey.set(key, item);
     }
   }
-  return [...byKey.values()].sort(
-    (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0),
-  );
+  return [...byKey.values()].sort((a, b) => {
+    const sequence = (a.sequence ?? 0) - (b.sequence ?? 0);
+    if (sequence !== 0) return sequence;
+    const left = keyOf(a);
+    const right = keyOf(b);
+    return left < right ? -1 : left > right ? 1 : 0;
+  });
 }
 
 export function mergeChatterContributions(
@@ -352,6 +367,11 @@ export function composeAddons(
     icons,
     forms,
     dataProviders,
+    layoutProviders: mergeByKey(
+      addons.map((addon) => addon.layoutProviders ?? []),
+      (provider) => `${provider.layout}\0${provider.id}`,
+      "layout provider",
+    ),
     chatter: mergeChatterContributions(
       ...addons.map((addon) =>
         normalizeChatterContributions(addon.chatter ?? [], canonicalizeModel),

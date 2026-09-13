@@ -162,7 +162,7 @@ def test_resolve_template_ref_reads_collection_envelope(monkeypatch: pytest.Monk
 
 
 def test_file_tools_call_the_files_api_and_carry_the_etag(monkeypatch: pytest.MonkeyPatch) -> None:
-    """read_file/write_file hit ``/files?source=&path=`` carrying the etag; stack_build hits ``/stack/build``."""
+    """read_file/write_file hit ``/files?source=&path=`` carrying the etag."""
 
     daemon = OperatorDaemon(
         endpoint="http://op/graphql",
@@ -187,14 +187,13 @@ def test_file_tools_call_the_files_api_and_carry_the_etag(monkeypatch: pytest.Mo
             return {"source": "app", "path": "settings.yaml", "content": "INSTALLED_APPS: []\n", "etag": "e1"}
         if method == "PUT":
             return {"source": "app", "path": "settings.yaml", "etag": "e2"}
-        return {"status": "queued"}
+        raise AssertionError(f"Unexpected method: {method}")
 
     monkeypatch.setattr(OperatorDaemon, "_request", fake_request)
 
     remote = daemon.read_file("app", "settings.yaml")
     assert (remote.content, remote.etag) == ("INSTALLED_APPS: []\n", "e1")
     assert daemon.write_file("app", "settings.yaml", "INSTALLED_APPS: [x]\n", "e1") == "e2"
-    assert daemon.stack_build() == "queued"
 
     get_method, get_url, _ = calls[0]
     assert get_method == "GET"
@@ -202,7 +201,7 @@ def test_file_tools_call_the_files_api_and_carry_the_etag(monkeypatch: pytest.Mo
     put_method, put_url, put_payload = calls[1]
     assert put_method == "PUT" and put_url.startswith("http://op/files?")
     assert put_payload == {"content": "INSTALLED_APPS: [x]\n", "etag": "e1"}
-    assert calls[2] == ("POST", "http://op/stack/build", {})
+    assert len(calls) == 2
 
 
 # --- endpoint resolution ------------------------------------------------------

@@ -173,7 +173,10 @@ history uses native Query pages with domain-owned
   described under [Package Layering](#package-layering).
 - Rendered resource pages use `resourcePageRoutes(name, path, component,
   resource?)` from `@angee/app`; the helper owns the list + `$id` child pair and
-  the default `"console"` layout. Addon manifest tests call
+  the default `"console"` layout. An explicit `detailComponent` gets a native
+  router index page for the list, so its record page replaces the list. Without
+  it the list surface keeps owning the selected record through the child param.
+  Addon manifest tests call
   `expectValidBaseAddon(manifest)` from `@angee/app/testing` and keep only
   genuinely addon-specific assertions.
 - Route declarations are the only place a URL path is spelled. Menus name their
@@ -215,12 +218,17 @@ history uses native Query pages with domain-owned
   which wraps every non-root match in Suspense inside its layout's `<Outlet/>`, so
   the chrome stays mounted. Do not hand-roll `React.lazy` + a manual `<Suspense>`
   around a route's `<Outlet/>`. Split only routed pages — lighter manifest content
-  (slot/section content, forms, glyphs) stays eager; where a route needs a
-  provider wrapper (e.g. operator's transport), wrap the `lazyRouteComponent`
-  result in the thin route component, and the dynamic `import()` still splits the
-  view.
+  (slot/section content, forms, glyphs) stays eager. A transport or context shared
+  by pages and shell contributions declares
+  `layoutProviders` on `defineBaseAddon`, keyed by layout and contribution id.
+  The layout mounts these providers once inside its authenticated schema context,
+  above chrome and routed content; page and drawer wrappers are unnecessary.
 - One component tree. Extend or register; do not fork.
 - **Slots are additive extension points.** Use them before copying a component.
+  Console-wide notices contribute to `CONSOLE_NOTICE_SLOT` from `@angee/ui`;
+  `ConsoleLayout` renders it below navigation and above page controls. The
+  contributing addon owns visibility, permissions, status, and actions, and
+  composes the existing `Banner` surface.
   A slot entry is uniquely keyed by `(slot, model?, impl?, id)` and a second addon claiming one
   **collides** at composition — it is never a silent override decided by addon
   array order. So an addon contributes only to a key it owns. To vary a

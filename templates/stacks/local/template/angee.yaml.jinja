@@ -7,8 +7,7 @@
 {# hostname-guarded blocks (ANGEE_PUBLIC_ORIGIN, edge TLS) on their loopback path. #}
 {% set ingress_domain_value = "localhost" %}
 {% set runtime_mode = "docker" %}
-{# Address variables: docker mode reaches services by compose service name; only the #}
-{# host-local operator daemon is reached via the host gateway (host.docker.internal). #}
+{# Address variables: containers reach services and the operator through Compose DNS. #}
 {% set database_url = "postgres://angee:${secret.db-password}@postgres:5432/angee" %}
 {% set redis_url = "redis://redis:6379/0" %}
 {% set celery_broker_url = "redis://redis:6379/1" %}

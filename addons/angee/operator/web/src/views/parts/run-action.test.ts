@@ -27,7 +27,7 @@ describe("runDaemonAction", () => {
 
   test("treats any non-null payload as success (failure is a GraphQL error)", async () => {
     const toast = { danger: vi.fn() };
-    // e.g. jobRun returns a bare job-id string; a non-null payload is success.
+    // The dispatcher accepts scalar payloads as well as structured receipts.
     const run = vi.fn(async () => ({ serviceStart: "job-123" }));
 
     const ok = await runDaemonAction({ ...base, run, toast, refetch: vi.fn() });

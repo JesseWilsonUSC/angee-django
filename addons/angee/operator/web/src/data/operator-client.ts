@@ -30,13 +30,7 @@ const OperatorWsClientContext = createContext<OperatorWsClient | null>(null);
 /** Provide the daemon ws client to the subscription hooks (mounted by the gate). */
 export const OperatorWsClientProvider = OperatorWsClientContext.Provider;
 
-/** The daemon ws client for subscription hooks; throws outside the transport gate. */
-export function useOperatorWsClient(): OperatorWsClient {
-  const client = useContext(OperatorWsClientContext);
-  if (!client) {
-    throw new Error(
-      "useOperatorWsClient must be used inside OperatorTransportProvider.",
-    );
-  }
-  return client;
+/** The daemon ws client for subscription hooks, absent while transport is unavailable. */
+export function useOperatorWsClient(): OperatorWsClient | null {
+  return useContext(OperatorWsClientContext);
 }

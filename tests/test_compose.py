@@ -1210,11 +1210,13 @@ def test_appgraph_annotates_roots_and_dependencies() -> None:
 
     iam = configs["angee.iam"]
     assert iam.angee_addon_root is True
+    assert iam.angee_root_declaration == "angee.iam"
     assert "angee.resources" in addon_manifest(iam).depends_on
     assert not hasattr(iam, "angee_depends_on")
 
     # `resources` is pulled in through iam's closure, not declared — a dependency.
     assert configs["angee.resources"].angee_addon_root is False
+    assert configs["angee.resources"].angee_root_declaration is None
 
     # `forced` = another resolved app depends on me (cannot be uninstalled). `resources`
     # is in iam's closure → forced; the sole declared root nothing depends on is not.
@@ -1236,6 +1238,15 @@ def test_appgraph_root_wins_when_also_a_dependency() -> None:
 
     assert configs["angee.iam"].angee_addon_root is True
     assert configs["angee.resources"].angee_addon_root is True
+
+
+def test_appgraph_preserves_authored_app_config_root_declaration() -> None:
+    """Runtime drift compares the exact root spelling authored in settings YAML."""
+
+    declaration = "angee.iam.apps.IAMConfig"
+    configs = {config.name: config for config in AppGraph().resolve([declaration])}
+
+    assert configs["angee.iam"].angee_root_declaration == declaration
 
 
 def test_appgraph_rejects_duplicate_dependencies() -> None:

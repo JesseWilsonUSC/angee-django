@@ -18,6 +18,8 @@ class OperatorConnectionInfo:
 
     endpoint: str
     token: str
+    restart_job: str | None
+    """Template-selected entry job for restarting the application dependency chain."""
 
 
 @strawberry.type
@@ -51,7 +53,11 @@ class OperatorQuery:
         token = daemon.mint_token(str(actor.object))
         if token is None:
             return None
-        return OperatorConnectionInfo(endpoint=daemon.endpoint, token=token)
+        return OperatorConnectionInfo(
+            endpoint=daemon.endpoint,
+            token=token,
+            restart_job=daemon.restart_job,
+        )
 
 
 schemas = {

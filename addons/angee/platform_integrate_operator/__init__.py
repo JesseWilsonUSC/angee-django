@@ -1,11 +1,10 @@
-"""The operator transport for addon install/uninstall.
+"""The operator transport for installing and disabling addons.
 
 `platform`'s `AddonInstaller` edits `settings.yaml`'s `INSTALLED_APPS` over a
-pure-transport backend, with a `local` dev stub that edits the file in place. This
+pure-transport backend, with a `local` backend that edits the file atomically. This
 addon contributes the **`operator`** backend: in a real deployment the operator
-owns the project's files and the rebuild lifecycle, so the edit and the rebuild
-both go through it — `read`/`write` over the operator file API
-(`GET`/`PUT /files`), the rebuild over `POST /stack/build`.
+owns the project's files, so reads and writes use its file API
+(`GET`/`PUT /files`). Restart orchestration is a separate operator capability.
 
 It is a bridge: `platform` and `operator` are siblings (neither depends on the
 other), and the operator backend needs the operator daemon client, so it lives

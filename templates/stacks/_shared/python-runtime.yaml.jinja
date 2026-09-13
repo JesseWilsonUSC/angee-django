@@ -1,0 +1,24 @@
+{# Python jobs and services share the host, mounts, and application environment. #}
+{% if runtime_mode == "process" %}    runtime: local
+    workdir: source://app
+{% else %}    runtime: container
+    image: {{ django_image }}
+    mounts:
+      - source://app:/app
+      - bind://./data:/app/data
+    workdir: /app
+{% endif %}    env:
+      ANGEE_PROJECT_DIR: {% if runtime_mode == "process" %}"."{% else %}/app{% endif %}
+      DATABASE_URL: "{{ database_url }}"
+      YAMLCONF_SECRET_KEY: "${secret.secret-key}"
+      ANGEE_OPERATOR_GRAPHQL_ENDPOINT: "/operator/graphql"
+      ANGEE_OPERATOR_URL: "{{ operator_url }}"
+      ANGEE_OPERATOR_TOKEN: "${secret.operator-token}"
+      ANGEE_OPERATOR_RESTART_JOB: "{{ restart_job }}"
+      ANGEE_BUILTIN_MCP_URL: "{{ mcp_url }}"
+      REDIS_URL: "{{ redis_url }}"
+      CACHE_URL: "{{ redis_url }}"
+      CELERY_BROKER_URL: "{{ celery_broker_url }}"
+{% if ingress_domain_value == "localhost" %}{% else %}      ANGEE_PUBLIC_ORIGIN: "https://{{ ingress_domain_value }}"
+{% endif %}{% if uv_cache_dir %}      UV_CACHE_DIR: "{{ uv_cache_dir }}"
+{% endif %}

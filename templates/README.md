@@ -27,11 +27,16 @@ the difference is the runtime and where framework code comes from. Both
 render from ONE shared manifest body (`stacks/_shared/stack-body.yaml.jinja`): each
 template's `angee.yaml.jinja` is a thin `{% set %}` header (mode + address variables)
 that includes it, and `{% if runtime_mode == "process" | "docker" %}` branches cover
-only where the two modes differ. Both chain `projects/web` to scaffold the host and
-collapse the first-run lifecycle into one `manage.py angee provision` command.
+only where the two modes differ. Both chain `projects/web` to scaffold the host.
+Their manifests expose preparation as explicit jobs: framework dependency install,
+provision, operator schema refresh, and codegen; local instances replace framework
+codegen with a completed static frontend build. Python jobs and services share one
+runtime/environment include, while each container synchronizes its own virtualenv.
 
-Docker-mode stack manifests require angee-operator v0.12.0 or later because they
-declare service readiness with the strict manifest loader's `ready` field.
+These manifests require operator support for readiness and chained jobs. A successful
+addon settings edit can restart the declared entry job with `chained_restart`, which
+replays its dependency graph before the running application restarts. Failed jobs stop
+the chain instead of restarting against incomplete generated state.
 
 - **`stacks/dev`** (`runtime_mode: process`) — the framework-dev stack, run on
   process-compose. It declares the consolidated framework plus optional external
@@ -45,8 +50,10 @@ declare service readiness with the strict manifest loader's `ready` field.
   docker-compose. You own the root. By default (`framework=source`) the django/celery
   services run the deps-only base image and link the framework editable from a local
   `sources/angee` checkout at container start; `framework=baked` runs a
-  code-baked runtime image instead. `provision` runs inside the django container. This
-  is how you run your own Angee app locally on a real (Postgres + pgvector) database.
+  code-baked runtime image instead. Provision and operator-schema are completed jobs;
+  the frontend build is another real job. Caddy starts after that build, then Django
+  starts once its named trusted proxy is ready. This avoids a proxy DNS startup
+  cycle. This runs your own Angee app locally on a real (Postgres + pgvector) database.
 
 Before initializing either layout, check for an existing current or ancestor
 `angee.yaml`. If one exists, it owns the checkout; never initialize a stack
@@ -88,7 +95,8 @@ discovery and enabling it in `INSTALLED_APPS`.
 > `ghcr.io/ang-ee/django-angee-base` image and link the framework editable from a
 > `sources/angee` checkout at container start (clone it at the stack root first);
 > `framework=baked` runs the code-baked `ghcr.io/ang-ee/django-angee` runtime image
-> instead. It runs on `pgvector/pgvector:pg17`, drives first start through
+> instead. It runs on `pgvector/pgvector:pg17`, drives first start through a
+> provision job running
 > `manage.py angee provision --bootstrap-admin` (which bootstraps a generated `admin`
 > user), and serves the built SPA through Caddy. The one-command render uses the
 > operator's template-chain resolver (`ang-ee/angee-operator#39`); once that lands in a

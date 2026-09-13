@@ -17,6 +17,7 @@ from django.core.exceptions import ImproperlyConfigured
 from angee.platform.installer import (
     AddonInstaller,
     LocalInstallerBackend,
+    StaleAddonPreviewError,
     addon_installer,
 )
 
@@ -36,6 +37,7 @@ def _local_installer(tmp_path: Path, settings: Any) -> AddonInstaller:
 
     (tmp_path / "settings.yaml").write_text(_SETTINGS_YAML, encoding="utf-8")
     settings.BASE_DIR = tmp_path
+    settings.ANGEE_PROJECT_YAML_SETTINGS = frozenset({"INSTALLED_APPS"})
     return AddonInstaller(LocalInstallerBackend())
 
 
@@ -47,7 +49,7 @@ def test_local_install_appends_and_preserves_comments(tmp_path: Path, settings: 
     result = installer.install("example.demo")
 
     assert result.already is False
-    assert result.rebuild_status == "pending"  # local backend recomposes on next boot
+    assert result.summary == "Installed example.demo; the change is pending a restart."
     assert installer.installed_app_names() == ("angee.platform", "example.notes", "example.demo")
 
     text = (tmp_path / "settings.yaml").read_text(encoding="utf-8")
@@ -93,6 +95,52 @@ def test_local_install_is_idempotent(tmp_path: Path, settings: Any) -> None:
     assert (tmp_path / "settings.yaml").read_text(encoding="utf-8") == before
 
 
+def test_reviewed_roots_reject_a_changed_settings_document(tmp_path: Path, settings: Any) -> None:
+    """The bytes actually edited must be the bytes used by the preview."""
+
+    installer = _local_installer(tmp_path, settings)
+    snapshot = installer.installed_apps_snapshot()
+    assert snapshot is not None
+    (tmp_path / "settings.yaml").write_text(
+        _SETTINGS_YAML.replace("example.notes", "example.changed"), encoding="utf-8"
+    )
+
+    with pytest.raises(StaleAddonPreviewError, match="preview is stale"):
+        installer.apply_app_names(
+            (*snapshot.names, "example.demo"), expected_text=snapshot.text
+        )
+
+
+def test_local_backend_rejects_a_concurrent_writer_after_read(
+    tmp_path: Path, settings: Any
+) -> None:
+    """Two writers cannot both replace the same settings snapshot."""
+
+    _local_installer(tmp_path, settings)
+    first = LocalInstallerBackend()
+    second = LocalInstallerBackend()
+    original = first.read_settings_text()
+    assert second.read_settings_text() == original
+
+    first.write_settings_text(original.replace("example.notes", "example.first"))
+
+    with pytest.raises(StaleAddonPreviewError, match="preview is stale"):
+        second.write_settings_text(original.replace("example.notes", "example.second"))
+
+    assert "example.first" in (tmp_path / "settings.yaml").read_text(encoding="utf-8")
+
+
+def test_local_backend_refuses_a_write_without_a_read_snapshot(
+    tmp_path: Path, settings: Any
+) -> None:
+    """A direct transport write fails closed without compare-and-swap input."""
+
+    _local_installer(tmp_path, settings)
+
+    with pytest.raises(StaleAddonPreviewError, match="preview is stale"):
+        LocalInstallerBackend().write_settings_text(_SETTINGS_YAML)
+
+
 def test_local_uninstall_removes_then_absent_is_noop(tmp_path: Path, settings: Any) -> None:
     """Uninstall removes the root; uninstalling an absent root is a no-op."""
 
@@ -124,12 +172,26 @@ def test_install_then_uninstall_round_trips_comments(tmp_path: Path, settings: A
     assert installer.installed_app_names() == ("angee.platform", "example.notes")
 
 
-def test_installed_app_names_is_empty_when_unreadable(tmp_path: Path, settings: Any) -> None:
-    """A missing settings.yaml degrades to an empty desired set, never an error."""
+def test_desired_app_names_is_unknown_when_unreadable(tmp_path: Path, settings: Any) -> None:
+    """A missing settings.yaml remains distinct from an authoritative empty list."""
 
     settings.BASE_DIR = tmp_path  # no settings.yaml written
+    settings.ANGEE_PROJECT_YAML_SETTINGS = frozenset({"INSTALLED_APPS"})
 
-    assert AddonInstaller(LocalInstallerBackend()).installed_app_names() == ()
+    installer = AddonInstaller(LocalInstallerBackend())
+    assert installer.desired_app_names() is None
+    assert installer.installed_app_names() == ()
+
+
+def test_desired_app_names_rejects_non_string_members(tmp_path: Path, settings: Any) -> None:
+    """Invalid roots fail clearly instead of being silently stringified."""
+
+    (tmp_path / "settings.yaml").write_text("INSTALLED_APPS:\n  - 42\n", encoding="utf-8")
+    settings.BASE_DIR = tmp_path
+    settings.ANGEE_PROJECT_YAML_SETTINGS = frozenset({"INSTALLED_APPS"})
+
+    with pytest.raises(ImproperlyConfigured, match="must contain non-empty strings"):
+        AddonInstaller(LocalInstallerBackend()).desired_app_names()
 
 
 def test_addon_installer_resolves_local_default(settings: Any) -> None:
@@ -138,6 +200,20 @@ def test_addon_installer_resolves_local_default(settings: Any) -> None:
     settings.ANGEE_ADDON_INSTALLER_BACKEND = "local"
 
     assert isinstance(addon_installer().backend, LocalInstallerBackend)
+
+
+def test_install_refuses_project_yaml_when_installed_apps_is_overridden(
+    tmp_path: Path, settings: Any
+) -> None:
+    """Editing an eclipsed YAML value cannot claim to have queued a change."""
+
+    installer = _local_installer(tmp_path, settings)
+    settings.ANGEE_PROJECT_YAML_SETTINGS = frozenset()
+
+    result = installer.install("example.demo")
+
+    assert result.ok is False
+    assert "not controlled by the project settings.yaml" in result.summary
 
 
 def test_addon_installer_rejects_unknown_key(settings: Any) -> None:

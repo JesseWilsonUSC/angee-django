@@ -8,11 +8,15 @@ configured addon roots, independent of which are enabled.
 
 from __future__ import annotations
 
+import sys
+from importlib.machinery import ModuleSpec
+from types import SimpleNamespace
+
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 from hatch_angee import AddonManifest
 
-from angee.addons import AvailableAddon, addon_manifest, available_addons
+from angee.addons import AvailableAddon, addon_manifest, available_addons, resolve_manifest_roots
 from angee.compose.appgraph import AppGraph
 from angee.compose.dependencies import AddonDependencyGroup
 from tests.conftest import make_addon
@@ -125,12 +129,52 @@ def test_available_addons_reads_local_manifest_through_upstream_discovery(tmp_pa
     assert available["example.contract"].anchor == str(addon)
 
 
+def test_available_addons_resolves_editable_entry_point_from_import_spec(tmp_path, monkeypatch) -> None:
+    """Installed discovery follows an editable package's import path without importing it."""
+
+    import angee.addons as addon_module
+
+    package = tmp_path / "editable_demo"
+    package.mkdir()
+    (package / "addon.toml").write_text('[addon]\nname = "example.editable"\n', encoding="utf-8")
+    entry_point = SimpleNamespace(
+        name="example.editable",
+        module="editable_demo",
+        value="editable_demo.apps.EditableConfig",
+    )
+    spec = ModuleSpec("editable_demo", loader=None, is_package=True)
+    spec.submodule_search_locations = [str(package)]
+    monkeypatch.setattr(addon_module.metadata, "entry_points", lambda **kwargs: [entry_point])
+    monkeypatch.setattr(addon_module.importlib.util, "find_spec", lambda name: spec)
+    monkeypatch.setattr(addon_module, "discover", lambda roots: [])
+
+    available = available_addons(())
+
+    assert available["example.editable"].manifest.name == "example.editable"
+    assert "editable_demo" not in sys.modules
+
+
+def test_manifest_root_resolution_uses_exact_app_config_aliases() -> None:
+    """The import-free graph owner resolves authored config paths without prefix guessing."""
+
+    dependency = AddonManifest(name="example.dependency")
+    root = AddonManifest(name="example.root", depends_on=("example.dependency",))
+
+    resolved = resolve_manifest_roots(
+        ("example.root.apps.RootConfig", "django.contrib.auth"),
+        (root, dependency),
+        aliases={"example.root.apps.RootConfig": "example.root"},
+    )
+
+    assert [manifest.name for manifest in resolved] == ["example.dependency", "example.root"]
+
+
 def test_registry_facts_full_row_for_enabled_and_zeroed_for_available(db) -> None:
     """The reconcile's fact-gathering: a complete reflected row for every addon —
     full counts when enabled, a complete *zeroed* row when available-but-not-enabled
     (so a state flip never leaves stale counts), with reverse-deps as a list."""
 
-    from angee.platform.models import Addon, AddonManager
+    from angee.platform.models import AddonManager
 
     facts = AddonManager._registry_facts()
     row_keys = {
@@ -155,7 +199,7 @@ def test_registry_facts_full_row_for_enabled_and_zeroed_for_available(db) -> Non
     enabled = facts["angee.iam"]  # in the test INSTALLED_APPS
     assert enabled["state"] == Addon.State.ENABLED
     assert set(enabled) == row_keys  # complete row, no partial dict
-    assert enabled["pending"] is False  # a composed addon is never pending
+    assert enabled["pending"] is False  # loaded and still present in desired roots
     assert enabled["category"] == "Foundation"  # mirrored from the addon.toml manifest
 
     # an installed bundle that is *not* enabled in the test settings
@@ -164,7 +208,7 @@ def test_registry_facts_full_row_for_enabled_and_zeroed_for_available(db) -> Non
     assert available["state"] == Addon.State.DISABLED
     assert available["forced"] is False
     assert available["pending"] is False  # not in the (empty) desired set
-    assert available["category"] == ""  # metadata stays blank until composed
+    assert available["category"] == "Integration"  # metadata comes from the available manifest
     assert available["model_count"] == 0
     assert available["field_count"] == 0
     assert available["depends_on"] == []
@@ -179,13 +223,60 @@ def test_registry_facts_pending_reflects_desired_settings_roots(db) -> None:
     available addon listed there but not yet composed is the board's "to install".
     """
 
-    from angee.platform.models import AddonManager
+    from angee.platform.models import Addon, AddonManager
 
     facts = AddonManager._registry_facts(desired=frozenset({"angee.knowledge_graph_pgvector"}))
 
     assert facts["angee.knowledge_graph_pgvector"]["pending"] is True
     # An addon composed in the test app graph stays non-pending even if named desired.
     assert facts["angee.iam"]["pending"] is False
+
+
+def test_reconcile_normalizes_authored_app_config_roots(db, monkeypatch) -> None:
+    """Catalogue facts compare canonical addon names while drift keeps authored roots."""
+
+    from angee.platform import models as platform_models
+    from angee.platform.models import Addon, AddonManager
+
+    captured = {}
+
+    def registry_facts(desired=None):
+        captured["desired"] = desired
+        return {}
+
+    monkeypatch.setattr(
+        platform_models.composed,
+        "root_app_aliases",
+        lambda: {"example.demo.apps.DemoConfig": "example.demo"},
+    )
+    monkeypatch.setattr(
+        AddonManager,
+        "_registry_facts",
+        staticmethod(registry_facts),
+    )
+
+    Addon.objects.reconcile_from_registry(
+        "default", desired=frozenset({"example.demo.apps.DemoConfig"})
+    )
+
+    assert captured["desired"] == frozenset({"example.demo"})
+
+
+def test_pending_changes_is_unknown_when_project_yaml_is_not_effective(settings, monkeypatch) -> None:
+    """An override is not falsely treated as either pending or settled."""
+
+    from angee.platform import models as platform_models
+    from angee.platform.models import Addon
+
+    settings.ANGEE_PROJECT_YAML_SETTINGS = frozenset()
+    monkeypatch.setattr(platform_models.composed, "root_app_names", lambda: frozenset({"example.demo"}))
+    monkeypatch.setattr(
+        platform_models,
+        "available_addons",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("catalogue read")),
+    )
+
+    assert Addon.objects.pending_changes() is None
 
 
 def test_registry_facts_flags_a_queued_uninstall_for_a_composed_root(db, monkeypatch) -> None:

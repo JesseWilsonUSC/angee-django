@@ -144,6 +144,15 @@ class PlatformModelRow(BaseModel):
         return list(self._field_rows)
 
 
+class ContributedFieldRow(BaseModel):
+    """One generated concrete field and the addon donor that supplied it."""
+
+    addon_id: str
+    model_label: str
+    field_name: str
+    verbose_name: str
+
+
 def addons() -> list[AppConfig]:
     """Return the composed Angee addon app configs, sorted by name."""
 
@@ -151,6 +160,26 @@ def addons() -> list[AppConfig]:
         (config for config in apps.get_app_configs() if is_angee_addon(config)),
         key=lambda config: config.name,
     )
+
+
+def root_app_names() -> frozenset[str]:
+    """Return effective root declarations recorded by the composed app graph."""
+
+    return frozenset(
+        declaration
+        for config in apps.get_app_configs()
+        if (declaration := getattr(config, "angee_root_declaration", None)) is not None
+    )
+
+
+def root_app_aliases() -> dict[str, str]:
+    """Map exact authored root declarations to their normalized AppConfig names."""
+
+    return {
+        declaration: config.name
+        for config in apps.get_app_configs()
+        if (declaration := getattr(config, "angee_root_declaration", None)) is not None
+    }
 
 
 def is_historical(model: type[Model]) -> bool:
@@ -173,6 +202,27 @@ def own_fields(model: type[Model]) -> list:
     """Return a model's own concrete columns plus declared many-to-many fields."""
 
     return [*model._meta.fields, *model._meta.many_to_many]
+
+
+def contributed_fields(config: AppConfig) -> list[ContributedFieldRow]:
+    """Return loaded concrete fields emitted from this addon's abstract donors."""
+
+    rows = []
+    for owner in addons():
+        for model in data_models(owner):
+            for field_name, addon_id in model.__dict__.get("angee_contributed_field_origins", ()):
+                if addon_id != config.name:
+                    continue
+                field = model._meta.get_field(field_name)
+                rows.append(
+                    ContributedFieldRow(
+                        addon_id=addon_id,
+                        model_label=model._meta.label_lower,
+                        field_name=field.name,
+                        verbose_name=str(field.verbose_name),
+                    )
+                )
+    return sorted(rows, key=lambda row: (row.model_label, row.field_name))
 
 
 def resource_counts() -> dict[str, int]:

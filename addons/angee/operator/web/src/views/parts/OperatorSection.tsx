@@ -38,9 +38,8 @@ export function OperatorSection({
   return (
     <div className="flex flex-col gap-4">
       {title ? <h2 className={textRoleVariants({ role: "heading" })}>{title}</h2> : null}
-      {error ? (
-        <Alert tone="danger">{error.message}</Alert>
-      ) : loading ? (
+      {error ? <Alert tone="danger">{error.message}</Alert> : null}
+      {loading ? (
         loadingContent ? (
           <OperatorLoadingContent message={loadingMessage}>
             {loadingContent}
