@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from types import SimpleNamespace
 from typing import Any, NoReturn
 
 from django.apps import apps
@@ -79,7 +80,11 @@ def test_legacy_explorer_and_computed_resources_bind_the_same_rows(monkeypatch: 
     monkeypatch.setattr(platform_schema, "platform_can_read", lambda: True)
     monkeypatch.setattr(composed, "model_rows", lambda: [line_row, tag_row])
     monkeypatch.setattr(composed, "field_rows", lambda: [tag_field])
-    monkeypatch.setattr(composed, "addon_rollups", lambda: [rollup])
+    monkeypatch.setattr(
+        platform_schema,
+        "_Addon",
+        SimpleNamespace(objects=SimpleNamespace(all=lambda: [rollup])),
+    )
 
     data = _data(
         execute_schema(
