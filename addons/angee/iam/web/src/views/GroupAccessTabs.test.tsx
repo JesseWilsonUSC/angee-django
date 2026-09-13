@@ -28,7 +28,7 @@ vi.mock("@angee/ui", () => ({
   },
   RowsListView: (props: Record<string, unknown>) => {
     mocks.listProps.push(props);
-    return null;
+    return <>{props.toolbarActions as ReactNode}</>;
   },
   SubjectPicker: () => null,
   defineRowAction: (value: Record<string, unknown>) => value,
