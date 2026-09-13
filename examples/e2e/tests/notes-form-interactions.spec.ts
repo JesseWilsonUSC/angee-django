@@ -28,9 +28,6 @@ test.describe("notes form — field interactions", () => {
     await expect(page.getByText("e2e-check")).toHaveCount(0);
   });
 
-  // Star/Share are presentational stubs (no action wired yet), so they aren't
-  // exercised here beyond the presence checks in notes-form.spec.
-
   test("choosing a different status step marks the form dirty", async ({
     page,
   }) => {
