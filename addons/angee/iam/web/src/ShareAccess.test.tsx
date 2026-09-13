@@ -53,21 +53,18 @@ vi.mock("@angee/refine", () => ({
   useStableArray: (value: readonly string[]) => value,
 }));
 
-vi.mock("@angee/ui", async () => {
-  const React = await import("react");
-  return {
-    ManageAccessDialog: (props: Record<string, unknown>) => {
-      mocks.dialogProps = props;
-      return <button
-        type="button"
-        onClick={() => (props.onOpenChange as (open: boolean) => void)(true)}
-      >Open access dialog</button>;
-    },
-    useActionResultRun: () => async (run: () => unknown) => run(),
-    useRecordChromeContext: () => mocks.record,
-    useResourceViewActionContext: () => mocks.list,
-  };
-});
+vi.mock("@angee/ui", () => ({
+  ManageAccessDialog: (props: Record<string, unknown>) => {
+    mocks.dialogProps = props;
+    return <button
+      type="button"
+      onClick={() => (props.onOpenChange as (open: boolean) => void)(true)}
+    >Open access dialog</button>;
+  },
+  useActionResultRun: () => async (run: () => unknown) => run(),
+  useRecordChromeContext: () => mocks.record,
+  useResourceViewActionContext: () => mocks.list,
+}));
 
 import { ShareListChrome, ShareRecordChrome } from "./ShareAccess";
 
