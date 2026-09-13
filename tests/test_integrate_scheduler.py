@@ -230,6 +230,40 @@ def test_enqueued_due_bridge_persists_success_telemetry(scheduler_tables: None) 
 
 
 @pytest.mark.django_db(transaction=True)
+def test_paused_manual_sync_stays_one_shot_and_out_of_periodic_due_scan(
+    scheduler_tables: None,
+) -> None:
+    """A paused bridge may sync explicitly without rearming periodic polling."""
+
+    del scheduler_tables
+    now = timezone.now()
+    with system_context(reason="test paused one-shot bridge setup"):
+        bridge = make_integration(
+            "paused-one-shot",
+            model=SchedulerBridge,
+            lifecycle=IntegrationLifecycle.PAUSED,
+            config={"items": 3},
+            next_sync_at=now,
+        )
+
+    result = integrate_sync_runner.run_bridge_sync_job(
+        bridge._meta.label_lower, bridge.pk, now.isoformat(),
+    )
+
+    assert result == {"ok": True, "items": 3, "skipped": False}
+    bridge.refresh_from_db()
+    assert bridge.cursor == {"seen": 3}
+    assert bridge.next_sync_at is None
+    with system_context(reason="test paused legacy due marker"):
+        bridge.next_sync_at = now
+        bridge.save(update_fields=["next_sync_at", "updated_at"])
+        due = SchedulerBridge.objects.due_for_enqueue(
+            timestamp=now, stale_before=now - timedelta(minutes=5),
+        )
+        assert not due.filter(pk=bridge.pk).exists()
+
+
+@pytest.mark.django_db(transaction=True)
 def test_integration_error_reaches_sync_telemetry_verbatim(scheduler_tables: None) -> None:
     """An IntegrationError's operator-safe message is persisted; other failures stay generic."""
 

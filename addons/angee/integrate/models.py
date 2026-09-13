@@ -1431,7 +1431,14 @@ class IntegrationQuerySet(AngeeQuerySet[Any]):
     def due_for_enqueue(self, *, timestamp: datetime, stale_before: datetime) -> Any:
         """Return bridge rows due for a new queue attempt or stale recovery."""
 
-        return self.filter(Q(next_sync_at__lte=timestamp) | Q(sync_stage="queued", updated_at__lte=stale_before))
+        return self.filter(
+            Q(lifecycle=IntegrationLifecycle.CONNECTED, next_sync_at__lte=timestamp)
+            | Q(
+                lifecycle__in=(IntegrationLifecycle.CONNECTED, IntegrationLifecycle.PAUSED),
+                sync_stage="queued",
+                updated_at__lte=stale_before,
+            )
+        )
 
     def live_account_owners(
         self,
@@ -1999,8 +2006,9 @@ class Bridge(models.Model, metaclass=RebacModelBase):
     last_sync_summary = models.JSONField(default=dict, blank=True)
     next_sync_at = models.DateTimeField(null=True, blank=True, db_index=True)
     """Next scheduler poll. NULL means unscheduled: a bridge enters the poll loop
-    when its first (eager) sync records a result; the scheduler claims a due row
-    by pushing this one interval out for the duration of the run."""
+    when its first connected sync records a result; paused one-shot syncs keep it
+    NULL. The scheduler claims a connected due row by pushing this one interval
+    out for the duration of the run."""
 
     class Meta:
         """Django model options for abstract bridge inheritance."""
@@ -2490,11 +2498,13 @@ class Bridge(models.Model, metaclass=RebacModelBase):
     def _next_sync_at(self, *, now: datetime) -> datetime | None:
         """Return the next polling timestamp from this bridge's interval.
 
-        ``None`` keeps the bridge unscheduled — a push-mode child (a live chat
-        channel) overrides this to stay out of the poll loop while its live
-        ingest owns delivery.
+        ``None`` keeps paused/disconnected bridges unscheduled after an explicit
+        one-shot sync. A push-mode child (a live chat channel) may also override
+        this to stay out of the poll loop while its live ingest owns delivery.
         """
 
+        if IntegrationLifecycle.from_value(self.lifecycle) is not IntegrationLifecycle.CONNECTED:
+            return None
         return now + timedelta(seconds=int(self.poll_interval))
 
 
