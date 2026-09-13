@@ -2429,9 +2429,16 @@ class Bridge(models.Model, metaclass=RebacModelBase):
         try:
             with bridge_sync_context(), bridge_progress_context(self):
                 result = self.sync()
-            self.record_sync(result, now=now)
+            # Partitioned syncs report through thread-local Bridge instances.
+            # Re-read their last merged payload before this parent writes the
+            # terminal marker, or its stale in-memory value drops budget/cursor
+            # detail. The scheduler timestamp identifies the attempt; completion
+            # is when the external work actually finished.
+            self.refresh_from_db(fields=["sync_progress"])
+            self.record_sync(result, now=timezone.now())
         except Exception as error:  # noqa: BLE001 — sync failure is telemetry, then caller policy.
-            self.record_sync_error(error, now=now)
+            self.refresh_from_db(fields=["sync_progress"])
+            self.record_sync_error(error, now=timezone.now())
             raise
         return result
 
