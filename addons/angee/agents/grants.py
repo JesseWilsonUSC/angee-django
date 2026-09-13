@@ -1,4 +1,4 @@
-"""Pure-tuple REBAC grants governing which tools an agent may invoke."""
+"""Tool catalogue bindings and legacy principal migration."""
 
 from __future__ import annotations
 
@@ -17,10 +17,10 @@ from angee.mcp.resource_tools import RESOURCE_READER_TOOL_TAG
 from angee.mcp.server import mcp_server
 
 TOOL_GRANT_RESOURCE_TYPE = "agents/tool_grant"
-"""REBAC definition whose pure-tuple objects are keyed by server-qualified tool id."""
+"""REBAC definition for MCPTool rows keyed by server-qualified tool id."""
 
 TOOL_GRANTEE_RELATION = "grantee"
-"""Direct Agent.mcp_tools mirror relation on a tool-grant object."""
+"""Stored grant relation independent of live Agent.mcp_tools selections."""
 
 RESOURCE_READER_ROLE = ObjectRef("agents/toolrole", "resource_reader")
 """Built-in bundle granted to successfully provisioned in-process agents."""
@@ -34,39 +34,10 @@ def tool_grant_ref(server_sqid: str, tool_name: str) -> ObjectRef:
     persistence and authorization.
     """
 
-    server = str(server_sqid).strip()
-    name = str(tool_name).strip()
-    if not server or not name:
-        raise ValueError("Tool grant server ids and names must not be empty.")
-    return ObjectRef(TOOL_GRANT_RESOURCE_TYPE, f"{server}.{name}")
-
-
-def write_tool_grant(server_sqid: str, tool_name: str, agent: SubjectRef) -> None:
-    """Grant ``agent`` use of the named tool through the direct M2M mirror."""
-
-    write_relationships(
-        [
-            RelationshipTuple(
-                resource=tool_grant_ref(server_sqid, tool_name),
-                relation=TOOL_GRANTEE_RELATION,
-                subject=agent,
-            )
-        ]
-    )
-
-
-def revoke_tool_grant(server_sqid: str, tool_name: str, agent: SubjectRef) -> None:
-    """Revoke ``agent``'s direct M2M-backed grant for the named tool."""
-
-    resource = tool_grant_ref(server_sqid, tool_name)
-    delete_relationships(
-        RelationshipFilter(
-            resource_type=resource.resource_type,
-            resource_id=resource.resource_id,
-            relation=TOOL_GRANTEE_RELATION,
-            subject_type=agent.subject_type,
-            subject_id=agent.subject_id,
-        )
+    tool_model = apps.get_model("agents", "MCPTool")
+    return ObjectRef(
+        TOOL_GRANT_RESOURCE_TYPE,
+        tool_model.make_grant_id(server_sqid, tool_name),
     )
 
 
@@ -156,27 +127,24 @@ def _sync_resource_reader_grants(server: Any, registered: list[Any]) -> None:
 
 
 def resync_tool_grants() -> int:
-    """Migrate agent subjects, then replace direct grants from MCP selections.
+    """Migrate legacy agent subjects and synchronize the built-in catalogue.
 
-    Run once after syncing agents schema revision 5. Direct tool grants are
-    rebuilt from ``Agent.mcp_tools``. Existing tool-role and IAM-group
-    memberships are rewritten from the retired ``agents/agent`` principal to
-    the agent's service user, preserving caveats and expiration. Returns the
-    number of selected tool grants written.
+    Agent tool selections are now live-backed and require no tuple rewrite.
+    Existing tool-role and IAM-group memberships are rewritten from the retired
+    ``agents/agent`` principal to the agent's service user, preserving caveats
+    and expiration. Returns the number of migrated membership tuples.
     """
 
     agent_model = apps.get_model("agents", "Agent")
-    writes: list[RelationshipTuple] = []
     with system_context(reason="agents.tool_grants.resync"), transaction.atomic():
         agents = list(
             agent_model._base_manager.select_related("user")
-            .prefetch_related("mcp_tools__server")
             .order_by("pk")
         )
         for agent in agents:
             if agent.user_id is None:
                 agent.user = agent_model.objects.sync_service_user(agent)
-        _migrate_agent_principal_memberships(agents)
+        migrated = _migrate_agent_principal_memberships(agents)
         sync_builtin_tool_catalogue()
         delete_relationships(
             RelationshipFilter(
@@ -185,23 +153,10 @@ def resync_tool_grants() -> int:
                 subject_type="agents/agent",
             )
         )
-        for agent in agents:
-            subject = agent.principal_subject()
-            tools: Any = sorted(agent.mcp_tools.all(), key=lambda tool: (tool.server_id, tool.name, tool.pk))
-            writes.extend(
-                RelationshipTuple(
-                    resource=tool_grant_ref(str(tool.server.sqid), tool.name),
-                    relation=TOOL_GRANTEE_RELATION,
-                    subject=subject,
-                )
-                for tool in tools
-            )
-        if writes:
-            write_relationships(writes)
-    return len(writes)
+    return migrated
 
 
-def _migrate_agent_principal_memberships(agents: list[Any]) -> None:
+def _migrate_agent_principal_memberships(agents: list[Any]) -> int:
     """Rewrite persisted memberships from agent resources to service users."""
 
     relationship_model = active_relationship_model()
@@ -280,3 +235,4 @@ def _migrate_agent_principal_memberships(agents: list[Any]) -> None:
             optional_subject_relation="agent_member",
         )
     )
+    return len(migrated)

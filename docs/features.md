@@ -47,7 +47,8 @@ actually unique to your product.
   tagging; `EncryptedField` for secrets at rest.
 - **Permissions (REBAC)** — Zanzibar-shape authorization via `django-zed-rebac`:
   reads scope through the manager, writes check the instance; each addon ships a
-  `permissions.zed` fragment the composer merges and `rebac sync` loads.
+  `permissions.zed` fragment the composer merges and `rebac sync` loads. Native
+  ORM backing reads derived authorization from its owning Django fields.
 - **GraphQL API** — auto-CRUD, search, and aggregates from model `Meta`;
   real-time subscriptions (channels + uvicorn); persisted operations and
   typed-codegen output for the client.
@@ -69,9 +70,11 @@ actually unique to your product.
 
 ## Batteries — the addon catalog
 
-- **Permissions** (`iam`) — the identity REBAC operates on: users, groups, machine `Service`
-  accounts, hashed API keys, impersonation auditing, and an actor resolver that
-  unifies session / token / machine-to-machine.
+- **Permissions** (`iam`) — one user principal for people and services,
+  IAM-owned groups, and a permission hub for schema-declared roles and direct
+  grants. Groups with record and role bindings form dynamic composite roles.
+  Membership tuples are the only membership store; Django permission tables
+  are unused. Shared access controls accept canonical user and group subjects.
 - **Storage** — files and blobs: content-hash dedup, pluggable backends (local +
   S3/R2/MinIO), MIME detected from the bytes, one presigned upload flow, and
   MIME-keyed previewers.

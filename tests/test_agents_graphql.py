@@ -23,8 +23,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.management import call_command
 from django.db import connection
 from django.test import RequestFactory, override_settings
-from rebac import app_settings, system_context
-from rebac.roles import grant
+from rebac import system_context
 
 from angee.agents.context import render_view_context
 from angee.agents.models import Agent as AbstractAgent
@@ -33,7 +32,6 @@ from angee.agents.models import AgentTurn as AbstractAgentTurn
 from angee.agents.models import MCPPlacement
 from angee.agents.models import MCPServer as AbstractMCPServer
 from angee.agents.models import MCPTool as AbstractMCPTool
-from angee.agents.models import ToolGrant as AbstractToolGrant
 from angee.agents.models import ToolRole as AbstractToolRole
 from angee.graphql.schema import SCHEMA_PART_KEYS, GraphQLSchemas
 from angee.integrate.credentials import CredentialKind
@@ -81,18 +79,8 @@ class MCPTool(AbstractMCPTool):
         abstract = False
         app_label = "agents"
         db_table = "test_agents_mcp_tool"
-        rebac_resource_type = "agents/mcp_tool"
-        rebac_id_attr = "sqid"
-
-
-class ToolGrant(AbstractToolGrant):
-    """Concrete, table-less runtime anchor emitted by the composer in real projects."""
-
-    class Meta(AbstractToolGrant.Meta):
-        abstract = False
-        managed = False
-        app_label = "agents"
         rebac_resource_type = "agents/tool_grant"
+        rebac_id_attr = "grant_id"
 
 
 class ToolRole(AbstractToolRole):
@@ -2006,7 +1994,6 @@ def _platform_admin(username: str) -> Any:
     """Create a superuser holding the platform-admin role tuple."""
 
     admin = User.objects.create_superuser(username=username, email=f"{username}@example.com", password="admin")
-    grant(actor=admin, role=app_settings.REBAC_UNIVERSAL_ADMIN_ROLE)
     return admin
 
 

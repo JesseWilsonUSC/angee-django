@@ -15,7 +15,6 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rebac import PermissionDenied, app_settings, system_context, to_subject_ref
 from rebac.models import active_relationship_model
-from rebac.roles import grant
 
 from angee.graphql.schema import SCHEMA_PART_KEYS, GraphQLSchemas
 from angee.workflows import engine
@@ -1340,7 +1339,6 @@ def _user_for_subject(decision: Any, relation: str) -> Any:
 
 def _platform_admin(username: str) -> Any:
     admin = User.objects.create_superuser(username=username, email=f"{username}@example.com", password="admin")
-    grant(actor=admin, role=app_settings.REBAC_UNIVERSAL_ADMIN_ROLE)
     return admin
 
 

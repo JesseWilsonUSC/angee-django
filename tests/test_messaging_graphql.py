@@ -18,7 +18,6 @@ from django.test.utils import CaptureQueriesContext
 from rebac import (
     RelationshipTuple,
     actor_context,
-    app_settings,
     system_context,
     to_object_ref,
     to_subject_ref,
@@ -3063,7 +3062,6 @@ def _platform_admin(username: str) -> Any:
     """Create a superuser holding the universal admin role."""
 
     admin = User.objects.create_superuser(username=username, email=f"{username}@example.com", password="admin")
-    grant(actor=admin, role=app_settings.REBAC_UNIVERSAL_ADMIN_ROLE)
     return admin
 
 

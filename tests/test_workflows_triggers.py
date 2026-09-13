@@ -17,10 +17,9 @@ from django.core.exceptions import ValidationError
 from django.db import close_old_connections, connection, connections, models, transaction
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
-from rebac import actor_context, app_settings, system_context
+from rebac import actor_context, system_context
 from rebac.errors import MissingActorError
 from rebac.errors import PermissionDenied as RebacPermissionDenied
-from rebac.roles import grant
 
 from angee.base.models import AngeeDataModel, AngeeModel
 from angee.graphql.events import ChangePayload
@@ -1369,5 +1368,4 @@ def _platform_admin(username: str) -> Any:
     """Create a superuser holding the platform-admin role tuple."""
 
     admin = User.objects.create_superuser(username=username, email=f"{username}@example.com", password="admin")
-    grant(actor=admin, role=app_settings.REBAC_UNIVERSAL_ADMIN_ROLE)
     return admin

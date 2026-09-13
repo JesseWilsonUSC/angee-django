@@ -42,7 +42,7 @@ dependencies = [
   "django-reversion>=5.1",
   "django-simple-history>=3.7",
   "django-sqids>=0.1",
-  "django-zed-rebac>=0.16.3",
+  "django-zed-rebac>=0.17.0",
   # <6.1: Django 6.1 adds fetch_mode to Model.from_db and django-zed-rebac's
   # override does not accept it yet; lift the cap when rebac supports 6.1.
   "django>=6.0,<6.1",
@@ -102,7 +102,7 @@ addons = [
     "django-axes>=8.0",
     "django-countries>=9,<10",
     "django-import-export>=4.4",
-    "django-zed-rebac[strawberry-django]>=0.16.3",
+    "django-zed-rebac[strawberry-django]>=0.17.0",
     "fastmcp>=3.4.2,<4",
     "httpcore>=1.0,<2",
     "httpx>=0.28.1,<0.29",
@@ -142,6 +142,9 @@ default-groups = ["dev", "addons"]
 # `.angee/caches/uv` wherever uv runs (slots, worktrees, the stack root under
 # --project). The rendered stack host pins its own stack-owned cache; every
 # other invocation uses uv's default per-user cache.
+
+[tool.uv.sources]
+django-zed-rebac = { git = "https://github.com/ang-ee/django-zed-rebac.git", rev = "de13a3dc133d8db8b96ac248f0c1e5e002f7c190" }
 
 [tool.hatch-angee]
 # This repository publishes the framework core only. Folder addons remain

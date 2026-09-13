@@ -61,6 +61,7 @@ from angee.storage.models import StorageRole as AbstractStorageRole
 from angee.storage_integrate.models import Mount as AbstractMount
 from angee.storage_integrate.models import MountMode
 from tests import messaging_models  # noqa: F401 -- register the managed posts FK targets before database setup
+from tests.iam_models import Group as IAMGroup
 from tests.integrate_models import Integration
 
 pytest_plugins = ("tests.workflows",)
@@ -180,7 +181,7 @@ class MarkdownPage(AbstractMarkdownPage):
         rebac_id_attr = "sqid"
 
 
-IAM_CONNECTION_TEST_MODELS = (OAuthClient, ExternalAccount, Credential)
+IAM_CONNECTION_TEST_MODELS = (IAMGroup, OAuthClient, ExternalAccount, Credential)
 """Concrete integration connection models created on demand by connection test fixtures."""
 
 INTEGRATE_TEST_MODELS = (Vendor, Integration)

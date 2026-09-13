@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 import reversion
 from asgiref.sync import async_to_sync, sync_to_async
+from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
 from django.db import connection, models, transaction
 from fastmcp import Context, FastMCP
@@ -44,7 +45,8 @@ from angee.agents.grants import (
     sync_builtin_tool_catalogue,
     tool_grant_ref,
 )
-from angee.agents.models import ToolGrant, ToolRole
+from angee.agents.models import ToolRole
+from angee.agents.runtime_migrations.live_tool_backing import remove_evidenced_mirrors
 from angee.agents_runtime_pydantic import toolsets as toolsets_module
 from angee.agents_runtime_pydantic.runner import _BINARY_CONTENT_OMITTED, _without_binary_content
 from angee.agents_runtime_pydantic.toolsets import (
@@ -187,6 +189,14 @@ def test_native_tool_grants_run_as_agent_service_user_and_regate(
     with system_context(reason="test native tool grants"):
         agent.mcp_tools.add(read_row, write_row)
 
+    assert not active_relationship_model().objects.filter(
+        resource_type=TOOL_GRANT_RESOURCE_TYPE,
+        resource_id=read_row.grant_id,
+        relation="grantee",
+        subject_type="auth/user",
+        subject_id=agent.principal_subject().subject_id,
+    ).exists()
+
     native = AngeeToolset(session, ToolGrantAccess(agent.principal_subject()), server_sqid)
     advertised = async_to_sync(native.get_tools)(_native_context())
     assert set(advertised) == {"read_sessions", "write_probe"}
@@ -303,6 +313,75 @@ def test_server_qualified_grants_do_not_collide(agent_tooling_tables: None) -> N
 
 
 @pytest.mark.django_db(transaction=True)
+def test_tool_grant_identity_is_canonical_and_immutable(agent_tooling_tables: None) -> None:
+    """The catalogue row owns the runtime grant id and rejects identity drift."""
+
+    del agent_tooling_tables
+    with system_context(reason="test tool identity"):
+        server = MCPServer.objects.create(name="identity-server")
+        tool = MCPTool.objects.create(server=server, name="search")
+        assert tool.grant_id == tool_grant_ref(str(server.sqid), "search").resource_id
+        tool.name = "renamed"
+        with pytest.raises(ValueError, match="immutable"):
+            tool.save(update_fields=("name",))
+        with pytest.raises(ValueError, match="immutable"):
+            MCPTool.objects.filter(pk=tool.pk).update(name="renamed")
+        with pytest.raises(ValueError, match="immutable"):
+            MCPTool.objects.filter(pk=tool.pk).update(grant_id="other.search")
+
+        bulk_tool = MCPTool(server=server, name="bulk-search")
+        MCPTool.objects.bulk_create((bulk_tool,))
+        assert bulk_tool.grant_id == tool_grant_ref(str(server.sqid), "bulk-search").resource_id
+        with pytest.raises(ValueError, match="immutable"):
+            MCPTool.objects.bulk_create(
+                (MCPTool(server=server, name="bulk-search"),),
+                update_conflicts=True,
+                update_fields=("name",),
+                unique_fields=("server", "name"),
+            )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_live_tool_migration_removes_only_evidenced_uncaveated_mirrors(
+    agent_tooling_tables: None,
+) -> None:
+    """Selection evidence removes its old mirror while unrelated grants survive."""
+
+    del agent_tooling_tables
+    owner = User.objects.create_user(username="tool-migration-owner")
+    with system_context(reason="test tool migration setup"):
+        agent = Agent.objects.create(name="Tool migration", owner=owner)
+        server = MCPServer.objects.create(name="migration-server")
+        selected = MCPTool.objects.create(server=server, name="selected")
+        unrelated = MCPTool.objects.create(server=server, name="unrelated")
+        agent.mcp_tools.add(selected)
+        write_relationships(
+            [
+                RelationshipTuple(
+                    resource=tool_grant_ref(str(server.sqid), selected.name),
+                    relation="grantee",
+                    subject=agent.principal_subject(),
+                ),
+                RelationshipTuple(
+                    resource=tool_grant_ref(str(server.sqid), unrelated.name),
+                    relation="grantee",
+                    subject=agent.principal_subject(),
+                ),
+            ]
+        )
+
+    remove_evidenced_mirrors(apps, SimpleNamespace(connection=connection))
+
+    rows = active_relationship_model().objects.filter(
+        relation="grantee",
+        subject_type=agent.principal_subject().subject_type,
+        subject_id=agent.principal_subject().subject_id,
+    )
+    assert not rows.filter(resource_id=selected.grant_id).exists()
+    assert rows.filter(resource_id=unrelated.grant_id).exists()
+
+
+@pytest.mark.django_db(transaction=True)
 def test_m2m_grant_write_is_discarded_with_rolled_back_edit(agent_tooling_tables: None) -> None:
     """The on-commit mirror cannot outlive a rolled-back Agent.mcp_tools edit."""
 
@@ -325,11 +404,11 @@ def test_m2m_grant_write_is_discarded_with_rolled_back_edit(agent_tooling_tables
 
 
 @pytest.mark.django_db(transaction=True)
-def test_resync_delete_and_rewrite_are_atomic(
+def test_resync_preserves_independent_direct_grants(
     agent_tooling_tables: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A failed rewrite rolls back the preceding direct-grant deletion."""
+    """The compatibility resync does not mistake explicit grants for old mirrors."""
 
     del agent_tooling_tables
     owner = User.objects.create_user(username="atomic-resync-owner")
@@ -337,21 +416,22 @@ def test_resync_delete_and_rewrite_are_atomic(
         agent = Agent.objects.create(name="Atomic Resync", owner=owner)
         server = MCPServer.objects.create(name="atomic-resync-server")
         tool = MCPTool.objects.create(server=server, name="atomic_tool")
-        agent.mcp_tools.add(tool)
+        write_relationships(
+            [
+                RelationshipTuple(
+                    resource=tool_grant_ref(str(server.sqid), tool.name),
+                    relation="grantee",
+                    subject=agent.principal_subject(),
+                )
+            ]
+        )
     grant_ref = tool_grant_ref(str(server.sqid), tool.name)
     assert backend().check_access(
         subject=agent.principal_subject(), action="use", resource=grant_ref
     ).allowed
 
     monkeypatch.setattr(grants_module, "sync_builtin_tool_catalogue", lambda: 0)
-
-    def fail_rewrite(writes: Any) -> None:
-        del writes
-        raise RuntimeError("rewrite failed")
-
-    monkeypatch.setattr(grants_module, "write_relationships", fail_rewrite)
-    with pytest.raises(RuntimeError, match="rewrite failed"):
-        resync_tool_grants()
+    resync_tool_grants()
     assert backend().check_access(
         subject=agent.principal_subject(), action="use", resource=grant_ref
     ).allowed
@@ -413,22 +493,28 @@ def test_resync_migrates_toolrole_and_group_memberships_to_service_user(
     assert not active_relationship_model().objects.filter(optional_subject_relation="agent_member").exists()
 
 
-def test_universal_admin_grant_does_not_enumerate_tableless_anchor(
+def test_tool_grants_enumerate_the_canonical_catalogue(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The const-admin arm short-circuits before ``accessible`` can enumerate rows."""
+    """Advertisement uses the model-backed catalogue for every subject."""
 
-    class UniversalBackend:
+    class CatalogueBackend:
         def grants_all(self, **kwargs: Any) -> bool:
-            assert kwargs["resource_type"] == TOOL_GRANT_RESOURCE_TYPE
-            return True
+            del kwargs
+            raise AssertionError("model-backed grants do not need a universal sentinel")
 
         def accessible(self, **kwargs: Any) -> Any:
-            del kwargs
-            raise AssertionError("table-less tool grants must not be enumerated")
+            assert kwargs == {
+                "subject": SubjectRef.of("auth/user", "admin-agent"),
+                "action": "use",
+                "resource_type": TOOL_GRANT_RESOURCE_TYPE,
+            }
+            return ("mcp_one.search", "mcp_two.fetch")
 
-    monkeypatch.setattr(toolsets_module, "backend", lambda: UniversalBackend())
-    assert _accessible_tool_grant_ids(SubjectRef.of("auth/user", "admin-agent")) is None
+    monkeypatch.setattr(toolsets_module, "backend", lambda: CatalogueBackend())
+    assert _accessible_tool_grant_ids(SubjectRef.of("auth/user", "admin-agent")) == frozenset(
+        {"mcp_one.search", "mcp_two.fetch"}
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -573,10 +659,9 @@ def test_production_reader_grant_path_advertises_and_executes_generated_tool(
     assert str(session.sqid) in {row["sqid"] for row in rows}
 
 
-def test_tool_grant_anchors_are_tableless() -> None:
-    """The zed type anchors remain abstract/managed-false and cannot emit tables."""
+def test_tool_role_anchor_is_tableless() -> None:
+    """The role namespace remains abstract and cannot emit a table."""
 
-    assert ToolGrant._meta.abstract and not ToolGrant._meta.managed
     assert ToolRole._meta.abstract and not ToolRole._meta.managed
 
 

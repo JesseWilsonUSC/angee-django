@@ -245,8 +245,8 @@ Use these owners instead of maintaining another contract in an addon:
 - REBAC is structural and owned by `django-zed-rebac`. Addons declare
   `permissions.zed` beside the owning app. Permission sync is the library's
   own `manage.py rebac sync`. Use the library's
-  field-backed relations (`// rebac:field=...`) when a relationship is already
-  represented by a Django FK or one-to-one field. See the REBAC section below for
+  live ORM-backed relations when a relationship is already represented by a
+  Django field, path, or membership table. See the REBAC section below for
   this project's fail-closed posture and its traps.
 - For a vendor-backed capability, keep catalogue models pure metadata, model the
   connection shape at the row that stores its fields, and put the provider
@@ -398,13 +398,40 @@ data through REBAC, never a queryset bypass.
   necessarily REBAC subject ids.
 - **Recipient discovery follows identity read policy.** IAM's user resource
   includes readable people and service users; human-only membership pickers
-  use its people collection. IAM declares a native Django proxy for the
-  existing auth-group table so REBAC can resolve and scope group subjects.
-  Members can discover their groups; platform admins can discover all groups.
-  IAM's write backends retain the admin mutation gates.
-- **Custom scoped roles are groups.** A named role is an `auth/group#member`
-  granted relations on a scope. Runtime data chooses memberships and grants;
-  schema remains the only source of new permission arms.
+  use its people collection. IAM owns the group model and declares its native
+  default subject relation as `member`; `to_subject_ref(group)` supplies the
+  canonical subject set. Group membership accepts people and service users.
+  Members can discover their groups and inspect their membership and bindings;
+  platform admins can discover all groups. Group mutations enforce the group's
+  write permission.
+- **Roles are schema; groups are data.** Addons declare named role anchors and
+  their reach. The hub derives its role catalogue from native schema
+  introspection, including roles with no members. An IAM group with bindings
+  is a dynamic composite role: grant its `auth/group#member` set relations on
+  records and membership in declared roles. Runtime data chooses memberships
+  and grants; schema remains the only source of new permission arms.
+- **Membership has one store and one writer.** Use `rebac.memberships` for
+  direct memberships in groups and role containers. IAM's model and hub own
+  authorization and subject-existence policy; the library owns tuple
+  validation, persistence and exact caveat revocation. Do not add Django group
+  M2Ms or synchronize `auth.Permission`, `Group.permissions`, or
+  `user_permissions`. IAM owns its group table; the contrib auth group and
+  permission tables remain unused after the PK-preserving adoption migration.
+- **Django login and permission backends are separate contracts.** IAM's
+  authentication backend checks credentials and reloads active people. Its
+  inherited permission methods grant nothing; it does not query Django
+  permission tables. The native REBAC permissions mixin delegates to installed
+  authorization backends without its own superuser shortcut. An additional
+  backend may grant codenames through normal Django chaining, so removing the
+  REBAC backend alone is not a global fail-closed guarantee.
+- **Read derived facts from their owner.** Native live ORM backing exposes
+  user kind/activity, active superuser authority, roster roles and selected
+  tools without tuple mirrors. `User.is_superuser` is the sole source of
+  `angee/role:admin#member`; the hub displays this role as read-only.
+  Bulk inserts and updates therefore take effect without a reconciliation
+  command. Human-only workflow completion and proposal evaluation intersect
+  authority with `iam/kind:person#active_member`, including admin authority;
+  ordinary read/share grants and service requesters remain valid.
 - **Upgrade the stored evidence with the schema.** When upgrading from agents
   schema revision 4 or installing project container inheritance, compose and
   apply the generated migrations first, then sync the new REBAC schema. Run
@@ -413,6 +440,11 @@ data through REBAC, never a queryset bypass.
   bindings. Run these through the stack host described in
   [Checks](../checks.md#composition-and-schema); each command delegates to its
   addon owner and is idempotent.
+  The live-backing migrations remove uncaveated tuples evidenced by the old
+  roster and selection mirrors while preserving unrelated grants. Identical
+  manual grants cannot be distinguished from those mirrors and are removed.
+  The admin migration stops on grants not explained by superuser fields, so
+  unexpected legacy authority must be resolved before cutover.
 - **Visibility and access are REBAC-native, always.** Put relations and
   permission arms on the model's zed and let the store scope reads; never stand
   authorization up with a Python provider, `visible_to` projection, or queryset
@@ -445,10 +477,10 @@ data through REBAC, never a queryset bypass.
   const-backed relation to the role namespace and arrows through
   `effective_member`: `relation manager: storage/role // rebac:const=storage_admin`
   with `permission … = manager->effective_member` (mirror of `admin->member`).
-  Never a pinned-id userset allowed subject
-  (`storage/role:storage_admin#effective_member`): nobody writes the per-row tuple
-  it needs and the local backend never synthesises one — the subject-set walk
-  scans relations only, so a permission-typed `#effective_member` userset denies.
+  A pinned-id allowed subject (`storage/role:storage_admin#effective_member`)
+  only declares which tuple subjects are legal; it never synthesizes the
+  per-row relationship. Use that shape for explicitly stored usersets, whose
+  relation or permission the native evaluator resolves.
   The const *target* role namespace needs its own `definition` + `managed=False`
   anchor model (like the resource's const admin), because a **non-member** check
   walks the arrow into `<ns>/role#admin`; without the anchor that const cannot
@@ -478,10 +510,9 @@ data through REBAC, never a queryset bypass.
   additive extension. **Editing a framework/base-addon `permissions.zed` to name
   a domain role (`accountant`, `salesperson`, …) is a bug** — the vocabulary
   belongs in the consumer addon that owns the concern.
-- There is no `rebac_roles` command — grant roles with `rebac.roles.grant`. A
-  superuser created without a real `save()` (bulk_create, loaddata, or skipped as
-  unchanged) is never in `angee/role:admin#member`, so const-admin reach fails
-  until re-granted.
+- There is no `rebac_roles` command. Grant writable role memberships through
+  `rebac.memberships`; change derived membership at its model field. Bulk-created
+  and bulk-updated active superusers have const-admin reach immediately.
 - Never `select_related` a REBAC-guarded relation into an actor-scoped queryset —
   it fails live ("loaded N rows outside actor scope") while passing unit tests.
   Resolve the field elevated by FK id under `system_context`, and verify by

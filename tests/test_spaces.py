@@ -76,19 +76,14 @@ def spaces_tables(transactional_db: Any, tmp_path: Path) -> Iterator[None]:
 
 
 def _role_relations(group: Group, user: Any) -> set[str]:
-    """Return the direct roster roles currently granted to ``user`` on ``group``."""
+    """Return roster roles resolved live for ``user`` on ``group``."""
 
-    return set(
-        active_relationship_model()
-        .objects.filter(
-            resource_type="spaces/group",
-            resource_id=group.sqid,
-            relation__in=("owner", "moderator", "member", "viewer"),
-            subject_type="auth/user",
-            subject_id=user.sqid,
-        )
-        .values_list("relation", flat=True)
-    )
+    with actor_context(user):
+        return {
+            role
+            for role in ("owner", "moderator", "member", "viewer")
+            if group.has_access(f"roster_{role}")
+        }
 
 
 def _wildcard_reader_exists(group: Group) -> bool:
@@ -339,11 +334,8 @@ def test_membership_repoint_revokes_the_stored_subject(spaces_tables: None) -> N
     assert _role_relations(group, new_user) == {"member"}
 
 
-def test_unrelated_membership_save_skips_subject_resolution(
-    spaces_tables: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A confidence-only save performs no REBAC subject resolution or tuple writes."""
+def test_unrelated_membership_save_writes_no_mirror_tuple(spaces_tables: None) -> None:
+    """A confidence-only save leaves roster access entirely field-backed."""
 
     del spaces_tables
     _user, person = _person_for("spaces-unchanged-member")
@@ -351,12 +343,9 @@ def test_unrelated_membership_save_skips_subject_resolution(
         group = Group.objects.create(name="Community", slug="community")
         membership = Membership.objects.create(group=group, party=person)
 
-        def unexpected_resolution() -> None:
-            raise AssertionError("unrelated save resolved the membership subject")
-
-        monkeypatch.setattr(membership, "_role_subject", unexpected_resolution)
         membership.confidence = 0.5
         membership.save(update_fields=["confidence", "updated_at"])
+        assert _role_relations(group, _user) == set()
 
 
 def test_person_user_change_reconciles_membership_subject(spaces_tables: None) -> None:
@@ -376,8 +365,6 @@ def test_person_user_change_reconciles_membership_subject(spaces_tables: None) -
         person.user = new_user
         person.save(update_fields=["user", "updated_at"])
 
-    membership.refresh_from_db()
-    assert membership.granted_user_id == new_user.pk
     assert _role_relations(group, old_user) == set()
     assert _role_relations(group, new_user) == {"moderator"}
 
@@ -483,7 +470,7 @@ def test_group_delete_revokes_membership_and_group_relationships(spaces_tables: 
         membership.confirm()
         assert _wildcard_reader_exists(group)
         assert _role_relations(group, user) == {"owner"}
-        assert _group_relationship_count(group) == 2
+        assert _group_relationship_count(group) == 1
 
         resource_id = group.sqid
         group.delete()
@@ -575,7 +562,7 @@ def test_spaces_fragment_merges_only_read_and_write_into_messaging_thread() -> N
 
     rendered = render_zed("angee.messaging", messaging)
     assert "relation group: spaces/group" in rendered
-    assert "rebac:field=group" not in rendered
+    assert "relation selected_group: spaces/group // rebac:field=groups" in rendered
     assert "group->read" in rendered
     assert "group->post" in rendered
 

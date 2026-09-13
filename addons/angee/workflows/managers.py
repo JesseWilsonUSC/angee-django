@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any, Self, cast
 
 from django.apps import apps
+from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.core.validators import validate_slug
@@ -4607,7 +4608,7 @@ class DecisionManager(AngeeManager.from_queryset(DecisionQuerySet)):  # type: ig
             subject = SubjectRef.parse(prior.resolved_by)
         except (TypeError, ValueError) as error:
             raise ValidationError({"target": "Decision target authority requires a human resolver."}) from error
-        if actor_user_id(subject) is None:
+        if get_user_model().objects.active_person_for_subject(subject) is None:
             raise ValidationError({"target": "Decision target authority requires a human resolver."})
         return subject
 

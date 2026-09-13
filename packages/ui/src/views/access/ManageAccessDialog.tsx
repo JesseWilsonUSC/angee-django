@@ -1,10 +1,6 @@
 import * as React from "react";
-import { useDebounce } from "use-debounce";
 import {
   modelLabelSegment,
-  rowPublicId,
-  rowValueAtPath,
-  useModelMetadata,
   type DataResourceGrantableRelation,
   type DataResourceSubjectSpecies,
 } from "@angee/metadata";
@@ -17,9 +13,7 @@ import { ControlBandProvider } from "../../layouts/ControlBand";
 import { Button } from "../../ui/button";
 import { FieldLabel, FieldRoot } from "../../ui/field";
 import { Select } from "../../ui/select";
-import { RelationPicker } from "../relation/RelationPicker";
-import { useRelationOptions } from "../relation/relation-options";
-import { relationFieldInfoForResource } from "../resource/model-metadata-defaults";
+import { SubjectPicker } from "./SubjectPicker";
 import { defineRowAction } from "../resource/RowActions";
 import { RowsListView } from "../resource/RowsListView";
 
@@ -99,9 +93,9 @@ function AccessContents({
     },
   })], [fetching, onRevoke, pending, t]);
   const columns = React.useMemo(() => [
-    { field: "label", label: t("access.recipient") },
-    { field: "relation", label: t("access.relation") },
-    ...(targetIds.length > 1 ? [{ field: "targetId", label: t("access.record") }] : []),
+    { field: "label", header: t("access.recipient") },
+    { field: "relation", header: t("access.relation") },
+    ...(targetIds.length > 1 ? [{ field: "targetId", header: t("access.record") }] : []),
   ], [t, targetIds.length]);
 
   return (
@@ -142,8 +136,10 @@ function AccessContents({
           </div>
           {selectedSpecies ? <SubjectPicker
             key={`${relation?.relation}:${subjectSpeciesKey(selectedSpecies)}:${pickerRevision}`}
-            species={selectedSpecies}
-            disabled={pending || fetching || Boolean(error)}
+            resource={selectedSpecies.resource}
+            value={subject}
+            aria-label={t("access.recipient")}
+            readOnly={pending || fetching || Boolean(error)}
             onChange={setSubject}
           /> : null}
           <Button
@@ -178,59 +174,4 @@ function AccessContents({
 
 function subjectSpeciesKey(species: DataResourceSubjectSpecies): string {
   return `${species.type}#${species.relation ?? ""}`;
-}
-
-/** Read the canonical subject from its declared resource field, never from its public id. */
-function SubjectPicker({ species, disabled, onChange }: {
-  species: DataResourceSubjectSpecies & { resource: string };
-  disabled: boolean;
-  onChange: (subject: string) => void;
-}): React.ReactElement {
-  const t = useUiT();
-  const model = useModelMetadata(species.resource);
-  const subjectField = model?.resource.subjectField;
-  const info = React.useMemo(
-    () => relationFieldInfoForResource(species.resource, model),
-    [species.resource, model],
-  );
-  const [selectedId, setSelectedId] = React.useState("");
-  const [opened, setOpened] = React.useState(false);
-  const [search, setSearch] = React.useState("");
-  const [searchText] = useDebounce(search, 250);
-  const { list, options, rows } = useRelationOptions(info, {
-    enabled: opened && Boolean(subjectField),
-    fields: subjectField ? [subjectField] : [],
-    searchText,
-  });
-  const labelId = React.useId();
-  return (
-    <FieldRoot>
-      <FieldLabel id={labelId} nativeLabel={false} render={<span />}>
-        {t("access.recipient")}
-      </FieldLabel>
-      <RelationPicker
-        aria-labelledby={labelId}
-        value={selectedId}
-        options={options}
-        readOnly={disabled || !subjectField || !info}
-        onOpenChange={(open) => {
-          setSearch("");
-          if (open) setOpened(true);
-        }}
-        onSearchChange={setSearch}
-        searchState={{
-          pending: list.fetching || search !== searchText,
-          error: list.error,
-          retry: list.refetch,
-        }}
-        onChange={(id) => {
-          const row = rows.find((item) => rowPublicId(item) === id);
-          const value = row && subjectField ? rowValueAtPath(row, subjectField) : null;
-          setSelectedId(id);
-          onChange(typeof value === "string" ? value : "");
-        }}
-      />
-      <ErrorBanner description={!subjectField || !info ? t("access.unavailableSubject") : null} />
-    </FieldRoot>
-  );
 }

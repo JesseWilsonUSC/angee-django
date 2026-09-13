@@ -374,3 +374,4 @@ export type {
 } from "./page";
 
 export { ManageAccessDialog, type ManageAccessDialogProps, type RecordAccessEntry } from "./access/ManageAccessDialog";
+export { SubjectPicker, type SubjectPickerProps } from "./access/SubjectPicker";

@@ -63,10 +63,10 @@ class ToolGrantAccess:
     """Share one advertisement lookup and fresh per-call checks across toolsets."""
 
     agent: SubjectRef
-    _granted_task: asyncio.Task[frozenset[str] | None] | None = field(default=None, init=False, repr=False)
+    _granted_task: asyncio.Task[frozenset[str]] | None = field(default=None, init=False, repr=False)
 
-    async def granted_ids(self) -> frozenset[str] | None:
-        """Return accessible qualified ids, or ``None`` for a universal admin grant."""
+    async def granted_ids(self) -> frozenset[str]:
+        """Return the accessible server-qualified tool ids."""
 
         if self._granted_task is None:
             self._granted_task = asyncio.create_task(
@@ -119,7 +119,7 @@ class AngeeToolset(AbstractToolset[Any]):
         for registered in sorted(await server.list_tools(), key=lambda item: item.name):
             name = registered.name
             grant_id = tool_grant_ref(server_sqid, name).resource_id
-            if granted is not None and grant_id not in granted:
+            if grant_id not in granted:
                 continue
             _assert_in_process_compatible(registered)
             annotations = registered.annotations
@@ -195,8 +195,6 @@ class ToolGrantToolset(WrapperToolset[Any]):
 
         granted = await self.access.granted_ids()
         tools = await self.wrapped.get_tools(ctx)
-        if granted is None:
-            return tools
         return {
             name: tool
             for name, tool in tools.items()
@@ -261,28 +259,11 @@ def toolsets_for_session(session: Any) -> list[Any]:
     return toolsets
 
 
-def _accessible_tool_grant_ids(agent: SubjectRef) -> frozenset[str] | None:
-    """Read qualified grant ids without enumerating a table-less universal arm.
+def _accessible_tool_grant_ids(agent: SubjectRef) -> frozenset[str]:
+    """Return accessible ids from the canonical MCP tool catalogue."""
 
-    The const-admin permission grants every pure-tuple anchor, which has no Django
-    table to enumerate. ``grants_all`` detects that structural case first; ``None``
-    is the internal universal sentinel consumed by registry/catalogue intersections.
-    """
-
-    access_backend = backend()
-    # ``grants_all`` is a LocalBackend capability, not part of the Backend
-    # base: the structural universal-arm detection exists precisely because
-    # the local backend cannot enumerate a table-less anchor. Backends with
-    # native lookup (SpiceDB) enumerate through ``accessible`` directly.
-    grants_all = getattr(access_backend, "grants_all", None)
-    if callable(grants_all) and grants_all(
-        subject=agent,
-        action="use",
-        resource_type=TOOL_GRANT_RESOURCE_TYPE,
-    ):
-        return None
     return frozenset(
-        access_backend.accessible(
+        backend().accessible(
             subject=agent,
             action="use",
             resource_type=TOOL_GRANT_RESOURCE_TYPE,

@@ -111,8 +111,8 @@ Authorization is structural: reads scope through the model manager, writes check
 the instance. Addons keep the owning `permissions.zed` contract adjacent to the
 addon (discovered by convention); `django-zed-rebac` owns sync.
 
-**Principal** — an identity that acts. There is one principal record and one
-authorization species: a row in the swappable `AUTH_USER_MODEL` table and its
+**Principal** — an identity that acts: a row in the swappable
+`AUTH_USER_MODEL` table and its
 `auth/user` REBAC subject. The row may represent a person or a service. Every
 fact that answers "who" (audit stamps, history rows, revision authors) is an FK
 to that table.
@@ -135,6 +135,26 @@ users; their lifecycle is owned by the thing each represents
 **Agent** — an autonomous capability represented by an `agents.Agent` and its
 linked service-account user row. The agent acts as that ordinary `auth/user`
 subject, and its reach is exactly the grants assigned to the service user.
+
+**Group** — an IAM-owned named set of principals (`auth/group`). Membership
+lives in REBAC tuples and includes people and service users. The group's
+canonical subject is its `#member` set. Its public display ID is separate from
+the stable database primary key used by existing authorization references.
+
+**Role** — a schema-declared reach anchor, such as `storage/role:storage_admin`.
+An addon declares the permission arms that give the role meaning. Membership
+is runtime data; creating a new name cannot create a permission arm.
+
+**Relation** — a named relationship on a resource, such as `reader` or
+`editor`. The resource schema owns its allowed subjects and permission reach.
+
+**Binding** — a relationship tuple granting a principal or a group's member
+set a resource relation or role membership. A dynamic composite role is an IAM
+group with bindings; it requires no additional role model or schema edits.
+
+**Kind** — the IAM user's `person` or `service` value, exposed live through
+`iam/kind` membership. Human-only authority requires an active person; kind
+does not change the principal's `auth/user` identity.
 
 **Resource file** — tabular data owned by an addon and imported idempotently by
 tier (`master`, `install`, `demo`). Addons list resource files in their
@@ -175,8 +195,11 @@ The Handle's owner records the **control** fact (who may act through it), while
 fact implies the other.
 
 **Circle** — one user's private, Dunbar-sized organizing tree. It never gates
-visibility. A **Group** is the contrasting `spaces` concept: a shared, governed
-roster whose roles participate in access control.
+visibility.
+
+**Space** — a shared, governed roster (`spaces.Group`, `spaces/group`). Its
+roster roles participate in access control. It is distinct from an IAM group,
+which is a set of authorization principals.
 
 **Relationship** — the single typed Party-to-Party factual edge, including
 employment as one relationship kind rather than a separate identity model.

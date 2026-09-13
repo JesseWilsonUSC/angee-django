@@ -10,6 +10,16 @@ dependencies = [
   "django-axes>=8.0",
 ]
 
+[[migrations]]
+name = "adopt_auth_groups"
+app_label = "iam"
+module = "runtime_migrations.adopt_auth_groups"
+
+[[migrations]]
+name = "live_admin_backing"
+app_label = "iam"
+module = "runtime_migrations.live_admin_backing"
+
 [resources]
 demo = [
   { path = "resources/demo/010_iam.user.yaml", adopt = "username" },

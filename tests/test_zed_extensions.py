@@ -219,7 +219,7 @@ def test_render_round_trips_a_real_backed_schema() -> None:
 
 
 def test_agents_tool_grants_accept_user_group_and_role_subjects() -> None:
-    """Tool use is granted on pure grant objects, not on MCP catalogue rows."""
+    """Catalogue-backed tool grants accept live selections and independent subjects."""
 
     source = Path(apps.get_app_config("agents").path) / "permissions.zed"
     schema = parse_zed(source.read_text(encoding="utf-8"))
@@ -236,10 +236,9 @@ def test_agents_tool_grants_accept_user_group_and_role_subjects() -> None:
         ("auth/user", "", "")
     }
 
-    tool = schema.get_definition("agents/mcp_tool")
-    assert "agent" not in {relation.name for relation in tool.relations}
-
     grant = schema.get_definition("agents/tool_grant")
+    assert "selected_agent" in {relation.name for relation in grant.relations}
+    assert 'rebac:field={"path":"agents__user"}' in source.read_text(encoding="utf-8")
     grantee = next(relation for relation in grant.relations if relation.name == "grantee")
     assert {(subject.type, subject.id, subject.relation) for subject in grantee.allowed_subjects} == {
         ("auth/user", "", ""),

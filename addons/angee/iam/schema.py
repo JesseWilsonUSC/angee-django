@@ -12,6 +12,7 @@ from typing import Any, cast
 
 import strawberry
 import strawberry_django
+from django.apps import apps
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
@@ -22,16 +23,13 @@ from django.http import HttpRequest
 from rebac import RebacQuerySet, system_context, to_subject_ref
 from rebac.models import active_relationship_model
 from rebac.roles import (
-    grant as rebac_grant,
-)
-from rebac.roles import (
     roles_of as rebac_roles_of,
 )
 from rebac.schema import Definition, Permission, Relation, Schema, render_allowed_subject
 from strawberry import auto
 from strawberry.scalars import JSON
 
-from angee.base.identity import SqidPublicIdentity, instance_from_public_id
+from angee.base.identity import instance_from_public_id
 from angee.graphql.access import ActorSelfChangeReadGate
 from angee.graphql.data import hasura_model_resource, hasura_pydantic_resource
 from angee.graphql.deletion import DeletePreview, attach_delete_preview_metadata
@@ -39,8 +37,8 @@ from angee.graphql.ids import PublicID
 from angee.graphql.node import AngeeNode
 from angee.graphql.subscriptions import changes
 from angee.graphql.writes import write_queryset
-from angee.iam.identity import user_label, user_principal
-from angee.iam.models import VISIBLE_PEOPLE_DEFAULT_LIMIT, Group
+from angee.iam.identity import user_label
+from angee.iam.models import VISIBLE_PEOPLE_DEFAULT_LIMIT
 from angee.iam.permissions import ADMIN_PERMISSION_CLASSES as _ADMIN_PERMISSION_CLASSES
 from angee.iam.permissions import is_platform_admin, require_platform_admin, session_user
 from angee.iam.permissions import request_from_info as _request
@@ -48,9 +46,14 @@ from angee.iam.roles import (
     IAM_OVERVIEW_DEFAULT_PEEK_LIMIT as _IAM_OVERVIEW_DEFAULT_PEEK_LIMIT,
 )
 from angee.iam.roles import (
+    IAMGroupBindingRow,
+    IAMGroupMemberRow,
     IAMGrantRow,
     IAMRoleRow,
-    revoke_grant,
+    grant_role as _grant_role_owner,
+    group_bindings as _group_bindings_owner,
+    group_members as _group_members_owner,
+    revoke_role as _revoke_role_owner,
 )
 from angee.iam.roles import (
     iam_overview as _iam_overview_owner,
@@ -70,13 +73,9 @@ from angee.iam.roles import (
 from angee.iam.roles import (
     relationship_rows as _relationship_rows_owner,
 )
-from angee.iam.roles import (
-    validate_role as _validate_role,
-)
 
 User = cast(type[Any], get_user_model())
-GROUP_PUBLIC_IDENTITY = SqidPublicIdentity(prefix="grp_", min_length=8)
-"""Public data identity for Django auth groups exposed by IAM."""
+Group = cast(type[Any], apps.get_model("iam", "Group"))
 
 
 def _preference_object(user: Any) -> JSON:
@@ -160,10 +159,11 @@ class CurrentUserType(AngeeNode):
 
 
 @strawberry_django.type(Group)
-class GroupType:
-    """GraphQL projection of Django auth groups with Angee public ids."""
+class GroupType(AngeeNode):
+    """GraphQL projection of IAM-owned principal groups."""
 
     name: auto
+    description: auto
 
     @strawberry.field
     def assignment_subject(self) -> str:
@@ -171,11 +171,19 @@ class GroupType:
 
         return str(to_subject_ref(cast(Any, self)))
 
-    @strawberry.field(description="The public ID of this object.")
-    def id(self) -> PublicID:
-        """Return this group row's IAM public id."""
+    @strawberry_django.field
+    def members(self) -> list[IAMGroupMemberType]:
+        """Return direct group memberships, without effective-permission expansion."""
 
-        return PublicID(GROUP_PUBLIC_IDENTITY.public_id_from_pk(cast(Any, self).pk))
+        with system_context(reason="iam.graphql.group.members"):
+            return cast(list[IAMGroupMemberType], _group_members_owner(self))
+
+    @strawberry_django.field
+    def bindings(self) -> list[IAMGroupBindingType]:
+        """Return tuples bound directly to this group's member subject set."""
+
+        with system_context(reason="iam.graphql.group.bindings"):
+            return cast(list[IAMGroupBindingType], _group_bindings_owner(self))
 
 
 def _legacy_role_id(root: Any) -> str:
@@ -191,19 +199,50 @@ class IAMRoleType:
     id: str = strawberry.field(resolver=_legacy_role_id)
     namespace: str
     label: str
+    declared: bool
+    grantable: bool
 
 
 @strawberry.type
 class IAMGrantType:
-    """Legacy grant binding over the canonical computed IAM grant row."""
+    """Direct binding over the canonical computed IAM grant row."""
 
-    principal_id: str
-    principal_type: str
-    principal_label: str
-    principal_ref: str
+    id: str
+    subject: str
+    subject_id: str
+    subject_type: str
+    subject_relation: str
+    subject_label: str
     role: str
     role_name: str
     namespace: str
+    caveat_name: str
+
+
+@strawberry.type
+class IAMGroupMemberType:
+    """Direct group membership tuple."""
+
+    id: str
+    subject: str
+    subject_type: str
+    subject_id: str
+    label: str
+    caveat_name: str
+
+
+@strawberry.type
+class IAMGroupBindingType:
+    """Direct tuple binding to a group member set."""
+
+    id: str
+    resource: str
+    resource_type: str
+    resource_id: str
+    relation: str
+    caveat_name: str
+    target_model: str | None
+    target_id: str | None
 
 
 @strawberry.type
@@ -422,21 +461,10 @@ def _user_for_resource_id(value: str, queryset: QuerySet[Any]) -> Any:
     return instance
 
 
-def _group_pk_from_public_id(value: Any) -> int | None:
-    """Decode the IAM group public id to its Django primary key."""
-
-    return GROUP_PUBLIC_IDENTITY.public_id_to_pk(str(value))
-
-
 def _group_for_resource_id(value: str, queryset: QuerySet[Any]) -> Any:
-    """Return one Django auth group addressed by its IAM public id."""
+    """Return one IAM group addressed by its native public id."""
 
-    instance = instance_from_public_id(
-        Group,
-        str(value),
-        queryset=queryset,
-        public_identity=GROUP_PUBLIC_IDENTITY,
-    )
+    instance = instance_from_public_id(Group, str(value), queryset=queryset)
     if instance is None:
         raise ValueError(f"Group {value!r} was not found")
     return instance
@@ -509,7 +537,7 @@ class IAMGroupWriteBackend:
     """Admin write semantics for the Hasura ``groups`` resource."""
 
     def create(self, info: strawberry.Info, data: dict[str, Any]) -> Any:
-        """Create one Django auth group."""
+        """Create one IAM group."""
 
         require_platform_admin(info)
         with transaction.atomic():
@@ -519,11 +547,11 @@ class IAMGroupWriteBackend:
             return group
 
     def update(self, info: strawberry.Info, pk: str, data: dict[str, Any]) -> Any:
-        """Patch one Django auth group."""
+        """Patch one IAM group."""
 
         require_platform_admin(info)
         with transaction.atomic():
-            group = _group_for_resource_id(pk, Group.objects.all())
+            group = _group_for_resource_id(pk, write_queryset(Group))
             for field, value in data.items():
                 setattr(group, field, value)
             group.full_clean()
@@ -531,11 +559,11 @@ class IAMGroupWriteBackend:
             return group
 
     def delete(self, info: strawberry.Info, pk: str) -> Any | None:
-        """Delete one Django auth group by public id."""
+        """Delete one IAM group by public id."""
 
         require_platform_admin(info)
         with transaction.atomic():
-            return _delete_instance(_group_for_resource_id(pk, Group.objects.all()))
+            return _delete_instance(_group_for_resource_id(pk, write_queryset(Group)))
 
 
 def _admin_actor(info: strawberry.Info) -> bool:
@@ -566,8 +594,8 @@ _ROLE_RESOURCE = hasura_pydantic_resource(
     IAMRoleRow,
     name="iam_roles",
     model_label="iam.Role",
-    filterable=["id", "role_id", "namespace", "label"],
-    sortable=["role_id", "namespace", "label"],
+    filterable=["id", "role_id", "namespace", "label", "declared", "grantable"],
+    sortable=["role_id", "namespace", "label", "declared", "grantable"],
     rows=_role_rows_for,
 )
 
@@ -576,8 +604,11 @@ _GRANT_RESOURCE = hasura_pydantic_resource(
     IAMGrantRow,
     name="iam_grants",
     model_label="iam.Grant",
-    filterable=["id", "principal_id", "principal_label", "role", "role_name", "namespace"],
-    sortable=["principal_label", "role", "role_name", "namespace"],
+    filterable=[
+        "id", "subject", "subject_id", "subject_type", "subject_relation",
+        "subject_label", "role", "role_name", "namespace", "caveat_name",
+    ],
+    sortable=["subject_label", "subject_type", "role", "role_name", "namespace", "caveat_name"],
     rows=_grant_rows_for,
 )
 
@@ -603,17 +634,15 @@ _GROUP_RESOURCE = hasura_model_resource(
     GroupType,
     model=Group,
     name="groups",
-    filterable=["id", "name"],
+    filterable=["id", "name", "description"],
     sortable=["name"],
     aggregatable=["id"],
     groupable=["name"],
-    writable=["name"],
+    writable=["name", "description"],
     get_queryset=_group_queryset,
     write_backend=IAMGroupWriteBackend(),
-    id_decode=_group_pk_from_public_id,
-    id_column="pk",
+    id_column="sqid",
     model_label="iam.Group",
-    public_id_field="id",
     subject_field="assignment_subject",
 )
 
@@ -688,7 +717,7 @@ class IAMConsoleQuery:
 
     @strawberry.field(permission_classes=_ADMIN_PERMISSION_CLASSES)
     def roles(self) -> list[IAMRoleType]:
-        """Return active tuple-derived roles."""
+        """Return schema-declared and retained tuple-only roles."""
 
         return _permission_hub_roles()
 
@@ -786,29 +815,75 @@ class IAMPermissionHubMutation:
     """Admin mutations for tuple-backed IAM role grants."""
 
     @strawberry.mutation(permission_classes=_ADMIN_PERMISSION_CLASSES)
-    def grant_role(self, principal_id: str, role: str) -> bool:
-        """Grant a role to one user principal."""
+    def grant_role(
+        self,
+        subject: str,
+        role: str,
+        caveat_name: str = "",
+        caveat_context: JSON | None = None,
+    ) -> bool:
+        """Grant a declared role to one concrete IAM subject."""
 
-        role_ref = _validate_role(role)
-        principal = user_principal(principal_id)
         with (
             system_context(reason="iam.graphql.permission_hub.grant_role"),
             transaction.atomic(),
         ):
-            rebac_grant(actor=principal, role=role_ref)
+            _grant_role_owner(
+                subject=subject,
+                role=role,
+                caveat_name=caveat_name,
+                caveat_context=cast(dict[str, Any] | None, caveat_context),
+            )
             return True
 
     @strawberry.mutation(permission_classes=_ADMIN_PERMISSION_CLASSES)
-    def revoke_role(self, principal_id: str, role: str, caveat_name: str = "") -> bool:
+    def revoke_role(self, subject: str, role: str, caveat_name: str = "") -> bool:
         """Revoke the selected caveated or uncaveated role tuple."""
 
-        role_ref = _validate_role(role)
-        principal = user_principal(principal_id)
         with (
             system_context(reason="iam.graphql.permission_hub.revoke_role"),
             transaction.atomic(),
         ):
-            return revoke_grant(principal=principal, role=role_ref, caveat_name=caveat_name)
+            return _revoke_role_owner(subject=subject, role=role, caveat_name=caveat_name)
+
+
+@strawberry.type
+class IAMGroupMembershipMutation:
+    """Membership mutations authorized by the target group's write permission."""
+
+    @strawberry.mutation
+    def add_group_member(
+        self,
+        info: strawberry.Info,
+        group_id: PublicID,
+        subject: str,
+        caveat_name: str = "",
+        caveat_context: JSON | None = None,
+    ) -> bool:
+        """Add one existing canonical user subject to an IAM group."""
+
+        group = _group_for_resource_id(str(group_id), _group_queryset(info).with_action("write"))
+        with transaction.atomic():
+            group.add_member(
+                subject,
+                caveat_name=caveat_name,
+                caveat_context=cast(dict[str, Any] | None, caveat_context),
+            )
+        return True
+
+    @strawberry.mutation
+    def remove_group_member(
+        self,
+        info: strawberry.Info,
+        group_id: PublicID,
+        subject: str,
+        caveat_name: str = "",
+    ) -> bool:
+        """Remove the exact membership tuple, including a stale user subject."""
+
+        group = _group_for_resource_id(str(group_id), _group_queryset(info).with_action("write"))
+        with transaction.atomic():
+            return group.remove_member(subject, caveat_name=caveat_name)
 
 
 schemas = {
@@ -843,6 +918,7 @@ schemas = {
             _GROUP_RESOURCE.mutation,
             IAMUserDeletePreviewMutation,
             IAMPermissionHubMutation,
+            IAMGroupMembershipMutation,
         ],
         "subscription": [changes(User, field="userChanged")],
         "types": [
@@ -851,6 +927,8 @@ schemas = {
             GroupType,
             IAMRoleType,
             IAMGrantType,
+            IAMGroupMemberType,
+            IAMGroupBindingType,
             IAMRelationType,
             IAMPermCondition,
             IAMPermissionType,

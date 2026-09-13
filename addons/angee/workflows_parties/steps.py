@@ -26,7 +26,6 @@ from pydantic import JsonValue
 from rebac import SubjectRef, actor_context, system_context
 from rebac.actors import to_subject_ref
 
-from angee.base.actors import actor_user_id
 from angee.workflows.attempts import RecoveryCapability, RecoveryMode
 from angee.workflows.steps import DecisionSpec, StepEffect, StepImpl, StepOutcome, StepResult, positive_int
 
@@ -381,7 +380,7 @@ def _identity_selection_authority(proposal: Mapping[str, Any], *, run: Any) -> S
         actor = SubjectRef.parse(decision.resolved_by)
     except (TypeError, ValueError) as error:
         raise ValidationError({"selection_decision_id": "Selection Decision requires a human resolver."}) from error
-    if actor_user_id(actor) is None:
+    if get_user_model().objects.active_person_for_subject(actor) is None:
         raise ValidationError({"selection_decision_id": "Selection Decision requires a human resolver."})
     return actor
 
@@ -590,13 +589,13 @@ def _decision_actor(approved: Mapping[str, Any]) -> Any:
     """Resolve the human who completed the Decision as the accountable writer."""
 
     try:
-        user_id = actor_user_id(SubjectRef.parse(str(approved.get("_resolved_by") or "")))
+        subject = SubjectRef.parse(str(approved.get("_resolved_by") or ""))
     except (TypeError, ValueError) as error:
-        raise ValidationError({"decision": "Identity review requires a user resolver."}) from error
-    if user_id is None:
-        raise ValidationError({"decision": "Identity review requires a user resolver."})
-    with system_context(reason="workflows_parties.identity_apply.actor"):
-        return get_user_model()._base_manager.get(pk=user_id)
+        raise ValidationError({"decision": "Identity review requires a human resolver."}) from error
+    user = get_user_model().objects.active_person_for_subject(subject)
+    if user is None:
+        raise ValidationError({"decision": "Identity review requires a human resolver."})
+    return user
 
 
 def _apply_identity(

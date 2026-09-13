@@ -20,8 +20,8 @@ from rebac.models import active_relationship_model
 from rebac.relationships import write_relationships
 
 from angee.graphql.sharing import RecordAccessMutation, _grant_subject
-from angee.iam.models import Group
 from tests.conftest import Folder, _clear_model_tables, _create_missing_tables
+from tests.iam_models import Group
 from tests.projects_models import PROJECT_TEST_MODELS, Project
 from tests.test_project_access import project_access_schema as project_access_schema
 
