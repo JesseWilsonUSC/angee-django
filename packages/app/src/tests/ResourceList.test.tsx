@@ -2365,7 +2365,17 @@ describe("ResourceList", () => {
         .toBeNull(),
     );
     fireEvent.click(
-      within(groupPicker.parentElement!).getByRole("button", { name: "Month" }),
+      await screen.findByRole("button", {
+        name: "Filter and group",
+      }),
+    );
+    const updatedGroupPicker = await screen.findByRole("heading", {
+      name: "Group by",
+    });
+    fireEvent.click(
+      within(updatedGroupPicker.parentElement!).getByRole("button", {
+        name: "Month",
+      }),
     );
 
     await waitFor(() => {
