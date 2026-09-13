@@ -502,58 +502,6 @@ class _FakeOpenAIClient:
         self.instances.append(self)
 
 
-class _FakeOllamaModels:
-    """Small fake for Ollama's OpenAI-compatible model-list resource."""
-
-    def list(self, **kwargs: Any) -> _FakeModelPage:
-        """Return representative tagged Ollama model ids."""
-
-        assert kwargs == {}
-        return _FakeModelPage(
-            [
-                SimpleNamespace(id="llama3.2:latest", owned_by="library"),
-                SimpleNamespace(id="nomic-embed-text:latest", owned_by="library"),
-                SimpleNamespace(id="qwen2.5-coder:7b", owned_by="library"),
-            ]
-        )
-
-
-class _FakeOllamaClient:
-    """Small fake for Ollama through ``openai.OpenAI``."""
-
-    instances: list[Any] = []
-
-    def __init__(self, **kwargs: Any) -> None:
-        self.kwargs = kwargs
-        self.models = _FakeOllamaModels()
-        self.show_calls: list[str] = []
-        self.instances.append(self)
-
-    def post(self, path: str, *, cast_to: Any, body: dict[str, Any]) -> dict[str, Any]:
-        """Return native Ollama metadata or simulate an optional lookup failure."""
-
-        assert path == "../api/show"
-        assert cast_to is dict
-        model_id = body["model"]
-        assert body == {"model": model_id, "verbose": False}
-        self.show_calls.append(model_id)
-        if model_id == "nomic-embed-text:latest":
-            raise RuntimeError("native metadata unavailable")
-        if model_id == "llama3.2:latest":
-            return {
-                "details": {"family": "llama"},
-                "model_info": {"llama.context_length": 131072},
-                "parameters": "temperature 0.8\nnum_ctx 32768",
-            }
-        return {
-            "details": {},
-            "model_info": {
-                "qwen.context_length": 65536,
-                "qwen.vision.context_length": 8192,
-            },
-        }
-
-
 @pytest.mark.django_db(transaction=True)
 def test_anthropic_backend_refresh_syncs_native_and_broker_models(
     agents_tables: None,
@@ -683,11 +631,59 @@ def test_openai_backend_refresh_syncs_native_and_broker_models(
 
 
 def test_ollama_backend_lists_tagged_models_without_a_credential(monkeypatch: Any) -> None:
-    """Ollama reuses the OpenAI client with its endpoint, placeholder key, and open allow-list."""
+    """Ollama uses its native show endpoint once per physical listed model."""
 
-    _FakeOllamaClient.instances.clear()
-    monkeypatch.setattr(OllamaInferenceBackend, "client_class", _FakeOllamaClient)
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/v1/models":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "list",
+                    "data": [
+                        {"id": "llama3.2:latest", "object": "model", "owned_by": "library"},
+                        {"id": "nomic-embed-text:latest", "object": "model", "owned_by": "library"},
+                        {"id": "qwen2.5-coder:7b", "object": "model", "owned_by": "library"},
+                    ],
+                },
+            )
+        assert request.url.path == "/api/show"
+        model_id = json.loads(request.content)["model"]
+        if model_id == "nomic-embed-text:latest":
+            return httpx.Response(503, json={"error": "native metadata unavailable"})
+        if model_id == "llama3.2:latest":
+            return httpx.Response(
+                200,
+                json={
+                    "details": {"family": "llama"},
+                    "model_info": {"llama.context_length": 131072},
+                    "parameters": "temperature 0.8\nnum_ctx 32768",
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "details": {},
+                "model_info": {
+                    "qwen.context_length": 65536,
+                    "qwen.vision.context_length": 8192,
+                },
+            },
+        )
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handle))
     backend = OllamaInferenceBackend(SimpleNamespace(credential=None, base_url="", config={}))
+    monkeypatch.setattr(
+        backend,
+        "_client_kwargs",
+        lambda: {
+            "api_key": "not-required",
+            "base_url": "http://localhost:11434/v1",
+            "http_client": http_client,
+        },
+    )
 
     specs = backend.list_models()
 
@@ -702,15 +698,16 @@ def test_ollama_backend_lists_tagged_models_without_a_credential(monkeypatch: An
     assert {spec.config["source"] for spec in specs} == {"ollama"}
     assert all(spec.model_use == "" for spec in specs)
     assert all("model_use" not in spec.upsert_defaults() for spec in specs)
-    client = _FakeOllamaClient.instances[-1]
-    assert client.kwargs == {
-        "api_key": "not-required",
-        "base_url": "http://localhost:11434/v1",
-    }
-    assert client.show_calls == [
+    assert [json.loads(request.content)["model"] for request in requests[1:]] == [
         "llama3.2:latest",
         "nomic-embed-text:latest",
         "qwen2.5-coder:7b",
+    ]
+    assert [request.url.path for request in requests] == [
+        "/v1/models",
+        "/api/show",
+        "/api/show",
+        "/api/show",
     ]
     by_handle = {spec.handle: spec for spec in specs}
     assert by_handle["llama3.2:latest"].context_window == 131072

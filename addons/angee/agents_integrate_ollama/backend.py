@@ -41,9 +41,9 @@ class OllamaInferenceBackend(OpenAIInferenceBackend):
         """Read optional architecture facts from Ollama's native show endpoint."""
 
         try:
-            shown = client.post(
+            shown = client.with_options(max_retries=0).post(
                 "../api/show",
-                cast_to=dict,
+                cast_to=dict[str, Any],
                 body={"model": model_id, "verbose": False},
             )
         except Exception as exc:
