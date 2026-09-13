@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import time
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, Sequence
 
-from pydantic_ai.messages import ModelRequest, SystemPromptPart, ToolCallPart, UserPromptPart
+from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, ToolCallPart, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.output import OutputObjectDefinition
 
@@ -94,11 +95,13 @@ class DocumentPipelineError(RuntimeError):
         parts: Sequence[DocumentPart] = (),
         stage: str = "",
         code: str = "",
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.parts = tuple(parts)
         self.stage = stage
         self.code = code
+        self.metadata = dict(metadata or {})
 
 
 class OcrEngine(ImplBase):
@@ -232,22 +235,47 @@ class InferenceMappingEngine(OcrEngine):
                     raise ValueError("Structured mapping response is missing or ambiguous.")
                 value = output_calls[0].args_as_dict(raise_if_invalid=True)
         except (TypeError, ValueError) as error:
+            metadata = _mapping_response_metadata(
+                response,
+                started=started,
+                output_text=response.text,
+            )
             raise DocumentPipelineError(
                 "Text schema mapping response was invalid.",
                 parts=parts,
                 stage="mapping_response",
                 code=type(error).__name__,
+                metadata=metadata,
             ) from None
-        usage = response.usage
-        input_tokens = getattr(usage, "input_tokens", None)
-        output_tokens = getattr(usage, "output_tokens", None)
-        metadata = {
-            "duration_ms": round((time.monotonic() - started) * 1000),
-            "input_tokens": int(input_tokens) if input_tokens is not None else None,
-            "output_tokens": int(output_tokens) if output_tokens is not None else None,
-            "provider_response_id": str(response.provider_response_id or ""),
-        }
+        metadata = _mapping_response_metadata(response, started=started)
         return value, derive_text_claims(value, parts), metadata
+
+
+def _mapping_response_metadata(
+    response: ModelResponse,
+    *,
+    started: float,
+    output_text: str | None = None,
+) -> dict[str, Any]:
+    """Return provider-neutral, non-content telemetry for one mapping response."""
+
+    usage = response.usage
+    input_tokens = getattr(usage, "input_tokens", None)
+    output_tokens = getattr(usage, "output_tokens", None)
+    metadata = {
+        "duration_ms": round((time.monotonic() - started) * 1000),
+        "input_tokens": int(input_tokens) if input_tokens is not None else None,
+        "output_tokens": int(output_tokens) if output_tokens is not None else None,
+        "provider_response_id": str(getattr(response, "provider_response_id", None) or ""),
+        "finish_reason": str(getattr(response, "finish_reason", None) or ""),
+    }
+    if output_text is not None:
+        encoded = output_text.encode("utf-8")
+        metadata.update(
+            output_text_length=len(output_text),
+            output_text_sha256=hashlib.sha256(encoded).hexdigest(),
+        )
+    return metadata
 
 
 class InferenceDocumentEngine(OcrEngine):

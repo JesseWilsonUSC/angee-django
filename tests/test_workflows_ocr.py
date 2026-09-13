@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 from contextlib import nullcontext
 from types import SimpleNamespace
@@ -156,6 +157,37 @@ def test_inference_mapping_uses_catalogue_model_without_provider_restriction() -
     assert metadata["output_tokens"] == 7
     assert requested["parameters"].output_mode == "auto"
     assert requested["parameters"].output_object.json_schema == SCHEMA
+
+
+def test_inference_mapping_invalid_json_retains_bounded_response_diagnostics() -> None:
+    raw_output = "invoice data, but not JSON"
+    response = SimpleNamespace(
+        text=raw_output,
+        usage=SimpleNamespace(input_tokens=31, output_tokens=9),
+        provider_response_id="response-invalid",
+        finish_reason="length",
+    )
+    model = SimpleNamespace(
+        status="available",
+        model_use="chat",
+        chat=lambda *args, **kwargs: response,
+    )
+    part = DocumentPart(0, None, "text/plain", "native_text", "Invoice INV-42", "native", "hash")
+
+    with pytest.raises(DocumentPipelineError) as raised:
+        InferenceMappingEngine().map_text_parts((part,), SCHEMA, model=model, config={}, timeout=5)
+
+    metadata = raised.value.metadata
+    assert metadata == {
+        "duration_ms": metadata["duration_ms"],
+        "input_tokens": 31,
+        "output_tokens": 9,
+        "provider_response_id": "response-invalid",
+        "finish_reason": "length",
+        "output_text_length": len(raw_output),
+        "output_text_sha256": hashlib.sha256(raw_output.encode()).hexdigest(),
+    }
+    assert raw_output not in str(metadata)
 
 
 def test_inference_mapping_consumes_native_structured_tool_result() -> None:

@@ -168,10 +168,11 @@ def extract(
         status = "failed"
         error_code = ":".join(value for value in (error.stage, error.code) if value) or type(error).__name__
         document_metadata = {
+            **error.metadata,
             "failure": {
                 "stage": error.stage or "document_pipeline",
                 "code": error.code or type(error).__name__,
-            }
+            },
         }
     except (RuntimeError, TimeoutError, ValidationError) as error:
         # The retained code is actionable without copying document values or a
