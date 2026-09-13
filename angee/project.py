@@ -14,6 +14,7 @@ from angee.paths import resolve_path
 PROJECT_DIR_ENV = "ANGEE_PROJECT_DIR"
 PROJECT_SETTINGS_ENV = "ANGEE_PROJECT_SETTINGS"
 PROJECT_YAML_NAME = "settings"
+PROJECT_YAML_SETTINGS = "ANGEE_PROJECT_YAML_SETTINGS"
 
 
 def has_project_contract(path: Path) -> bool:

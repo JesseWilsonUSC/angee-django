@@ -1,10 +1,13 @@
-import { Card, CardContent, CardHeader, CardTitle, cn, MetricStrip, Skeleton, textRoleVariants, type MetricTileValue } from "@angee/ui";
+import { Button, Card, CardContent, CardHeader, CardTitle, cn, MetricStrip, Skeleton, textRoleVariants, type MetricTileValue } from "@angee/ui";
 import type { ReactNode } from "react";
 
 import { useOperatorT } from "../../i18n";
 import { useOperatorSnapshot } from "../../data/transport";
 import { OperatorSection } from "../parts/OperatorSection";
 import { StateTag } from "../parts/StateTag";
+import { useJobRunOperation } from "../../data/job-run";
+import { useOperatorConnection } from "../../data/transport";
+import { applicationHealth } from "../../data/application-health";
 
 /** Overview page: stack + health summary above per-resource count tiles. */
 export function OverviewPage(): ReactNode {
@@ -16,9 +19,12 @@ export function OverviewPage(): ReactNode {
     sources: true,
     secrets: true,
   });
+  const connection = useOperatorConnection();
+  const jobRun = useJobRunOperation();
 
   const stack = snapshot?.stack ?? null;
-  const health = snapshot?.health ?? null;
+  const services = snapshot?.services ?? [];
+  const health = applicationHealth(services);
   const metrics: readonly MetricTileValue[] = [
     { label: t("section.operator.services.title"), value: snapshot?.services.length ?? 0 },
     { label: t("section.operator.workspaces.title"), value: snapshot?.workspaces.length ?? 0 },
@@ -30,10 +36,20 @@ export function OverviewPage(): ReactNode {
     <OperatorSection
       title={t("section.operator.overview.title")}
       loading={result.fetching && !snapshot}
-      error={result.error && !snapshot ? result.error : null}
+      error={result.error ?? jobRun.error}
       loadingMessage={t("overview.loading")}
       loadingContent={<OverviewLoading />}
     >
+      <div className="flex justify-end">
+        <Button
+          disabled={!connection?.restartJob || jobRun.active || jobRun.starting}
+          title={!connection?.restartJob ? t("overview.restartUnavailable") : undefined}
+          onClick={() => connection?.restartJob && void jobRun.run(connection.restartJob, true)}
+          variant="secondary"
+        >
+          {t("overview.restart")}
+        </Button>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Card>
           <CardHeader>
@@ -59,7 +75,13 @@ export function OverviewPage(): ReactNode {
             {health ? (
               <>
                 <StateTag state={health.status} />
-                {health.message ? <p>{health.message}</p> : null}
+                {health.service ? (
+                  <p>
+                    {health.readinessUnavailable
+                      ? t("overview.health.readinessUnavailable", { service: health.service })
+                      : t("overview.health.serviceState", { service: health.service, state: health.detail ?? "" })}
+                  </p>
+                ) : null}
               </>
             ) : (
               <p className="text-fg-muted">{t("overview.health.empty")}</p>

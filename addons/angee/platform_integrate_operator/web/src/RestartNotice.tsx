@@ -1,0 +1,96 @@
+import { useAuthoredQuery } from "@angee/refine";
+import { PendingAddonChanges } from "@angee/platform";
+import {
+  useJobRunOperation,
+  useOperatorConnection,
+} from "@angee/operator/runtime";
+import { Banner, Button, TextLink, useChromeMenuTree, useRouteHref } from "@angee/ui";
+import { useRouterState } from "@tanstack/react-router";
+import { useEffect, type ReactNode } from "react";
+import { usePlatformIntegrateOperatorT } from "./i18n";
+
+/** Settings-only restart state, backed entirely by the daemon's durable receipt. */
+export function RestartNotice(): ReactNode {
+  const t = usePlatformIntegrateOperatorT();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const visible = useChromeMenuTree().isSettingsActive(pathname);
+  const routeHref = useRouteHref();
+  const operationsHref = routeHref("operator.operations");
+  const pending = useAuthoredQuery(PendingAddonChanges, undefined, { enabled: visible });
+  const connection = useOperatorConnection();
+  const run = useJobRunOperation({ enabled: visible });
+  const operation = run.operation;
+  const restartJob = connection?.restartJob;
+  const applicationRestart = operation?.rootJob === restartJob && operation.chainedRestart
+    ? operation
+    : null;
+  useEffect(() => {
+    if (visible && applicationRestart?.status === "SUCCEEDED") void pending.refetch();
+  }, [applicationRestart?.id, applicationRestart?.status, pending.refetch, visible]);
+  const running = applicationRestart?.status === "PENDING" || applicationRestart?.status === "RUNNING";
+  const failed = applicationRestart?.status === "FAILED" || applicationRestart?.status === "BLOCKED";
+  const restart = restartJob ? () => void run.run(restartJob, true) : undefined;
+
+  if (!visible) return null;
+
+  if (running) {
+    return (
+      <Banner
+        tone="info"
+        title={t("restart.running.title")}
+        actions={<TextLink href={operationsHref}>{t("restart.logs")}</TextLink>}
+      >
+        {applicationRestart?.currentStep ?? t("restart.running.waiting")}
+      </Banner>
+    );
+  }
+  if (run.startError) {
+    return (
+      <Banner
+        tone="danger"
+        title={t("restart.startFailed.title")}
+        actions={restart ? <Button disabled={run.starting} size="sm" variant="secondary" onClick={restart}>{t("restart.retry")}</Button> : undefined}
+      >
+        {run.startError.message}
+      </Banner>
+    );
+  }
+  if (failed) {
+    return (
+      <Banner
+        tone="danger"
+        title={t("restart.failed.title")}
+        actions={<><TextLink href={operationsHref}>{t("restart.logs")}</TextLink>{restart ? <Button disabled={run.active || run.starting} size="sm" variant="secondary" onClick={restart}>{t("restart.retry")}</Button> : null}</>}
+      >
+        {applicationRestart?.error
+          ?? applicationRestart?.nodes.find((node) => node.status === "FAILED")?.message
+          ?? applicationRestart?.currentStep
+          ?? t("restart.failed.fallback")}
+      </Banner>
+    );
+  }
+  if (run.queryError) {
+    return (
+      <Banner tone="warning" title={t("restart.statusUnavailable.title")}>
+        {run.queryError.message}
+      </Banner>
+    );
+  }
+  if (pending.isFetching && !pending.data) return null;
+  if (!pending.error && pending.data?.platform_explorer == null) return null;
+  if (pending.error || pending.data?.platform_explorer.pending_addon_changes == null) {
+    return <Banner tone="warning" title={t("restart.statusUnavailable.title")}>{pending.error?.message ?? t("restart.statusUnavailable.description")}</Banner>;
+  }
+  if (pending.data.platform_explorer.pending_addon_changes) {
+    return (
+      <Banner
+        tone="warning"
+        title={t("restart.required.title")}
+        actions={restart ? <Button disabled={run.active || run.starting} size="sm" variant="secondary" onClick={restart}>{t("restart.action")}</Button> : undefined}
+      >
+        {t("restart.required.description")}
+      </Banner>
+    );
+  }
+  return null;
+}

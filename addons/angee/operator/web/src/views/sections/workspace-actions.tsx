@@ -32,8 +32,8 @@ export function useWorkspaceActions(refetch: () => void): {
       {
         label: t("workspaces.syncBase"),
         variant: "secondary",
-        perform: (workspace: WorkspaceRef) => {
-          void runDaemon({
+        perform: async (workspace: WorkspaceRef) => {
+          await runDaemon({
             run: syncBase.run,
             field: "workspaceSyncBase",
             variables: { name: workspace.name },
@@ -44,22 +44,20 @@ export function useWorkspaceActions(refetch: () => void): {
       {
         label: t("workspaces.destroy"),
         variant: "ghost",
-        perform: (workspace: WorkspaceRef) => {
-          void (async () => {
-            const ok = await confirm({
-              title: t("workspaces.destroy.confirm.title"),
-              body: t("workspaces.destroy.confirm.body", { name: workspace.name }),
-              confirm: t("workspaces.destroy"),
-              danger: true,
-            });
-            if (!ok) return;
-            await runDaemon({
-              run: destroy.run,
-              field: "delete_workspaces_by_pk",
-              variables: { id: workspace.id },
-              label: t("workspaces.destroy"),
-            });
-          })();
+        perform: async (workspace: WorkspaceRef) => {
+          const ok = await confirm({
+            title: t("workspaces.destroy.confirm.title"),
+            body: t("workspaces.destroy.confirm.body", { name: workspace.name }),
+            confirm: t("workspaces.destroy"),
+            danger: true,
+          });
+          if (!ok) return;
+          await runDaemon({
+            run: destroy.run,
+            field: "delete_workspaces_by_pk",
+            variables: { id: workspace.id },
+            label: t("workspaces.destroy"),
+          });
         },
       },
     ] satisfies readonly WorkspaceRowAction[];

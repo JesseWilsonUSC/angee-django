@@ -153,6 +153,26 @@ def addons() -> list[AppConfig]:
     )
 
 
+def root_app_names() -> frozenset[str]:
+    """Return effective root declarations recorded by the composed app graph."""
+
+    return frozenset(
+        declaration
+        for config in apps.get_app_configs()
+        if (declaration := getattr(config, "angee_root_declaration", None)) is not None
+    )
+
+
+def root_app_aliases() -> dict[str, str]:
+    """Map exact authored root declarations to their normalized AppConfig names."""
+
+    return {
+        declaration: config.name
+        for config in apps.get_app_configs()
+        if (declaration := getattr(config, "angee_root_declaration", None)) is not None
+    }
+
+
 def is_historical(model: type[Model]) -> bool:
     """Return whether ``model`` is a simple-history audit shadow (carries ``instance_type``)."""
 

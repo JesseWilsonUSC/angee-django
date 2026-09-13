@@ -15,7 +15,12 @@ import environ
 from django.core.exceptions import ImproperlyConfigured
 
 from angee.compose import yamlconf
-from angee.project import PROJECT_SETTINGS_ENV, PROJECT_YAML_NAME, project_dir
+from angee.project import (
+    PROJECT_SETTINGS_ENV,
+    PROJECT_YAML_NAME,
+    PROJECT_YAML_SETTINGS,
+    project_dir,
+)
 
 DEFAULTS_SETTINGS_MODULE = "angee.compose.defaults"
 
@@ -64,7 +69,9 @@ class ProjectContract:
         project_settings = self._load_project_settings(root, settings_module)
         yamlconf.load_project(project_settings, root)
         yamlconf.reject_unexpected_sources(project_settings, root, settings_module)
+        project_yaml_settings = yamlconf.project_yaml_settings(project_settings, root)
         self._apply_defaults(project_settings, root)
+        self.namespace[PROJECT_YAML_SETTINGS] = project_yaml_settings
         return root
 
     def _read_project_env(self, root: Path) -> None:

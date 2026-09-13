@@ -23,6 +23,9 @@ class AppGraph:
       closure (``False``). If a declared root is also another root's dependency,
       the root declaration wins. The root/dependency split is the source of an
       addon's "consumer" vs "required" classification.
+    - ``angee_root_declaration``: the exact string authored in ``INSTALLED_APPS``
+      for a root, or ``None`` for a dependency. Runtime drift checks compare this
+      with the same editable setting without losing AppConfig-path spelling.
     - ``angee_forced``: whether any other resolved app depends on this one — the
       composer's reading of "cannot be uninstalled" for addons another installed
       addon needs. Transitive: ``A→B→C`` forces both ``B`` and ``C``. A leaf
@@ -37,6 +40,7 @@ class AppGraph:
         dependencies_by_name: dict[str, tuple[str, ...]] = {}
         root_names: list[str] = []
         root_name_set: set[str] = set()
+        root_declarations: dict[str, str] = {}
         expanded: set[str] = set()
 
         def register(config: AppConfig) -> AppConfig:
@@ -89,14 +93,17 @@ class AppGraph:
 
         for root in roots:
             config = root if isinstance(root, AppConfig) else create_app_config(aliases.get(root, root))
+            declaration = config.name if isinstance(root, AppConfig) else root
             if config.name in root_name_set:
                 raise ImproperlyConfigured(f"Duplicate root app {config.name!r}")
             if config.name in app_configs_by_name:
                 root_names.append(config.name)
+                root_declarations[config.name] = declaration
                 continue
             root_name = register(config).name
             root_names.append(root_name)
             root_name_set.add(root_name)
+            root_declarations[root_name] = declaration
 
         for name in tuple(root_names):
             include_dependencies(app_configs_by_name[name])
@@ -115,5 +122,6 @@ class AppGraph:
                 depended_upon.add(aliases.get(dependency, dependency))
         for config in ordered:
             config.angee_addon_root = config.name in root_name_set
+            config.angee_root_declaration = root_declarations.get(config.name)
             config.angee_forced = config.name in depended_upon
         return tuple(ordered)

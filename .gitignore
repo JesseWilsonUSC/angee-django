@@ -30,6 +30,7 @@ media/
 .env
 .env.*
 !.env.example
+/.settings.yaml.lock
 
 # Angee runtime (generated — committed in production consumers, ignored in examples)
 examples/*/runtime/

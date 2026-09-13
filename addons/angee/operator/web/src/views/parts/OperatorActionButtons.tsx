@@ -5,7 +5,8 @@ import type { ReactNode } from "react";
 export interface OperatorAction<TSubject> {
   label: string;
   variant: "secondary" | "ghost";
-  perform: (subject: TSubject) => void;
+  perform: (subject: TSubject) => Promise<void>;
+  visible?: (subject: TSubject) => boolean;
 }
 
 export interface OperatorActionButtonsProps<TSubject> {
@@ -24,11 +25,11 @@ export function OperatorActionButtons<TSubject>({
 }: OperatorActionButtonsProps<TSubject>): ReactNode {
   return (
     <div className={className}>
-      {actions.map((action) => (
+      {actions.filter((action) => action.visible?.(subject) ?? true).map((action) => (
         <Button
           key={action.label}
           disabled={busy}
-          onClick={() => action.perform(subject)}
+          onClick={() => void action.perform(subject)}
           size="sm"
           variant={action.variant}
         >
