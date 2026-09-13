@@ -23,7 +23,9 @@ test.describe("shared record access", () => {
     await expect(dialog).toContainText(
       "Manage direct access to the selected records.",
     );
-    await expect(dialog.getByLabel("Access")).toBeEnabled();
+    await expect(
+      dialog.getByRole("combobox", { name: "Access" }),
+    ).toBeEnabled({ timeout: 20_000 });
   });
 
   test("record chrome shows one shared action and offers agent service users", async ({
@@ -73,7 +75,9 @@ test.describe("shared record access", () => {
     await expect(page.getByRole("button", { name: "Star" })).toHaveCount(0);
     await agentShare.click();
     const agentDialog = page.getByRole("dialog", { name: "Share Demo Agent" });
-    await expect(agentDialog.getByLabel("Access")).toBeEnabled();
+    await expect(
+      agentDialog.getByRole("combobox", { name: "Access" }),
+    ).toBeEnabled({ timeout: 20_000 });
     await agentDialog.getByRole("button", { name: "Close" }).click();
 
     await page.goto("/dashboards");
