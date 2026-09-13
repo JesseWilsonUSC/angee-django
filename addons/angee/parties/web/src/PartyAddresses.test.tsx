@@ -17,12 +17,11 @@ vi.mock("@angee/ui", async (importOriginal) => ({
 }));
 
 describe("PartyAddresses", () => {
-  test("owns a scoped create/edit form with the complete postal address", () => {
+  test("owns a create/edit form with the complete postal address", () => {
     render(<PartyAddresses recordId="party_7" />);
     const props = capture.props;
     expect(props).toMatchObject({
       resource: "parties.Address",
-      scope: "local",
       baseFilter: { party: { exact: "party_7" } },
       createDefaults: { party: "party_7" },
     });
