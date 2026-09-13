@@ -12,6 +12,15 @@ export const PartyRecordRedirectDocument = graphql(`
   }
 `);
 
+export const PartyHandleRedirectDocument = graphql(`
+  query PartyHandleRedirect($id: String!) {
+    party_handles_by_pk(id: $id) {
+      id
+      party { id }
+    }
+  }
+`);
+
 // Identity decisions: the two verbs of the review flow. Confirming sets full
 // confidence + manual source and re-resolves the handle; dismissing writes the
 // durable anti-link. Their write blast radius lives here with the verbs;

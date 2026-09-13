@@ -5,6 +5,7 @@ import {
   TextLink,
   type ListColumn,
   type RecordPanelContext,
+  useRouteSearch,
   useResourceRecordHrefLookup,
 } from "@angee/ui";
 
@@ -36,6 +37,8 @@ export function IdentityTab({ recordId }: RecordPanelContext): React.ReactElemen
   const t = usePartiesT();
   const rowActions = usePartyHandleRowActions<LinkRow>("remaining");
   const recordHref = useResourceRecordHrefLookup();
+  const search = useRouteSearch();
+  const focusedHandle = typeof search.partyHandle === "string" ? search.partyHandle : "";
 
   const columns = React.useMemo<readonly ListColumn<LinkRow>[]>(
     () => [
@@ -88,7 +91,10 @@ export function IdentityTab({ recordId }: RecordPanelContext): React.ReactElemen
           "is_confirmed",
           "is_dismissed",
         ]}
-        baseFilter={{ party: { exact: recordId } }}
+        baseFilter={{
+          party: { exact: recordId },
+          ...(focusedHandle ? { id: { exact: focusedHandle } } : {}),
+        }}
         columns={columns}
         rowActions={rowActions}
         emptyContent={t("identity.empty")}

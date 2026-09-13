@@ -1,0 +1,17 @@
+export const enWorkflowsOcrMessages = {
+  "title": "Extraction evidence",
+  "loading": "Loading extraction evidence…",
+  "unavailable": "Extraction evidence is unavailable.",
+  "evidence": "Evidence",
+  "revision": "Revision",
+  "sources": "Sources",
+  "source": "Source {number}",
+  "sourceHash": "Content hash",
+  "openFile": "Open file",
+  "openMessage": "Open message",
+  "result": "Extracted result",
+  "provenance": "Provenance",
+  "schema": "Schema",
+  "pages": "Page evidence",
+  "parts": "Part evidence",
+} as const;

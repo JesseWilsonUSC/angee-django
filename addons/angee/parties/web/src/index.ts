@@ -73,6 +73,13 @@ const parties = defineBaseAddon({
       "parties.Relationship",
     ),
     ...resourcePageRoutes("parties.handles", "/parties/handles", lazyRouteComponent(() => import("./HandlesPage"), "HandlesPage"), "parties.Handle"),
+    ...resourcePageRoutes(
+      "parties.handle-links",
+      "/parties/handle-links",
+      lazyRouteComponent(() => import("./ReviewPage"), "ReviewPage"),
+      "parties.PartyHandle",
+      { detailComponent: lazyRouteComponent(() => import("./PartyHandleRedirect"), "PartyHandleRedirect") },
+    ),
     {
       name: "parties.review",
       path: "/parties/review",
