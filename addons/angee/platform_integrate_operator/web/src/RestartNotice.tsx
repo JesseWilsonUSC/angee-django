@@ -4,7 +4,8 @@ import {
   useJobRunOperation,
   useOperatorConnection,
 } from "@angee/operator/runtime";
-import { Banner, Button, TextLink, useChromeMenuTree, useRouteHref } from "@angee/ui";
+import { Banner, Button, TextLink, useRouteHref } from "@angee/ui";
+import { useChromeMenuTree } from "@angee/ui/chrome/refine-menu";
 import { useRouterState } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { usePlatformIntegrateOperatorT } from "./i18n";
