@@ -10,16 +10,9 @@ import { EditorView } from "@codemirror/view";
 import { cn } from "../lib/cn";
 import { Code, CodeBlock } from "../ui/code";
 import { useCodeMirrorEditor } from "./codemirror-editor";
+import type { JsonValue } from "./json-value";
 import { widgetLabel } from "./label";
 import type { WidgetDefinition, WidgetRenderProps } from "./types";
-
-type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue };
 
 type JsonParseResult =
   | { ok: true; value: JsonValue }

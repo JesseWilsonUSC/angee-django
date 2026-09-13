@@ -45,7 +45,7 @@ const SCALARS = {
   Date: "string",
   BigInt: "string",
   Decimal: "string",
-  JSON: "unknown",
+  JSON: "@angee/ui#JsonValue",
 };
 const ADDON_ENTRY_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
 

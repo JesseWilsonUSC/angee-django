@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { jsonWidget } from "./json";
+import { jsonValueFromUnknown } from "./json-value";
 
 describe("json widget", () => {
   afterEach(cleanup);
@@ -45,5 +46,15 @@ describe("json widget", () => {
     render(<Cell value={{ a: 1 }} />);
 
     expect(screen.getByText('{"a":1}')).toBeTruthy();
+  });
+
+  test("validates untyped values at the JSON boundary", () => {
+    expect(jsonValueFromUnknown({ nested: [true, 3, null] })).toEqual({
+      nested: [true, 3, null],
+    });
+    expect(() => jsonValueFromUnknown(Number.POSITIVE_INFINITY)).toThrow();
+    expect(jsonValueFromUnknown(undefined)).toBeUndefined();
+    expect(() => jsonValueFromUnknown(new Date())).toThrow();
+    expect(() => jsonValueFromUnknown(new Map())).toThrow();
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import {
   Alert,
   Button,
@@ -87,7 +87,7 @@ function ThemeScheme({ theme, scheme, options }: { theme: ThemeContribution; sch
     try { return resolveThemeOptions(theme.definition, options); }
     catch { return resolveThemeOptions(theme.definition); }
   }, [options, theme]);
-  const tokens = { ...resolved.tokens.shared, ...resolved.tokens[scheme] } as CSSProperties;
+  const tokens = { ...resolved.tokens.shared, ...resolved.tokens[scheme] };
   let logo: ThemeCustomizationLogo | undefined;
   try { logo = parseThemeCustomization(resolved.value).logo; }
   catch { logo = undefined; }

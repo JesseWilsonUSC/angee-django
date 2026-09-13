@@ -78,6 +78,7 @@ const jsonWidget = lazyWidget(() => import("./json").then((m) => m.jsonWidget), 
 /** Lazy shared JSON presentations for authored surfaces outside descriptor forms. */
 export const JsonValueView = jsonWidget.read;
 export const JsonEditor = jsonWidget.edit!;
+export { jsonValueFromUnknown, type JsonValue } from "./json-value";
 const markdownEditorWidget = lazyWidget(
   () => import("./markdown").then((m) => m.markdownEditorWidget),
   { edit: true, cell: true },

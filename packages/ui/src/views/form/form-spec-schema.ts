@@ -1,17 +1,12 @@
 import * as v from "valibot";
 import type { CrudFilter } from "@refinedev/core";
 
+import { JsonValueSchema, type JsonValue } from "../../widgets/json-value";
+
 const NonEmptyString = v.pipe(v.string(), v.minLength(1));
 const FieldTypeSchema = v.picklist(["string", "integer", "number", "boolean", "object", "array", "any"]);
 export type FormSpecFieldType = v.InferOutput<typeof FieldTypeSchema>;
 
-type JsonValue = null | string | number | boolean | JsonValue[] | { [key: string]: JsonValue };
-// Wire validators consume unknown input. Using the recursive output as input
-// also expands Valibot optional-default inference past TypeScript's declaration limit.
-const JsonSchema: v.GenericSchema<unknown, JsonValue> = v.lazy(() => v.union([
-  v.null(), v.string(), v.pipe(v.number(), v.finite()), v.boolean(),
-  v.array(JsonSchema), v.record(v.string(), JsonSchema),
-]));
 const FilterSchema: v.GenericSchema<unknown, CrudFilter> = v.lazy(() => v.variant("operator", [
   v.object({
     operator: v.picklist(["and", "or"]),
@@ -25,7 +20,7 @@ const FilterSchema: v.GenericSchema<unknown, CrudFilter> = v.lazy(() => v.varian
       "startswith", "nstartswith", "startswiths", "nstartswiths", "endswith", "nendswith", "endswiths", "nendswiths",
     ]),
     field: NonEmptyString,
-    value: v.union([JsonSchema, v.undefined()]),
+    value: v.union([JsonValueSchema, v.undefined()]),
   }),
 ], (issue) => `unknown Refine CRUD operator "${String(issue.input)}".`));
 const RelationSchema = v.object({
@@ -38,7 +33,7 @@ const RelationSchema = v.object({
   filters: v.optional(v.array(FilterSchema)),
   create: v.optional(v.object({
     resource: NonEmptyString,
-    defaultValues: v.optional(v.record(v.string(), JsonSchema)),
+    defaultValues: v.optional(v.record(v.string(), JsonValueSchema)),
   })),
 });
 const FieldBaseSchema = v.object({
@@ -58,8 +53,8 @@ const FieldBaseSchema = v.object({
   maxLength: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
   minItems: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
   maxItems: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
-  defaultValue: v.optional(JsonSchema),
-  const: v.optional(JsonSchema),
+  defaultValue: v.optional(JsonValueSchema),
+  const: v.optional(JsonValueSchema),
   enum: v.optional(v.array(v.string("form-spec select values must be strings."))),
   options: v.optional(v.array(v.object({
     value: NonEmptyString,
