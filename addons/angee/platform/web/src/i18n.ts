@@ -37,6 +37,7 @@ export const enPlatformMessages: Record<string, string> = {
   "apps.required": "Required",
   "apps.pending": "Pending restart",
   "apps.install": "Install",
+  "apps.reinstall": "Reinstall",
   "apps.disable": "Disable",
   "apps.forcedHint": "Required by another installed addon — cannot be disabled.",
   "apps.remoteHint": "Discovered from a marketplace source — materialise it before installing.",

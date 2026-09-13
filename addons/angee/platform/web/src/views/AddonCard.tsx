@@ -95,8 +95,8 @@ export function AddonCard({ row }: { row: AddonResourceRow }): ReactElement {
 /**
  * The card footer lifecycle controls. An enabled addon offers Disable; required
  * addons still open the server-owned refusal preview. An available addon offers
- * Install, while a historical removed row offers no invalid action. Pending rows show
- * the restart state once queued. Both writes go
+ * Install; a removed addon offers Reinstall through the same server-owned preview.
+ * Pending rows show the restart state once queued. Both writes go
  * through the platform AddonInstaller mutations and refetch the reflected board.
  */
 export function AddonCardActions({
@@ -192,7 +192,6 @@ export function AddonCardActions({
       {dialog}
     </>);
   }
-  if (row.state === "removed") return null;
   if (row.source === "remote") {
     // Known from a marketplace source but not materialised — the local installer
     // cannot clone it, so installing would write an unbootable settings.yaml.
@@ -207,7 +206,7 @@ export function AddonCardActions({
   return (<>
     <Button size="sm" variant="primary" disabled={busy} onClick={() => { setApplyError(null); setAction("INSTALL"); }}>
       <Glyph decorative name="plus" />
-      {t("apps.install")}
+      {t(row.state === "removed" ? "apps.reinstall" : "apps.install")}
     </Button>
     {dialog}
   </>);
