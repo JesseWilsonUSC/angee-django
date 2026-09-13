@@ -4175,6 +4175,27 @@ class StepArtifactQuerySet(AngeeQuerySet[Any]):
             ).select_related("attempt__step_run__run").order_by("created_at", "pk"),
         )
 
+    def history_page(
+        self, runs: models.QuerySet[Any], *, limit: int = 200,
+    ) -> tuple[Self, bool]:
+        """Return one newest row per target-and-label meaning before bounding history."""
+
+        bounded = max(1, min(int(limit), 200))
+        scope = self.for_runs(runs).order_by()
+        representative = scope.filter(
+            target_content_type_id=models.OuterRef("target_content_type_id"),
+            target_object_id=models.OuterRef("target_object_id"),
+            label=models.OuterRef("label"),
+        ).order_by("-created_at", "-pk").values("pk")[:1]
+        candidates = scope.annotate(
+            _history_representative_id=models.Subquery(representative),
+        ).filter(pk=models.F("_history_representative_id")).order_by("-created_at", "-pk")
+        candidate_ids = list(candidates.values_list("pk", flat=True)[: bounded + 1])
+        page = self.filter(pk__in=candidate_ids[:bounded]).select_related(
+            "attempt__step_run__run",
+        ).order_by("-created_at", "-pk")
+        return cast(Self, page), len(candidate_ids) > bounded
+
     def update(self, **kwargs: Any) -> int:
         raise TypeError("Workflow artifacts are immutable retained result evidence.")
 

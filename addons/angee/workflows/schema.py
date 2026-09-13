@@ -1860,9 +1860,7 @@ class WorkflowSubjectDeclarationQuery:
             ).select_related("run", "step", "current_attempt").order_by("-updated_at", "-pk")[:201]
         )
         failures = failure_candidates[:200]
-        artifact_scope = _artifact_queryset(info).for_runs(runs)
-        artifact_ids = list(artifact_scope.values_list("pk", flat=True)[:201])
-        artifacts = artifact_scope.filter(pk__in=artifact_ids[:200])
+        artifacts, artifacts_truncated = _artifact_queryset(info).history_page(runs, limit=200)
         return WorkflowSubjectHistory(
             runs=cast(list[WorkflowRunType], runs),
             pending_decisions=cast(list[DecisionType], decisions),
@@ -1877,7 +1875,7 @@ class WorkflowSubjectDeclarationQuery:
                 or decisions_truncated
                 or len(child_candidates) > 200
                 or len(failure_candidates) > 200
-                or len(artifact_ids) > 200
+                or artifacts_truncated
             ),
         )
 

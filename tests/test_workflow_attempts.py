@@ -215,6 +215,46 @@ def test_artifact_batch_is_retained_once_and_part_of_duplicate_result_identity(
 
 
 @pytest.mark.django_db(transaction=True)
+def test_artifact_history_groups_before_bound_without_widening_scope(
+    scheduled_step_run: StepRun,
+) -> None:
+    """Repeated waits cannot crowd out a newer target or escape the supplied read scope."""
+
+    attempt = StepAttempt.objects.claim(scheduled_step_run, claimed_at=timezone.now()).attempt
+    StepAttempt.objects.admit_invocation(
+        attempt.pk, lease_token=attempt.lease_token, at=timezone.now()
+    )
+    repeated = tuple(
+        ArtifactSpec(scheduled_step_run.run.workflow, "Repeated output") for _ in range(201)
+    )
+    result = AttemptResult(
+        AttemptResultKind.DONE,
+        artifacts_present=True,
+        artifacts=(*repeated,
+                   ArtifactSpec(scheduled_step_run.run.workflow, "Distinct meaning"),
+                   ArtifactSpec(scheduled_step_run.step, "Newer target"),
+                   ArtifactSpec(scheduled_step_run.step, "Hidden by scope")),
+    )
+    StepAttempt.objects.finalize(
+        attempt.pk, lease_token=attempt.lease_token, result=result, recorded_at=timezone.now()
+    )
+
+    with system_context(reason="inspect grouped workflow artifact history"):
+        runs = WorkflowRun.objects.filter(pk=scheduled_step_run.run_id)
+        scoped = StepArtifact.objects.exclude(label="Hidden by scope")
+        bounded, truncated = scoped.history_page(runs, limit=2)
+        bounded_rows = list(bounded.values_list("label", flat=True))
+        complete, complete_truncated = scoped.history_page(runs, limit=3)
+        complete_rows = list(complete.values_list("label", flat=True))
+
+    assert truncated is True
+    assert "Newer target" in bounded_rows
+    assert "Hidden by scope" not in bounded_rows
+    assert complete_truncated is False
+    assert set(complete_rows) == {"Repeated output", "Distinct meaning", "Newer target"}
+
+
+@pytest.mark.django_db(transaction=True)
 def test_artifact_batch_authority_is_spent_before_save_signals(
     scheduled_step_run: StepRun,
 ) -> None:
