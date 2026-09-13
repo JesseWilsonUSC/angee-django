@@ -145,7 +145,6 @@ export const IamGroupAccess = graphql(`
     groups_by_pk(id: $id) {
       id
       members { id subject subject_type subject_id label caveat_name }
-      bindings { id resource resource_type resource_id relation caveat_name target_model target_id }
     }
   }
 `);
@@ -206,7 +205,6 @@ export const IamRemoveGroupMember = graphql(`
 
 export const IAM_GROUP_MUTATION_INVALIDATES = ["iam.Group", "iam.Grant", "iam.Relationship", "iam.User"] as const;
 export type IAMGroupMember = NonNullable<DocumentType<typeof IamGroupAccess>["groups_by_pk"]>["members"][number];
-export type IAMGroupBinding = NonNullable<DocumentType<typeof IamGroupAccess>["groups_by_pk"]>["bindings"][number];
 export type IAMPrincipalAccess = DocumentType<typeof IamPrincipalAccess>["iam_principal_access"];
 export type IAMPrincipalRole = IAMPrincipalAccess["roles"][number];
 export type IAMPrincipalGrant = IAMPrincipalAccess["grants"][number];
