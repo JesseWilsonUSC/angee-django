@@ -200,7 +200,7 @@ function AgentResourceListPage({
           label: labels.tabChat,
           render: ({ recordId }) => <AgentChatPanel agentId={recordId} />,
         },
-        ...(accessTab ? [accessTab] : []),
+        accessTab,
       ];
   return (
     <ResourceList

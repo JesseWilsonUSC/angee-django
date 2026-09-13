@@ -70,7 +70,7 @@ export function UsersPage(): React.ReactElement {
       placement="inline"
       routed
       returning={["assignment_subject"]}
-      recordTabs={accessTab ? [accessTab] : undefined}
+      recordTabs={[accessTab]}
     >
       {userList}
       {userForm}
