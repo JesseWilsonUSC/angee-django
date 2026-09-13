@@ -166,6 +166,16 @@ def _acquire_native_parts(
                 parts.extend(native)
                 recognition_pages.extend(scanned)
                 continue
+            if not content:
+                raise DocumentPipelineError(
+                    "Empty document sources require review.", parts=parts,
+                    stage="acquisition", code="empty_source",
+                )
+            if not declared_type.startswith("image/"):
+                raise DocumentPipelineError(
+                    "The document source format is not supported for extraction.", parts=parts,
+                    stage="acquisition", code="unsupported_media_type",
+                )
             page_count += 1
             if page_count > max_pages:
                 raise ValueError("The document exceeds its configured page limit.")

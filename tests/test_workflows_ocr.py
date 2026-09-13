@@ -240,6 +240,14 @@ def test_native_acquisition_converts_input_errors_to_retained_pipeline_failures(
     with pytest.raises(DocumentPipelineError, match="acquisition failed"):
         acquire_native_parts((nul_text,))
 
+    with pytest.raises(DocumentPipelineError) as unsupported:
+        acquire_native_parts((DocumentSource(0, "d" * 64, "application/octet-stream", b"not-an-image"),))
+    assert (unsupported.value.stage, unsupported.value.code) == ("acquisition", "unsupported_media_type")
+
+    with pytest.raises(DocumentPipelineError) as empty:
+        acquire_native_parts((DocumentSource(0, "e" * 64, "application/octet-stream", b""),))
+    assert (empty.value.stage, empty.value.code) == ("acquisition", "empty_source")
+
 
 @pytest.mark.parametrize("kind", ["text", "scan", "structured"])
 def test_glm_document_pipeline_uses_native_evidence_before_model_mapping(kind, monkeypatch):

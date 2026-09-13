@@ -8,7 +8,7 @@ from typing import Any
 from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from rebac import system_context
+from rebac import actor_context, system_context
 
 from angee.integrate.locks import bridge_advisory_lock
 from angee.messaging_integrate_imap.backend import (
@@ -16,6 +16,7 @@ from angee.messaging_integrate_imap.backend import (
     ImapSampleImport,
     ImapSamplePreview,
 )
+from angee.messaging_integrate_imap.parser import EMBEDDED_MESSAGE_MAX_BYTES, expand_embedded_message
 
 
 class ImapChannelSampling(models.Model):
@@ -76,4 +77,32 @@ class ImapChannelSampling(models.Model):
                 message_ids=[str(message.sqid) for message in messages],
                 requested_uids=sorted(uids), imported_uids=imported_uids,
                 missing_uids=sorted(set(uids) - set(imported_uids)), flags_unchanged=flags_unchanged,
+            )
+
+    def expand_retained_imap_part(self, part: Any, *, actor: Any) -> tuple[Any, ...]:
+        """Append bounded evidence below this Channel's retained RFC 822 Part.
+
+        Existing Message, Part and File identities remain unchanged. The IMAP
+        adapter owns RFC 822 decoding; Messaging owns the locked, idempotent
+        descendant write.
+        """
+
+        with actor_context(actor):
+            current = type(self)._base_manager.get(pk=self.pk)
+            current._require_record_access("write")
+            part_model = apps.get_model("messaging", "Part")
+            if not isinstance(part, part_model) or part.pk is None:
+                raise ValidationError("Embedded expansion requires a retained Message Part.")
+            retained = part_model._base_manager.select_related("message", "file").get(pk=part.pk)
+            if (retained.message.channel_id != current.pk or str(retained.type).lower() != "message/rfc822"
+                    or retained.file_id is None):
+                raise ValidationError("Select an RFC 822 Part retained by this IMAP Channel.")
+            retained.file._require_record_access("read")
+            with retained.file.open_stream() as stream:
+                raw = stream.read(EMBEDDED_MESSAGE_MAX_BYTES + 1)
+            child = expand_embedded_message(raw)
+            if child is None:
+                return ()
+            return apps.get_model("messaging", "Message").objects.expand_retained_part(
+                retained, (child,),
             )
