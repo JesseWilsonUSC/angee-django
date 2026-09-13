@@ -48,6 +48,7 @@ from angee.iam.roles import (
 from angee.iam.roles import (
     IAMGrantRow,
     IAMRoleRow,
+    validate_subject,
 )
 from angee.iam.roles import (
     grant_role as _grant_role_owner,
@@ -73,6 +74,7 @@ from angee.iam.roles import (
 from angee.iam.roles import (
     permission_schema as _permission_schema_owner,
 )
+from angee.iam.roles import principal_access as _principal_access_owner
 from angee.iam.roles import (
     relationship_rows as _relationship_rows_owner,
 )
@@ -223,6 +225,62 @@ class IAMGrantType:
     role_name: str
     namespace: str
     caveat_name: str
+
+
+@strawberry.type
+class IAMPrincipalRoleType:
+    """A role held by the inspected principal."""
+
+    id: str
+    role: str
+    role_name: str
+    namespace: str
+    source: str
+    source_label: str
+    direct: bool
+
+
+@strawberry.type
+class IAMPrincipalGrantType:
+    """An explicit non-role binding contributing access to a principal."""
+
+    id: str
+    resource: str
+    resource_type: str
+    resource_id: str
+    relation: str
+    source: str
+    source_label: str
+    direct: bool
+    caveat_name: str
+    target_model: str | None
+    target_id: str | None
+
+
+@strawberry.type
+class IAMPrincipalPermissionType:
+    """A permission path reached by an effective role or explicit binding."""
+
+    id: str
+    resource: str
+    resource_type: str
+    resource_id: str
+    permission: str
+    source: str
+    direct: bool
+    caveat_name: str
+    target_model: str | None
+    target_id: str | None
+
+
+@strawberry.type
+class IAMPrincipalAccessType:
+    """Administrative access projection for one user, service, or group."""
+
+    subject: str
+    roles: list[IAMPrincipalRoleType]
+    grants: list[IAMPrincipalGrantType]
+    permissions: list[IAMPrincipalPermissionType]
 
 
 @strawberry.type
@@ -424,6 +482,19 @@ def _permission_schema() -> list[IAMResourceSchemaType]:
 
     schema, definitions = _permission_schema_owner()
     return [IAMResourceSchemaType(schema=schema, definition=definition) for definition in definitions]
+
+
+def _principal_access(subject: str) -> IAMPrincipalAccessType:
+    """Resolve the public subject boundary and project its access evidence."""
+
+    resolved = validate_subject(subject)
+    access = _principal_access_owner(resolved)
+    return IAMPrincipalAccessType(
+        subject=access.subject,
+        roles=cast(list[IAMPrincipalRoleType], access.roles),
+        grants=cast(list[IAMPrincipalGrantType], access.grants),
+        permissions=cast(list[IAMPrincipalPermissionType], access.permissions),
+    )
 
 
 def _iam_overview(peek_limit: int, *, request: HttpRequest | None = None) -> IAMOverviewType:
@@ -734,6 +805,13 @@ class IAMConsoleQuery:
         return _permission_schema()
 
     @strawberry.field(permission_classes=_ADMIN_PERMISSION_CLASSES)
+    def iam_principal_access(self, subject: str) -> IAMPrincipalAccessType:
+        """Return roles, grants, and permission paths for one principal."""
+
+        with system_context(reason="iam.graphql.principal_access"):
+            return _principal_access(subject)
+
+    @strawberry.field(permission_classes=_ADMIN_PERMISSION_CLASSES)
     def iam_overview(
         self,
         info: strawberry.Info,
@@ -933,6 +1011,10 @@ schemas = {
             GroupType,
             IAMRoleType,
             IAMGrantType,
+            IAMPrincipalRoleType,
+            IAMPrincipalGrantType,
+            IAMPrincipalPermissionType,
+            IAMPrincipalAccessType,
             IAMGroupMemberType,
             IAMGroupBindingType,
             IAMRelationType,

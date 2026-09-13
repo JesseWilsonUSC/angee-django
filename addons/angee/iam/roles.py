@@ -26,13 +26,14 @@ from rebac.memberships import grant as grant_membership
 from rebac.memberships import revoke as revoke_membership
 from rebac.models import active_relationship_model
 from rebac.resources import model_for_resource_type
-from rebac.roles import ROLE_RELATION
+from rebac.roles import ROLE_INCLUDES_RELATION, ROLE_RELATION
 from rebac.schema import (
     Definition,
     Schema,
     named_object_refs,
     permission_object_sources,
     permission_sources,
+    permissions_reaching_relation,
     relation_is_writable,
 )
 
@@ -170,6 +171,67 @@ class IAMGroupBindingRow(BaseModel):
     caveat_name: str
     target_model: str | None
     target_id: str | None
+
+
+class IAMPrincipalRoleRow(BaseModel):
+    """One role held directly or through a principal group/role hierarchy."""
+
+    id: str
+    role: str
+    role_name: str
+    namespace: str
+    source: str
+    source_label: str
+    direct: bool
+
+
+class IAMPrincipalGrantRow(BaseModel):
+    """One explicit non-role binding that contributes access to a principal."""
+
+    id: str
+    resource: str
+    resource_type: str
+    resource_id: str
+    relation: str
+    source: str
+    source_label: str
+    direct: bool
+    caveat_name: str
+    target_model: str | None
+    target_id: str | None
+
+
+class IAMPrincipalPermissionRow(BaseModel):
+    """One permission path reached by a role or explicit relationship grant."""
+
+    id: str
+    resource: str
+    resource_type: str
+    resource_id: str
+    permission: str
+    source: str
+    direct: bool
+    caveat_name: str
+    target_model: str | None
+    target_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PrincipalAccessInfo:
+    """Administrative access projection for one concrete principal subject."""
+
+    subject: str
+    roles: list[IAMPrincipalRoleRow]
+    grants: list[IAMPrincipalGrantRow]
+    permissions: list[IAMPrincipalPermissionRow]
+
+
+@dataclass(frozen=True, slots=True)
+class _BindingEvidence:
+    """A stored binding and whether it names the inspected subject directly."""
+
+    row: Any
+    direct: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,6 +564,265 @@ def group_bindings(group: Any) -> list[IAMGroupBindingRow]:
             )
         )
     return result
+
+
+def principal_access(subject: SubjectRef) -> PrincipalAccessInfo:
+    """Return roles, explicit grants, and permission paths for ``subject``.
+
+    The relationship store owns explicit evidence, while the REBAC evaluator
+    owns effective role membership. Permission rows are schema reachability
+    paths, not context-free authorization verdicts: caveats and intersections
+    remain visible through their source grant rather than being guessed here.
+    """
+
+    schema = rebac_backend().schema()
+    evidence = _principal_binding_evidence(subject)
+    roles = _principal_roles(subject, evidence, schema=schema)
+    grants = _principal_grants(evidence)
+    permissions = _principal_permissions(grants, roles, schema=schema)
+    return PrincipalAccessInfo(
+        subject=str(public_subject_ref(subject)),
+        roles=roles,
+        grants=grants,
+        permissions=permissions,
+    )
+
+
+def _principal_binding_evidence(subject: SubjectRef) -> list[_BindingEvidence]:
+    """Return direct bindings plus bindings inherited through direct groups."""
+
+    manager = active_relationship_model().objects
+    direct_rows = list(
+        manager.filter(
+            subject_type=subject.subject_type,
+            subject_id=subject.subject_id,
+            optional_subject_relation=subject.optional_relation,
+        ).order_by_resource()
+    )
+    evidence = [_BindingEvidence(row=row, direct=True) for row in direct_rows]
+    if subject.subject_type != "auth/user" or subject.optional_relation:
+        return evidence
+
+    group_ids = sorted({
+        str(row.resource_id)
+        for row in direct_rows
+        if str(row.resource_type) == "auth/group" and str(row.relation) == ROLE_RELATION
+    })
+    if not group_ids:
+        return evidence
+    inherited_rows = manager.filter(
+        subject_type="auth/group",
+        subject_id__in=group_ids,
+        optional_subject_relation=ROLE_RELATION,
+    ).order_by_resource()
+    evidence.extend(_BindingEvidence(row=row, direct=False) for row in inherited_rows)
+    return evidence
+
+
+def _principal_roles(
+    subject: SubjectRef,
+    evidence: list[_BindingEvidence],
+    *,
+    schema: Schema,
+) -> list[IAMPrincipalRoleRow]:
+    """Return every stored or implied role, retaining its nearest source."""
+
+    role_evidence: dict[ObjectRef, list[_BindingEvidence]] = {}
+    for item in evidence:
+        row = item.row
+        if is_role_type(str(row.resource_type)) and str(row.relation) == ROLE_RELATION:
+            role_evidence.setdefault(
+                ObjectRef(str(row.resource_type), str(row.resource_id)),
+                [],
+            ).append(item)
+
+    del subject
+    declared = declared_role_refs(schema)
+    effective = set(role_evidence)
+    implied_by: dict[ObjectRef, ObjectRef] = {}
+    hierarchy = list(
+        active_relationship_model().objects.filter(
+            resource_type__in=schema_role_resource_types(),
+            relation=ROLE_INCLUDES_RELATION,
+        ).order_by_resource()
+    )
+    while True:
+        added = False
+        for row in hierarchy:
+            child = ObjectRef(str(row.subject_type), str(row.subject_id))
+            parent = ObjectRef(str(row.resource_type), str(row.resource_id))
+            if str(row.optional_subject_relation) or child not in effective or parent in effective:
+                continue
+            effective.add(parent)
+            implied_by[parent] = child
+            added = True
+        if not added:
+            break
+    metadata = {
+        ObjectRef.parse(row.id): row
+        for row in IAMRoleRow.from_refs(
+            effective,
+            schema=schema,
+            declared_refs=declared,
+        )
+    }
+    evidence_sources = [
+        SubjectRef.of(
+            str(item.row.subject_type),
+            str(item.row.subject_id),
+            str(item.row.optional_subject_relation),
+        )
+        for items in role_evidence.values()
+        for item in items
+    ]
+    labels = {
+        ref: str(instance)
+        for ref, instance in resolve_subjects(evidence_sources).items()
+    }
+    result: list[IAMPrincipalRoleRow] = []
+    for role in sorted(effective, key=str):
+        candidates = sorted(role_evidence.get(role, []), key=lambda item: not item.direct)
+        source_ref = None
+        if candidates:
+            source_row = candidates[0].row
+            source_ref = SubjectRef.of(
+                str(source_row.subject_type),
+                str(source_row.subject_id),
+                str(source_row.optional_subject_relation),
+            )
+        implied_source = implied_by.get(role)
+        if source_ref is None and implied_source is not None:
+            source_ref = SubjectRef(implied_source)
+        public_source = public_subject_ref(source_ref) if source_ref is not None else None
+        role_metadata = metadata[role]
+        result.append(
+            IAMPrincipalRoleRow(
+                id=str(role),
+                role=str(role),
+                role_name=role_metadata.label,
+                namespace=role_metadata.namespace,
+                source=str(public_source) if public_source is not None else "",
+                source_label=(
+                    labels.get(source_ref)
+                    or (role_label(source_ref.subject_id) if is_role_type(source_ref.subject_type) else None)
+                    or str(public_source)
+                ) if source_ref is not None else "Inherited",
+                direct=bool(candidates and candidates[0].direct),
+            )
+        )
+    return result
+
+
+def _principal_grants(evidence: list[_BindingEvidence]) -> list[IAMPrincipalGrantRow]:
+    """Project every non-role relationship path with batched target labels."""
+
+    selected = [item for item in evidence if not is_role_type(str(item.row.resource_type))]
+    targets = _binding_targets(item.row for item in selected)
+    source_refs = [
+        SubjectRef.of(
+            str(item.row.subject_type),
+            str(item.row.subject_id),
+            str(item.row.optional_subject_relation),
+        )
+        for item in selected
+    ]
+    labels = {ref: str(instance) for ref, instance in resolve_subjects(source_refs).items()}
+    result: list[IAMPrincipalGrantRow] = []
+    for item, source_ref in zip(selected, source_refs, strict=True):
+        row = item.row
+        resource_type = str(row.resource_type)
+        resource_id = str(row.resource_id)
+        target_model, target_id = targets[(resource_type, resource_id)]
+        public_resource = public_subject_ref(SubjectRef.of(resource_type, resource_id))
+        public_source = public_subject_ref(source_ref)
+        result.append(
+            IAMPrincipalGrantRow(
+                id=grant_public_id(
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    relation=str(row.relation),
+                    subject_type=source_ref.subject_type,
+                    subject_id=source_ref.subject_id,
+                    optional_subject_relation=source_ref.optional_relation,
+                    caveat_name=str(row.caveat_name),
+                ),
+                resource=str(public_resource),
+                resource_type=resource_type,
+                resource_id=public_resource.subject_id,
+                relation=str(row.relation),
+                source=str(public_source),
+                source_label=labels.get(source_ref) or str(public_source),
+                direct=item.direct,
+                caveat_name=str(row.caveat_name),
+                target_model=target_model,
+                target_id=target_id,
+            )
+        )
+    return sorted(result, key=lambda row: (row.resource_type, row.resource_id, row.relation, row.source))
+
+
+def _principal_permissions(
+    grants: list[IAMPrincipalGrantRow],
+    roles: list[IAMPrincipalRoleRow],
+    *,
+    schema: Schema,
+) -> list[IAMPrincipalPermissionRow]:
+    """Expand explicit grants and effective roles through native schema reach."""
+
+    rows: dict[tuple[str, str, str, str], IAMPrincipalPermissionRow] = {}
+    for grant_row in grants:
+        for permission_name in permissions_reaching_relation(
+            schema,
+            grant_row.resource_type,
+            grant_row.relation,
+        ):
+            source = f"{grant_row.resource}#{grant_row.relation}"
+            key = (grant_row.resource_type, grant_row.resource_id, permission_name, source)
+            rows[key] = IAMPrincipalPermissionRow(
+                id="|".join(key),
+                resource=grant_row.resource,
+                resource_type=grant_row.resource_type,
+                resource_id=grant_row.resource_id,
+                permission=permission_name,
+                source=source,
+                direct=grant_row.direct,
+                caveat_name=grant_row.caveat_name,
+                target_model=grant_row.target_model,
+                target_id=grant_row.target_id,
+            )
+
+    definitions = sorted(schema.definitions, key=lambda item: item.resource_type)
+    for role_row in roles:
+        role = ObjectRef.parse(role_row.role)
+        for definition in definitions:
+            for permission_definition in definition.permissions:
+                if role not in permission_object_sources(
+                    schema,
+                    definition.resource_type,
+                    permission_definition.name,
+                    object_type=role.resource_type,
+                ):
+                    continue
+                resource = f"{definition.resource_type}:*"
+                key = (
+                    definition.resource_type,
+                    "*",
+                    permission_definition.name,
+                    role_row.role,
+                )
+                rows[key] = IAMPrincipalPermissionRow(
+                    id="|".join(key),
+                    resource=resource,
+                    resource_type=definition.resource_type,
+                    resource_id="*",
+                    permission=permission_definition.name,
+                    source=role_row.role,
+                    direct=role_row.direct,
+                    caveat_name="",
+                    target_model=None,
+                    target_id=None,
+                )
+    return [rows[key] for key in sorted(rows)]
 
 
 def _binding_targets(rows: Iterable[Any]) -> dict[tuple[str, str], tuple[str | None, str | None]]:

@@ -20,6 +20,7 @@ import {
   refineResourceName,
 } from "@angee/metadata";
 import type { ActionFieldName } from "@angee/gql/console/actions";
+import { usePrincipalAccessRecordTab } from "@angee/iam";
 
 import { useAgentsT } from "../i18n";
 import { agentRuntime, booleanField, stringField } from "./agent-record";
@@ -176,6 +177,7 @@ function AgentResourceListPage({
 }): React.ReactElement {
   const labels = useAgentLabels();
   const t = useAgentsT();
+  const accessTab = usePrincipalAccessRecordTab();
   const [deprovision] = useRecordActionMutation<ActionFieldName>("deprovision_agent", {
     invalidateModels: [MODEL],
     missingRecordMessage: t("provisioning.saveFirst"),
@@ -198,6 +200,7 @@ function AgentResourceListPage({
           label: labels.tabChat,
           render: ({ recordId }) => <AgentChatPanel agentId={recordId} />,
         },
+        ...(accessTab ? [accessTab] : []),
       ];
   return (
     <ResourceList
@@ -218,6 +221,7 @@ function AgentResourceListPage({
               "can_provision",
               "can_deprovision",
               "can_delete",
+              "assignment_subject",
             ]
       }
     >

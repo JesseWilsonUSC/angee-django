@@ -24,6 +24,10 @@ export {
   type AssignmentSubjectsResult,
   type UseAssignmentSubjectsOptions,
 } from "./assignment-subjects";
+export {
+  PrincipalAccessTab,
+  usePrincipalAccessRecordTab,
+} from "./PrincipalAccess";
 
 // IAM contributes its grouped Settings tree, including the inbound OIDC sign-in
 // provider admin; a route-less parent inherits its first child's target.

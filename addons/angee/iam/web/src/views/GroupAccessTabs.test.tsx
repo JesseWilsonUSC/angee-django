@@ -27,17 +27,14 @@ vi.mock("@angee/ui", () => ({
     return null;
   },
   SubjectPicker: () => null,
-  TextLink: ({ children, href }: { children?: ReactNode; href: string }) => <a href={href}>{children}</a>,
   defineRowAction: (value: Record<string, unknown>) => value,
   mutationDialogValueCodecs: {
     requiredString: (value: unknown) => String(value),
   },
   useAuthoredResourceMutation: () => [mocks.add],
-  useResourceRecordHref: () => (id: string) => `/records/${id}`,
-  useResourceRoute: () => "/records",
 }));
 
-import { GroupBindingsTab, GroupMembersTab } from "./GroupAccessTabs";
+import { GroupMembersTab } from "./GroupAccessTabs";
 
 describe("group access tabs", () => {
   beforeEach(() => {
@@ -55,16 +52,7 @@ describe("group access tabs", () => {
           label: "Service robot",
           caveat_name: "office-hours",
         }],
-        bindings: [{
-          id: "binding-1",
-          resource: "projects/project:12",
-          resource_type: "projects/project",
-          resource_id: "12",
-          relation: "viewer",
-          caveat_name: "",
-          target_model: "projects.Project",
-          target_id: "prj_12",
-        }],
+        bindings: [],
       },
     };
   });
@@ -93,17 +81,5 @@ describe("group access tabs", () => {
       subject: "auth/user:9",
       caveat_name: "",
     });
-  });
-
-  test("links a binding through its backend-projected target model and public id", () => {
-    render(<GroupBindingsTab recordId="igr_1" />);
-    const [resource] = mocks.listProps[0]?.columns as Array<{
-      render: (row: Record<string, unknown>) => ReactNode;
-    }>;
-    const binding = (mocks.queryData as {
-      groups_by_pk: { bindings: Record<string, unknown>[] };
-    }).groups_by_pk.bindings[0]!;
-    const rendered = render(<>{resource.render(binding)}</>);
-    expect(rendered.getByRole("link").getAttribute("href")).toBe("/records/prj_12");
   });
 });

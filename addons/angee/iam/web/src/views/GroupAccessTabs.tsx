@@ -1,15 +1,14 @@
 import { useMemo, type ReactElement } from "react";
 import { useAuthoredQuery } from "@angee/refine";
 import {
-  Button, Code, MutationDialog, RowsListView, SubjectPicker, TextLink,
+  Button, Code, MutationDialog, RowsListView, SubjectPicker,
   defineRowAction, mutationDialogValueCodecs, useAuthoredResourceMutation,
-  useResourceRecordHref, useResourceRoute,
   type ListColumn, type MutationDialogField, type RecordPanelContext,
 } from "@angee/ui";
 
 import {
   IAM_GROUP_MUTATION_INVALIDATES, IamAddGroupMember, IamGroupAccess, IamRemoveGroupMember,
-  type IAMGroupBinding, type IAMGroupMember,
+  type IAMGroupMember,
 } from "../documents";
 import { useIamT } from "../i18n";
 
@@ -76,42 +75,5 @@ export function GroupMembersTab({ recordId }: RecordPanelContext): ReactElement 
         if (!result?.add_group_member) throw new Error(t("group.addError"));
       }}
     />}
-  />;
-}
-
-function BindingTarget({ binding }: { binding: IAMGroupBinding }): ReactElement {
-  if (!binding.target_model) return <Code truncate>{binding.resource}</Code>;
-  return <RoutedBindingTarget binding={binding} targetModel={binding.target_model} />;
-}
-
-function RoutedBindingTarget({ binding, targetModel }: {
-  binding: IAMGroupBinding;
-  targetModel: string;
-}): ReactElement {
-  const recordHref = useResourceRecordHref(targetModel);
-  const collectionHref = useResourceRoute(targetModel);
-  const href = (binding.target_id ? recordHref?.(binding.target_id) : undefined) ?? collectionHref;
-  return href
-    ? <TextLink href={href}>{binding.resource}</TextLink>
-    : <Code truncate>{binding.resource}</Code>;
-}
-
-export function GroupBindingsTab({ recordId }: RecordPanelContext): ReactElement {
-  const t = useIamT();
-  const query = useAuthoredQuery(IamGroupAccess, { id: recordId }, { models: IAM_GROUP_MUTATION_INVALIDATES });
-  const bindings = useMemo(() => query.data?.groups_by_pk?.bindings ?? [], [query.data]);
-  const columns = useMemo<readonly ListColumn<IAMGroupBinding>[]>(() => [
-    { field: "resource", header: t("group.resource"), render: (row) => <BindingTarget binding={row} /> },
-    { field: "relation", header: t("group.relation") },
-    { field: "caveat_name", header: t("group.caveat") },
-  ], [t]);
-  return <RowsListView
-    rows={bindings}
-    columns={columns}
-    fetching={query.isFetching}
-    error={query.error}
-    selectable={false}
-    scope="local"
-    emptyContent={t("group.noBindings")}
   />;
 }

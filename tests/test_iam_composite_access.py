@@ -19,6 +19,8 @@ from rebac import (
 from rebac.backends import backend
 from rebac.relationships import write_relationships
 
+from angee.base.identity import public_subject_ref
+from angee.iam.roles import principal_access
 from angee.projects.access import bind
 from tests.conftest import Backend, Drive, Folder, Vendor, _clear_model_tables, _create_missing_tables
 from tests.iam_models import Group
@@ -116,6 +118,40 @@ def test_group_membership_reaches_and_revokes_project_resource_cascade(
                 action="member",
                 resource=ObjectRef("knowledge/role", "vault_viewer"),
             ).allowed
+            access = principal_access(SubjectRef(to_object_ref(member)))
+            public_group = str(public_subject_ref(group_members))
+            assert any(
+                row.role == "knowledge/role:vault_viewer"
+                and row.source == public_group
+                and not row.direct
+                for row in access.roles
+            )
+            assert any(
+                row.resource_type == "projects/project"
+                and row.relation == "editor"
+                and row.source == public_group
+                and not row.direct
+                for row in access.grants
+            )
+            assert any(
+                row.resource_type == "projects/project"
+                and row.permission == "write"
+                and row.source.endswith("#editor")
+                and not row.direct
+                for row in access.permissions
+            )
+
+        group_access = principal_access(group_members)
+        assert any(
+            row.role == "knowledge/role:vault_viewer" and row.direct
+            for row in group_access.roles
+        )
+        assert any(
+            row.resource_type == "projects/project"
+            and row.relation == "editor"
+            and row.direct
+            for row in group_access.grants
+        )
 
         with system_context(reason="test composite revoke"):
             assert group.remove_member(str(SubjectRef(to_object_ref(person))))
@@ -127,6 +163,9 @@ def test_group_membership_reaches_and_revokes_project_resource_cascade(
                 action="member",
                 resource=to_object_ref(group),
             ).allowed
+            access = principal_access(SubjectRef(to_object_ref(former_member)))
+            assert all(row.role != "knowledge/role:vault_viewer" for row in access.roles)
+            assert all(row.resource_type != "projects/project" for row in access.grants)
             assert not project.with_actor(former_member).has_access("write")
             assert not folder.with_actor(former_member).has_access("write")
             assert not channel.with_actor(former_member).has_access("write")
