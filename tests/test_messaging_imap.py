@@ -637,7 +637,14 @@ class FakeIMAPClient:
         self.account.searches.append((self._selected, criteria))
         uids = self.account.uids(self._selected)
         if isinstance(criteria, (list, tuple)) and criteria and criteria[0] == "UID":
-            start = int(str(criteria[1]).split(":", 1)[0])
+            sequence = str(criteria[1])
+            if "," in sequence:
+                requested = {int(value) for value in sequence.split(",")}
+                return [uid for uid in uids if uid in requested]
+            if ":" not in sequence:
+                requested = int(sequence)
+                return [uid for uid in uids if uid == requested]
+            start = int(sequence.split(":", 1)[0])
             matched = [uid for uid in uids if uid >= start]
             # RFC 3501: a UID range of ``n:*`` returns the highest-UID message
             # even when every UID is below ``n``.
@@ -825,6 +832,73 @@ def test_backfill_pages_in_batches_and_sets_the_cursor(monkeypatch: pytest.Monke
     assert backend.bridge.cursor["mailboxes"]["INBOX"] == {"uidvalidity": 100, "last_uid": 3}
     assert account.logouts == 1
     assert account.logins == [("login", "ada@example.com", "pw")]
+
+
+def test_present_unanswered_uid_fails_before_cursor_advance(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A transient FETCH omission remains retryable while the UID still exists."""
+
+    account = FakeImapAccount({"INBOX": _folder(_eml(subject="A"), _eml(subject="B"))})
+    backend = _backend(monkeypatch, account)
+    original_fetch = FakeIMAPClient.fetch
+
+    def omit_second_body(self: FakeIMAPClient, uids: list[int], data: list[bytes]) -> dict[int, dict[bytes, Any]]:
+        response = original_fetch(self, uids, data)
+        if b"BODY.PEEK[]" in data:
+            response.pop(2, None)
+        return response
+
+    monkeypatch.setattr(FakeIMAPClient, "fetch", omit_second_body)
+
+    with pytest.raises(ImapError, match="still contains UID"):
+        backend.fetch_messages()
+
+    assert backend.bridge.cursor == {"mailboxes": {}}
+    assert ("INBOX", ["UID", "2"]) in account.searches
+    assert account.selects == ["INBOX"]
+
+
+def test_confirmed_expunged_uid_allows_cursor_advance(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A UID expunged after discovery does not pin the mailbox watermark forever."""
+
+    account = FakeImapAccount({"INBOX": _folder(_eml(subject="A"), _eml(subject="B"))})
+    backend = _backend(monkeypatch, account)
+    original_fetch = FakeIMAPClient.fetch
+
+    def expunge_before_fetch(self: FakeIMAPClient, uids: list[int], data: list[bytes]) -> dict[int, dict[bytes, Any]]:
+        if b"RFC822.SIZE" in data:
+            account.folders["INBOX"]["messages"].pop(2, None)
+        return original_fetch(self, uids, data)
+
+    monkeypatch.setattr(FakeIMAPClient, "fetch", expunge_before_fetch)
+
+    messages = backend.fetch_messages()
+
+    assert [message.subject for message in messages] == ["A"]
+    assert backend.bridge.cursor["mailboxes"]["INBOX"] == {"uidvalidity": 100, "last_uid": 2}
+    assert ("INBOX", ["UID", "2"]) in account.searches
+
+
+def test_unanswered_uid_confirmation_rejects_changed_epoch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Existence confirmation cannot cross into a regenerated UID namespace."""
+
+    account = FakeImapAccount({"INBOX": _folder(_eml(subject="A"), _eml(subject="B"))})
+    backend = _backend(monkeypatch, account)
+    original_fetch = FakeIMAPClient.fetch
+
+    def omit_and_change_epoch(self: FakeIMAPClient, uids: list[int], data: list[bytes]) -> dict[int, dict[bytes, Any]]:
+        response = original_fetch(self, uids, data)
+        if b"BODY.PEEK[]" in data:
+            response.pop(2, None)
+            account.folders["INBOX"]["uidvalidity"] = 200
+        return response
+
+    monkeypatch.setattr(FakeIMAPClient, "fetch", omit_and_change_epoch)
+
+    with pytest.raises(ImapError, match="changed UIDVALIDITY"):
+        backend.fetch_messages()
+
+    assert backend.bridge.cursor == {"mailboxes": {}}
+    assert account.selects == ["INBOX"]
 
 
 def test_gmail_all_mail_special_use_wins_folder_selection(monkeypatch: pytest.MonkeyPatch) -> None:
