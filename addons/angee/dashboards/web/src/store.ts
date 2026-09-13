@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { DocumentType } from "@angee/gql/console";
 import { useAuthoredMutation, useAuthoredQuery } from "@angee/refine";
+import { jsonValueFromUnknown, type JsonValue } from "@angee/ui";
 import {
   parseDashboardSnapshot,
   type DashboardCapabilities,
@@ -24,6 +25,12 @@ import {
 } from "./documents.console";
 
 const DASHBOARD_MODELS = ["dashboards.Dashboard", "dashboards.DashboardWidget"] as const;
+
+function dashboardSnapshotInput(snapshot: DashboardSaveCommand["snapshot"]): JsonValue {
+  const value = jsonValueFromUnknown(snapshot);
+  if (value === undefined) throw new TypeError("Dashboard snapshot must be a JSON value.");
+  return value;
+}
 
 function targetInput(target: DashboardTarget) {
   if (target.scope === "personal") return { scope: "PERSONAL" as const, id: target.id };
@@ -132,7 +139,7 @@ function useDashboard(target: DashboardTarget) {
     save: React.useCallback(async (command: DashboardSaveCommand) => {
       const result = await saveMutation({
         target: targetInput(command.target),
-        snapshot: command.snapshot,
+        snapshot: dashboardSnapshotInput(command.snapshot),
         persistedId: command.persistedId,
         expectedRevision: command.expectedRevision,
         declarationRevision: command.declarationRevision ?? "",
