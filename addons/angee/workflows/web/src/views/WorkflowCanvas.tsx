@@ -35,6 +35,7 @@ import {
   type GraphViewGeometry,
   type GraphViewNode,
   type GraphViewPosition,
+  type JsonValue,
   type FieldDescriptor,
   type RecordPanelContext,
 } from "@angee/ui";
@@ -767,8 +768,10 @@ function operationEffectLabel(effect: string, t: WorkflowT): string {
   switch (effect) { case "NONE": return t("canvas.effect.none"); case "READ": return t("canvas.effect.read"); case "WRITE": return t("canvas.effect.write"); case "EXTERNAL": return t("canvas.effect.external"); default: return t("canvas.effect.unknown"); }
 }
 
-function jsonObject(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? structuredClone(value) as Record<string, unknown> : {};
+function jsonObject(value: JsonValue | undefined): Record<string, JsonValue> {
+  return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value)
+    ? structuredClone(value)
+    : {};
 }
 function uniqueNodeKey(label: string, nodes: Record<string, DefinitionNode>): string {
   const base = slugify(label).slice(0, 100) || "step";

@@ -331,7 +331,7 @@ function TriggerStatus({ context }: { context: RecordToolbarContext }): React.Re
   const isSchedule = String(current.kind ?? "").toLowerCase() === "schedule";
   const preview = useAuthoredQuery(
     WorkflowSchedulePreviewDocument,
-    { config: current.config ?? {}, count: 3 },
+    { config: jsonValueFromUnknown(current.config) ?? {}, count: 3 },
     { enabled: isSchedule && current.config != null },
   );
   const blocker = typeof record?.activation_blocker === "string" ? record.activation_blocker : "";

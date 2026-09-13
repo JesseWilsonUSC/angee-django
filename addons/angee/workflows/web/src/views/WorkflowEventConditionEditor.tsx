@@ -13,7 +13,9 @@ import {
   useFormSpecFields,
   useFormViewValues,
   type FormSpecFieldDescriptor,
+  type JsonValue,
   type RecordToolbarContext,
+  jsonValueFromUnknown,
 } from "@angee/ui";
 
 import { WorkflowEventConditionDraftDocument } from "../documents.console";
@@ -25,6 +27,7 @@ type Clause = Result["clauses"][number];
 type ConditionField = Result["fields"][number];
 type Lookup = ConditionField["lookups"][number];
 type Config = Record<string, unknown> & { model?: unknown; condition?: unknown };
+type JsonObject = Readonly<Record<string, JsonValue>>;
 
 export function WorkflowEventConditionEditor({
   context,
@@ -61,8 +64,10 @@ function EventConditionDraft({
 }): React.ReactElement {
   const t = useWorkflowsT();
   const model = typeof config.model === "string" ? config.model : "";
-  const condition = isObject(config.condition) ? config.condition : {};
-  const conditionInput = Object.hasOwn(config, "condition") ? config.condition : {};
+  const condition = jsonObject(config.condition) ?? {};
+  const conditionInput = Object.hasOwn(config, "condition")
+    ? jsonValueFromUnknown(config.condition)
+    : {};
   const conditionKey = JSON.stringify(conditionInput);
   const query = useAuthoredQuery(
     WorkflowEventConditionDraftDocument,
@@ -125,7 +130,7 @@ function EventConditionDraft({
     }),
     ...blankClauses.map(({ id, clause }) => ({ kind: "blank" as const, id, clause })),
   ];
-  const write = (nextCondition: Record<string, unknown>) => {
+  const write = (nextCondition: JsonObject) => {
     locallyWritten.current = JSON.stringify(nextCondition);
     onChange({ ...config, condition: nextCondition });
   };
@@ -349,9 +354,10 @@ function ClauseEditor({
           readOnly={readOnly}
           messages={messages}
           onChange={(value) => {
+            const nextValue = jsonValueFromUnknown(value) ?? null;
             const valid = conditionValueIsValid(valueField, value);
-            onChange({ ...clause, value }, currentKey, valid);
-            if (valid) onValidate(currentKey, valueField, value);
+            onChange({ ...clause, value: nextValue }, currentKey, valid);
+            if (valid) onValidate(currentKey, valueField, nextValue);
             else onInvalidate(currentKey);
           }}
           onCommit={onCommit}
@@ -385,19 +391,25 @@ function canonicalKey(fields: readonly ConditionField[] | undefined, clause: Cla
     ?.find(({ name }) => name === clause.field)
     ?.lookups.find(({ name }) => name === clause.lookup)?.key ?? clause.field;
 }
-function conditionClauses(condition: Record<string, unknown>, fields: readonly ConditionField[]): Clause[] {
+function conditionClauses(condition: JsonObject, fields: readonly ConditionField[]): Clause[] {
   const lookups = new Map(fields.flatMap((field) => field.lookups.map((lookup) => [lookup.key, { field, lookup }] as const)));
   return Object.entries(condition).flatMap(([sourceKey, value]) => {
     const declared = lookups.get(sourceKey);
     return declared ? [{ field: declared.field.name, lookup: declared.lookup.name, value, source_key: sourceKey }] : [];
   });
 }
-function hasOpaqueConditions(condition: Record<string, unknown>, fields: readonly ConditionField[]): boolean {
+function hasOpaqueConditions(condition: JsonObject, fields: readonly ConditionField[]): boolean {
   const declared = new Set(fields.flatMap((field) => field.lookups.map((lookup) => lookup.key)));
   return Object.keys(condition).some((key) => !declared.has(key));
 }
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function jsonObject(value: unknown): JsonObject | undefined {
+  const json = jsonValueFromUnknown(value);
+  return json !== null && json !== undefined && typeof json === "object" && !Array.isArray(json)
+    ? json
+    : undefined;
 }
 function eventModel(value: unknown): string {
   return isObject(value) && typeof value.model === "string" ? value.model : "";
