@@ -52,8 +52,14 @@ describe("json widget", () => {
     expect(jsonValueFromUnknown({ nested: [true, 3, null] })).toEqual({
       nested: [true, 3, null],
     });
+    expect(jsonValueFromUnknown({
+      kept: true,
+      omitted: undefined,
+      nested: { kept: "value", omitted: undefined },
+    })).toEqual({ kept: true, nested: { kept: "value" } });
     expect(() => jsonValueFromUnknown(Number.POSITIVE_INFINITY)).toThrow();
     expect(jsonValueFromUnknown(undefined)).toBeUndefined();
+    expect(() => jsonValueFromUnknown([undefined])).toThrow();
     expect(() => jsonValueFromUnknown(new Date())).toThrow();
     expect(() => jsonValueFromUnknown(new Map())).toThrow();
   });

@@ -35,6 +35,12 @@ vi.mock("@angee/refine", async (importOriginal) => {
   };
 });
 
+vi.mock("@angee/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@angee/ui")>();
+  const { ApprovalTestJsonEditor } = await import("./approval-test-editor");
+  return { ...actual, JsonEditor: ApprovalTestJsonEditor };
+});
+
 import { WorkflowApprovals } from "./WorkflowApprovals";
 
 const field = (name: string, scalar = "String") => ({
@@ -88,7 +94,12 @@ test("the native scoped collection opens only the selected Run decision task", a
   await waitFor(() => expect(provider.getList).toHaveBeenCalledWith(expect.objectContaining({
     pagination: expect.objectContaining({ pageSize: 20 }),
     meta: expect.objectContaining({ gqlVariables: expect.objectContaining({
-      where: { step_run__run: { _eq: "run-1" }, verdict: { _eq: "PENDING" } },
+      where: {
+        _and: [
+          { step_run__run: { _eq: "run-1" } },
+          { verdict: { _eq: "PENDING" } },
+        ],
+      },
     }) }),
   })));
   fireEvent.click(await screen.findByText("review"));
