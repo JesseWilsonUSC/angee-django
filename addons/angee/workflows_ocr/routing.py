@@ -174,7 +174,8 @@ def _acquire_native_parts(
             raise
         except (RuntimeError, ValueError) as error:
             raise DocumentPipelineError(
-                f"Native document acquisition failed ({type(error).__name__}).", parts=parts
+                f"Native document acquisition failed ({type(error).__name__}).", parts=parts,
+                stage="acquisition", code=type(error).__name__,
             ) from None
     return AcquiredDocument(tuple(parts), tuple(recognition_pages))
 
@@ -191,18 +192,27 @@ def recognize_pages(
     """Recognize exactly the supplied scanned pages and retain their plain text."""
 
     if pages and model is None:
-        raise DocumentPipelineError("Scanned pages require a recognition model.", parts=acquired_parts)
+        raise DocumentPipelineError(
+            "Scanned pages require a recognition model.", parts=acquired_parts,
+            stage="recognition_config", code="model_missing",
+        )
     started = time.monotonic()
     parts = []
     for page in pages:
         remaining = timeout - (time.monotonic() - started)
         if remaining <= 0:
-            raise DocumentPipelineError("Text recognition timed out.", parts=(*acquired_parts, *parts))
+            raise DocumentPipelineError(
+                "Text recognition timed out.", parts=(*acquired_parts, *parts),
+                stage="recognition_request", code="timeout",
+            )
         try:
             result = engine.recognize_page(page, model=model, config=config, timeout=remaining)
+        except DocumentPipelineError:
+            raise
         except (RuntimeError, TimeoutError, ValueError) as error:
             raise DocumentPipelineError(
-                f"Text recognition failed ({type(error).__name__}).", parts=(*acquired_parts, *parts)
+                f"Text recognition failed ({type(error).__name__}).", parts=(*acquired_parts, *parts),
+                stage="recognition_request", code=type(error).__name__,
             ) from None
         text = result.text.strip()
         parts.append(
