@@ -271,6 +271,7 @@ def test_pending_changes_is_unknown_when_project_yaml_is_not_effective(settings,
     """An override is not falsely treated as either pending or settled."""
 
     from angee.platform import models as platform_models
+
     settings.ANGEE_PROJECT_YAML_SETTINGS = frozenset()
     monkeypatch.setattr(platform_models.composed, "root_app_names", lambda: frozenset({"example.demo"}))
     monkeypatch.setattr(
@@ -280,6 +281,30 @@ def test_pending_changes_is_unknown_when_project_yaml_is_not_effective(settings,
     )
 
     assert apps.get_model("platform", "Addon").objects.pending_changes() is None
+
+
+@pytest.mark.parametrize(
+    ("desired", "loaded", "expected"),
+    [
+        (("example.demo",), frozenset({"example.demo"}), False),
+        (("example.demo", "example.added"), frozenset({"example.demo"}), True),
+        (("example.demo",), frozenset({"example.demo", "example.removed"}), True),
+    ],
+)
+def test_pending_changes_compares_authored_roots_only(
+    tmp_path, settings, monkeypatch, desired, loaded, expected
+) -> None:
+    """Injected runtime defaults cannot create drift; actual root edits still do."""
+
+    from angee.platform import models as platform_models
+
+    roots = "\n".join(f"  - {name}" for name in desired)
+    (tmp_path / "settings.yaml").write_text(f"INSTALLED_APPS:\n{roots}\n", encoding="utf-8")
+    settings.BASE_DIR = tmp_path
+    settings.ANGEE_PROJECT_YAML_SETTINGS = frozenset({"INSTALLED_APPS"})
+    monkeypatch.setattr(platform_models.composed, "root_app_names", lambda: loaded)
+
+    assert apps.get_model("platform", "Addon").objects.pending_changes() is expected
 
 
 def test_registry_facts_flags_a_queued_uninstall_for_a_composed_root(db, monkeypatch) -> None:
