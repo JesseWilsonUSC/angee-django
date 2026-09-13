@@ -13,6 +13,7 @@ from importlib.machinery import ModuleSpec
 from types import SimpleNamespace
 
 import pytest
+from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
 from hatch_angee import AddonManifest
 
@@ -176,6 +177,7 @@ def test_registry_facts_full_row_for_enabled_and_zeroed_for_available(db) -> Non
 
     from angee.platform.models import AddonManager
 
+    Addon = apps.get_model("platform", "Addon")
     facts = AddonManager._registry_facts()
     row_keys = {
         "label",
@@ -223,7 +225,7 @@ def test_registry_facts_pending_reflects_desired_settings_roots(db) -> None:
     available addon listed there but not yet composed is the board's "to install".
     """
 
-    from angee.platform.models import Addon, AddonManager
+    from angee.platform.models import AddonManager
 
     facts = AddonManager._registry_facts(desired=frozenset({"angee.knowledge_graph_pgvector"}))
 
@@ -235,8 +237,10 @@ def test_registry_facts_pending_reflects_desired_settings_roots(db) -> None:
 def test_reconcile_normalizes_authored_app_config_roots(db, monkeypatch) -> None:
     """Catalogue facts compare canonical addon names while drift keeps authored roots."""
 
+    from rebac import system_context
+
     from angee.platform import models as platform_models
-    from angee.platform.models import Addon, AddonManager
+    from angee.platform.models import AddonManager
 
     captured = {}
 
@@ -255,9 +259,10 @@ def test_reconcile_normalizes_authored_app_config_roots(db, monkeypatch) -> None
         staticmethod(registry_facts),
     )
 
-    Addon.objects.reconcile_from_registry(
-        "default", desired=frozenset({"example.demo.apps.DemoConfig"})
-    )
+    with system_context(reason="test.platform.reconcile-app-config-root"):
+        apps.get_model("platform", "Addon").objects.reconcile_from_registry(
+            "default", desired=frozenset({"example.demo.apps.DemoConfig"})
+        )
 
     assert captured["desired"] == frozenset({"example.demo"})
 
@@ -266,8 +271,6 @@ def test_pending_changes_is_unknown_when_project_yaml_is_not_effective(settings,
     """An override is not falsely treated as either pending or settled."""
 
     from angee.platform import models as platform_models
-    from angee.platform.models import Addon
-
     settings.ANGEE_PROJECT_YAML_SETTINGS = frozenset()
     monkeypatch.setattr(platform_models.composed, "root_app_names", lambda: frozenset({"example.demo"}))
     monkeypatch.setattr(
@@ -276,7 +279,7 @@ def test_pending_changes_is_unknown_when_project_yaml_is_not_effective(settings,
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("catalogue read")),
     )
 
-    assert Addon.objects.pending_changes() is None
+    assert apps.get_model("platform", "Addon").objects.pending_changes() is None
 
 
 def test_registry_facts_flags_a_queued_uninstall_for_a_composed_root(db, monkeypatch) -> None:

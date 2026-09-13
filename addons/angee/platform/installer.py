@@ -308,7 +308,16 @@ class AddonInstaller:
         data, apps = self._load_apps(expected_text=expected_text)
         if tuple(apps) == names:
             return
-        apps[:] = names
+        desired = set(names)
+        for index in range(len(apps) - 1, -1, -1):
+            if apps[index] not in desired:
+                del apps[index]
+        for index, name in enumerate(names):
+            if index < len(apps) and apps[index] == name:
+                continue
+            if name in apps:
+                raise StaleAddonPreviewError("The addon preview is stale; review the changes again.")
+            apps.insert(index, name)
         self._write(data)
 
     def _load_apps(self, *, expected_text: str | None = None) -> tuple[Any, MutableSequence[Any]]:

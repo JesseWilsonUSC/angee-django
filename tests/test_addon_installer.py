@@ -59,6 +59,21 @@ def test_local_install_appends_and_preserves_comments(tmp_path: Path, settings: 
     assert text.index("angee.platform") < text.index("example.notes") < text.index("example.demo")  # author order
 
 
+def test_snapshot_then_apply_preserves_comments(tmp_path: Path, settings: Any) -> None:
+    """A preview parse cannot consume comment state needed by the confirmed edit."""
+
+    installer = _local_installer(tmp_path, settings)
+    snapshot = installer.installed_apps_snapshot()
+
+    assert snapshot is not None
+    installer.apply_app_names((*snapshot.names, "example.demo"), expected_text=snapshot.text)
+
+    text = (tmp_path / "settings.yaml").read_text(encoding="utf-8")
+    assert "# Project composition facts" in text
+    assert "  - angee.platform  # the console host" in text
+    assert "  - example.demo" in text
+
+
 def test_local_install_preserves_sequence_indentation(tmp_path: Path, settings: Any) -> None:
     """The ruamel editor keeps the project's ``  - item`` indentation, not just comments.
 
