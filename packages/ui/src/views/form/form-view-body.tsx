@@ -284,6 +284,33 @@ export function FormViewOverview({
       />
     );
   };
+  const bodySection = currentBodyField ? (
+    <section className="grid gap-2">
+      {currentBodyField.label ? (
+        <SectionEyebrow as="span">{currentBodyField.label}</SectionEyebrow>
+      ) : null}
+      <Controller
+        control={form.control}
+        name={currentBodyField.name}
+        render={({ field: controller, fieldState }) => (
+          <BodyFieldControl
+            controlRef={controller.ref}
+            field={currentBodyField}
+            value={controller.value}
+            readOnly={fieldReadOnly(currentBodyField)}
+            errors={fieldState.error ? [fieldState.error] : []}
+            onCommit={() => commitFieldInteraction(currentBodyField.name)}
+            onChange={(next) => {
+              startFieldInteraction(currentBodyField.name);
+              clearServerFieldError(currentBodyField.name);
+              controller.onChange(next);
+              afterFieldChange(currentBodyField, next);
+            }}
+          />
+        )}
+      />
+    </section>
+  ) : null;
   // Under `sidebar` the status display and the lifecycle verbs live on the
   // column; the header omits the strip and the action bar keeps the rest.
   const statusField = layout === "sidebar" ? surface.statusField : undefined;
@@ -297,9 +324,13 @@ export function FormViewOverview({
       // pay for it on first read.
       const properties = list.filter((section) => section.placement === "properties");
       const main = list.filter((section) => section.placement !== "properties");
+      // The description leads the main column, as the first thing read.
       return (
         <div className="form-sidebar-grid">
-          <div className="grid min-w-0 gap-6">{renderTabbed(main)}</div>
+          <div className="grid min-w-0 gap-6">
+            {bodySection}
+            {renderTabbed(main)}
+          </div>
           {properties.length > 0 || statusField || columnActions.length > 0 ? (
             <aside className="grid min-w-0 gap-4">
               {statusField ? (
@@ -403,33 +434,7 @@ export function FormViewOverview({
           />
         </section>
       ) : null}
-      {currentBodyField ? (
-        <section className="grid gap-2">
-          {currentBodyField.label ? (
-            <SectionEyebrow as="span">{currentBodyField.label}</SectionEyebrow>
-          ) : null}
-          <Controller
-            control={form.control}
-            name={currentBodyField.name}
-            render={({ field: controller, fieldState }) => (
-              <BodyFieldControl
-                controlRef={controller.ref}
-                field={currentBodyField}
-                value={controller.value}
-                readOnly={fieldReadOnly(currentBodyField)}
-                errors={fieldState.error ? [fieldState.error] : []}
-                onCommit={() => commitFieldInteraction(currentBodyField.name)}
-                onChange={(next) => {
-                  startFieldInteraction(currentBodyField.name);
-                  clearServerFieldError(currentBodyField.name);
-                  controller.onChange(next);
-                  afterFieldChange(currentBodyField, next);
-                }}
-              />
-            )}
-          />
-        </section>
-      ) : null}
+      {layout === "sidebar" ? null : bodySection}
     </>
   );
 }
