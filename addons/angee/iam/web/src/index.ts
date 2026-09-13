@@ -29,16 +29,15 @@ export {
   usePrincipalAccessRecordTab,
 } from "./PrincipalAccess";
 
-// IAM contributes its grouped Settings tree, including the inbound OIDC sign-in
+// IAM is a first-class app-rail destination, including the inbound OIDC sign-in
 // provider admin; a route-less parent inherits its first child's target.
 const identityMenu: readonly BaseMenuItem[] = [
   {
     // Route-less app root: the rail icon inherits its target from the first
     // child (Overview), so `iam.overview` is referenced by exactly one menu item.
     id: "iam",
-    label: "Permissions",
+    label: "IAM",
     icon: "auth",
-    group: "platform",
     children: [
       { id: "iam.overview", label: "Overview", route: "iam.overview", icon: "home" },
       {
