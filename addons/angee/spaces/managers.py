@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from angee.base.fields import enum_member_for
-from angee.base.mixins import HierarchyQuerySet
-from angee.base.models import AngeeManager, AngeeQuerySet
-from angee.base.scoping import bind_actor
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from rebac import PermissionDenied
 
+from angee.base.fields import enum_member_for
+from angee.base.mixins import HierarchyQuerySet
+from angee.base.models import AngeeManager, AngeeQuerySet
+from angee.base.scoping import bind_actor
 from angee.parties.mixins import LinkSource
 
 

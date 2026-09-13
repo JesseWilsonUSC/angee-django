@@ -106,7 +106,7 @@ def extract(
     document_claims: dict[str, list[dict[str, Any]]] = {}
     document_metadata: dict[str, Any] = {}
     used_model_roles: tuple[str, ...] = ()
-    retained_parts = ()
+    retained_parts: tuple[DocumentPart, ...] = ()
     result: dict[str, Any] = {}
     conflicts: dict[str, list[Any]] = {}
     status = "succeeded"
@@ -329,9 +329,12 @@ def _document_sources(files: Sequence[Any], message_parts: Sequence[Any]) -> tup
 
 
 def _source_fact(source: DocumentSource) -> dict[str, Any]:
-    identity = (
-        {"file": str(source.file.sqid)} if source.file is not None else {"message_part": str(source.message_part.sqid)}
-    )
+    if source.file is not None:
+        identity = {"file": str(source.file.sqid)}
+    elif source.message_part is not None:
+        identity = {"message_part": str(source.message_part.sqid)}
+    else:
+        raise ValueError("Document source identity unavailable.")
     return {"position": source.source_position, **identity, "content_hash": source.content_hash}
 
 

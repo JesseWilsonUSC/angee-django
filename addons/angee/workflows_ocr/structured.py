@@ -156,6 +156,7 @@ def _payload_source(
     attachment_name: str | None,
     limits: StructuredLimits,
 ) -> StructuredSource | None:
+    kind: StructuredKind
     stripped = data.lstrip()
     lower_name = filename.lower()
     lower_media_type = media_type.lower()

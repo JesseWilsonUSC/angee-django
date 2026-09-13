@@ -88,7 +88,7 @@ class PartyType(AuthoredRefMixin, AngeeNode):
     def concrete_kind(self) -> str | None:
         """Return the native MTI subtype used for canonical Party navigation."""
 
-        return Party.concrete_kind.fget(self)  # type: ignore[union-attr]
+        return Party.concrete_kind.fget(self)
 
     handles: list["HandleType"]
     party_handles: list["PartyHandleType"]

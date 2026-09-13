@@ -20,7 +20,7 @@ class ImmutableEvidenceQuerySet(AngeeQuerySet[Any]):
         raise ValueError("Extraction evidence is retained and cannot be deleted through the ORM.")
 
 
-ImmutableEvidenceManager = AngeeManager.from_queryset(ImmutableEvidenceQuerySet)
+ImmutableEvidenceManager: Any = AngeeManager.from_queryset(ImmutableEvidenceQuerySet)
 
 
 class ExtractionManager(ImmutableEvidenceManager):

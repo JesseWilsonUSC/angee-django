@@ -19,6 +19,8 @@ install = [
 name = "agent_session_resources"
 app_label = "workflows"
 module = "runtime_migrations.agent_session_resources"
+# Existing copies differ only by the empty operations list's type annotation.
+compatible_source_sha256 = ["bcebd73a5480658fb19f2cd2ce40117fc790d061e57e78a919e4ff71277a51ca"]
 
 [[migrations]]
 name = "agent_session_identity"

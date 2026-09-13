@@ -16,9 +16,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from angee.fs import GeneratedTree
 from django.conf import settings
 
+from angee.fs import GeneratedTree
 from angee.graphql.schema import GraphQLSchemas
 
 _SDL_SUFFIX = ".graphql"

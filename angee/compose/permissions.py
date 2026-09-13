@@ -339,6 +339,7 @@ def apply_schema_paths(
     """
 
     for app_config in app_configs:
+        effective: str | None
         source = declared_schema_path(app_config)
         merged = merged_schema_relpath(app_config.name)
         if merged in sources:

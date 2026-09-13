@@ -169,7 +169,7 @@ class WorkActionMutation:
         self,
         info: strawberry.Info,
         task: PublicID,
-        reason: DroppedReason,  # type: ignore[valid-type]
+        reason: DroppedReason,
     ) -> ActionResult:
         """Decline one writable triage task for a closed reason."""
 
@@ -355,7 +355,7 @@ _CYCLE_RESOURCE = hasura_model_resource(
 
 _RESOURCE_TYPES = [*_QUEUE_RESOURCE.types, *_STAGE_RESOURCE.types, *_CYCLE_RESOURCE.types]
 
-_WORK_SCHEMA_BUCKET = {
+_WORK_SCHEMA_BUCKET: dict[str, list[Any]] = {
     "query": [_QUEUE_RESOURCE.query, _STAGE_RESOURCE.query, _CYCLE_RESOURCE.query],
     "mutation": [
         WorkActionMutation,

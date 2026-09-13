@@ -112,4 +112,5 @@ def test_compose_has_no_rebac_permission_renderer() -> None:
     """Per-addon REBAC schemas stay with their owning apps."""
 
     assert not (COMPOSE / "rebac.py").exists()
-# Pre-consolidation base-addon side of pre-90bdd58b tests/test_layering.py; kept separate because it guards addon dependency direction.
+# Pre-consolidation base-addon side of pre-90bdd58b tests/test_layering.py;
+# kept separate because it guards addon dependency direction.

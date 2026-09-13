@@ -204,6 +204,7 @@ def test_iam_auth_throttling_comes_from_axes(tmp_path: Path) -> None:
         "angee.iam.auth.ModelBackend",
     ]
     assert settings["AUTHENTICATION_BACKENDS"][0] == "axes.backends.AxesStandaloneBackend"
+    assert "rebac.W001" in settings["SILENCED_SYSTEM_CHECKS"]
 
 
 def test_addons_are_sorted_by_declared_dependencies(tmp_path: Path) -> None:

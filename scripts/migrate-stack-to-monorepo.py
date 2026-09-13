@@ -94,7 +94,15 @@ def main() -> int:
 
     for note in notes:
         print(f"  - {note}")
-    diff = list(difflib.unified_diff(before.splitlines(), after.splitlines(), "angee.yaml", "angee.yaml (migrated)", lineterm=""))
+    diff = list(
+        difflib.unified_diff(
+            before.splitlines(),
+            after.splitlines(),
+            "angee.yaml",
+            "angee.yaml (migrated)",
+            lineterm="",
+        )
+    )
     if not any(n.startswith(("removed", "added", "framework", "workspace ")) for n in notes):
         print("nothing to migrate")
         return 0

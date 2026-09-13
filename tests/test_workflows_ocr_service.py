@@ -29,6 +29,7 @@ from rebac import (
     write_relationships,
 )
 
+from angee.messaging.backends import ParsedMessage, ParsedPart
 from angee.workflows.attempts import RecoveryMode
 from angee.workflows_ocr.engines import DocumentPart, DocumentPipelineError, PageImage, PageResult
 from angee.workflows_ocr.routing import (
@@ -40,7 +41,6 @@ from angee.workflows_ocr.routing import (
 from angee.workflows_ocr.service import _document_sources, _merge, extract, reextract
 from angee.workflows_ocr.steps import OcrExtractStepImpl
 from angee.workflows_ocr_glm.engine import GlmOllamaEngine
-from angee.messaging.backends import ParsedMessage, ParsedPart
 from tests.conftest import _clear_model_tables, _create_missing_tables, make_integration
 from tests.ocr_engines import FakeOcrEngine
 from tests.ocr_models import OCR_MODELS, Extraction, ExtractionPage, ExtractionSource

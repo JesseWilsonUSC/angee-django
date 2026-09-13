@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from django.db import models
@@ -259,15 +259,16 @@ class InboxConversationGroups(InboxGroups):
 
     def page(self, *, page: int = 1, size: int = 25) -> InboxGroupPage:
         result = super().page(page=page, size=size)
+        keys = [int(cast(str, row.value)) for row in result.rows]
         titles = dict(
-            self.inbox.threads.filter(pk__in=[int(row.value) for row in result.rows if int(row.value) > 0])
+            self.inbox.threads.filter(pk__in=[key for key in keys if key > 0])
             .order_by().values_list(
                 "pk", Coalesce("title__text", Value("Conversation"), output_field=models.TextField())
             )
         )
         rows = []
         for row in result.rows:
-            key = int(row.value)
+            key = int(cast(str, row.value))
             owner = self.inbox.threads.model if key > 0 else self.inbox.messages.model
             kind = "thread" if key > 0 else "message"
             rows.append(replace(

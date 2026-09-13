@@ -6,13 +6,13 @@ from datetime import date
 from typing import Annotated, cast
 
 import strawberry
+import strawberry.experimental.pydantic
 from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
 from django.views.decorators.debug import sensitive_variables
 from graphql import GraphQLError
 
 from angee.graphql.actions import ActionResult, action_target, authorized_action_target
-from angee.graphql.data.pydantic_resource import pydantic_node
 from angee.graphql.ids import PublicID
 from angee.iam.permissions import ADMIN_PERMISSION_CLASSES, session_user
 from angee.messaging.schema import ChannelType
@@ -24,9 +24,21 @@ from angee.messaging_integrate_imap.connect import (
 )
 
 Channel = apps.get_model("messaging", "Channel")
-ImapSampleMessageType = pydantic_node(ImapSampleMessage, name="ImapSampleMessage")
-ImapSamplePreviewType = pydantic_node(ImapSamplePreview, name="ImapSamplePreview")
-ImapSampleImportType = pydantic_node(ImapSampleImport, name="ImapSampleImport")
+
+
+@strawberry.experimental.pydantic.type(model=ImapSampleMessage, all_fields=True, name="ImapSampleMessage")
+class ImapSampleMessageType:
+    pass
+
+
+@strawberry.experimental.pydantic.type(model=ImapSamplePreview, all_fields=True, name="ImapSamplePreview")
+class ImapSamplePreviewType:
+    pass
+
+
+@strawberry.experimental.pydantic.type(model=ImapSampleImport, all_fields=True, name="ImapSampleImport")
+class ImapSampleImportType:
+    pass
 
 
 @strawberry.type
