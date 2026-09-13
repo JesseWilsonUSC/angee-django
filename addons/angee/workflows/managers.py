@@ -3735,6 +3735,17 @@ class StepAttemptManager(AngeeManager.from_queryset(StepAttemptQuerySet)):  # ty
         elif result.kind == AttemptResultKind.SUSPEND:
             if result.requested_until is not None:
                 raise ValidationError({"result": "Suspension cannot carry a timer deadline."})
+        elif result.kind == AttemptResultKind.ERROR:
+            if (
+                not result.error
+                or result.output_present
+                or result.requested_until is not None
+                or result.decisions
+                or result.waiting_kind
+            ):
+                raise ValidationError(
+                    {"result": "Errors require an error, cannot carry output, timers, or decisions."}
+                )
         elif wait_facts or result.waiting_kind:
             raise ValidationError({"result": "This result kind cannot carry wait or decision facts."})
         if result.checkpoint_present and result.checkpoint is not None and not isinstance(result.checkpoint, dict):
