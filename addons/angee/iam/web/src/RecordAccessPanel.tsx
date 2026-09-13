@@ -2,13 +2,12 @@ import { useModelMetadata } from "@angee/metadata";
 import { extractActionOutcome, useAuthoredMutation, useAuthoredQuery } from "@angee/refine";
 import {
   ActionFormDialog, Button, ErrorBanner, RowsListView, defineRowAction,
-  type ActionDescriptor,
+  titleCase, type ActionDescriptor,
 } from "@angee/ui";
 import { useMemo, useState, type ReactElement } from "react";
 
 import { useAssignmentSubjects } from "./assignment-subjects";
 import { IamGrantRecordAccess, IamRecordAccess, IamRevokeRecordAccess } from "./record-access/documents";
-import { titleLabel } from "./identity-labels";
 import { useIamT } from "./i18n";
 
 /** Edit the target owner's declared direct grants, using IAM's typed recipients. */
@@ -42,7 +41,7 @@ function TargetRecordAccessPanel({ targetType, recordId, recordLabel, resource }
       { name: "subject", widget: "select", label: t("recordAccess.recipient"), options: subjects.options },
       { name: "relation", widget: "select", label: t("recordAccess.role"),
         options: (query.data?.record_access_options ?? []).map((option) => ({
-          value: option.relation, label: titleLabel(option.relation),
+          value: option.relation, label: titleCase(option.relation),
         })) },
     ],
     submit: async (values) => {
@@ -62,7 +61,7 @@ function TargetRecordAccessPanel({ targetType, recordId, recordLabel, resource }
     <RowsListView scope="local" rows={rows} fetching={query.isFetching} error={query.error}
       columns={[
         { field: "label", header: t("recordAccess.recipient") },
-        { field: "relation", header: t("recordAccess.role"), render: (row) => titleLabel(row.relation) },
+        { field: "relation", header: t("recordAccess.role"), render: (row) => titleCase(row.relation) },
       ]}
       toolbarActions={<Button type="button" size="sm" onClick={() => setOpen(true)}
         disabled={!query.data?.record_access_options.length || subjects.isFetching || Boolean(subjects.error)}>
@@ -80,7 +79,7 @@ function TargetRecordAccessPanel({ targetType, recordId, recordLabel, resource }
         toast: { title: () => t("recordAccess.revokeTitle"), description: () => t("recordAccess.failed") },
         confirm: { title: () => t("recordAccess.revokeTitle"),
           confirm: () => t("revoke"),
-          body: (row: (typeof rows)[number]) => t("recordAccess.revokeBody", { role: titleLabel(row.relation), recipient: row.label, target: recordLabel }) },
+          body: (row: (typeof rows)[number]) => t("recordAccess.revokeBody", { role: titleCase(row.relation), recipient: row.label, target: recordLabel }) },
       })]} />
     {open ? <ActionFormDialog action={action} context={{ record: { id: recordId, display_name: recordLabel }, selectedIds: [] }} open onOpenChange={setOpen} /> : null}
   </div>;
