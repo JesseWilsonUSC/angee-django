@@ -44,7 +44,40 @@ def _write_module(path: Path, text: str = "") -> None:
 def test_live_tool_backing_targets_only_complete_historical_state() -> None:
     """The tool cutover applies once and rejects a partially-added identity."""
 
-    current = ProjectState.from_apps(apps)
+    current = ProjectState()
+    current.add_model(
+        ModelState(
+            "agents",
+            "Agent",
+            [
+                ("id", models.AutoField(primary_key=True)),
+                ("user", models.IntegerField()),
+                ("mcp_tools", models.IntegerField()),
+                ("mcp_servers", models.IntegerField()),
+            ],
+        )
+    )
+    current.add_model(
+        ModelState(
+            "agents",
+            "MCPServer",
+            [
+                ("id", models.AutoField(primary_key=True)),
+            ],
+        )
+    )
+    current.add_model(
+        ModelState(
+            "agents",
+            "MCPTool",
+            [
+                ("id", models.AutoField(primary_key=True)),
+                ("server", models.IntegerField()),
+                ("name", models.CharField(max_length=255)),
+                ("grant_id", models.CharField(editable=False, max_length=260, unique=True)),
+            ],
+        )
+    )
     assert live_tool_applies(current) is False
 
     historical = current.clone()
@@ -67,7 +100,29 @@ def test_live_tool_backing_targets_only_complete_historical_state() -> None:
 def test_live_spaces_backing_waits_for_thread_groups_and_applies_once() -> None:
     """The spaces cutover follows the thread M2M transition and removes its snapshot."""
 
-    current = ProjectState.from_apps(apps)
+    current = ProjectState()
+    current.add_model(
+        ModelState(
+            "spaces",
+            "Membership",
+            [
+                ("id", models.AutoField(primary_key=True)),
+                ("group", models.IntegerField()),
+                ("party", models.IntegerField()),
+                ("role", models.CharField(max_length=32)),
+            ],
+        )
+    )
+    current.add_model(
+        ModelState(
+            "messaging",
+            "Thread",
+            [
+                ("id", models.AutoField(primary_key=True)),
+                ("groups", models.ManyToManyField("spaces.Group")),
+            ],
+        )
+    )
     assert live_spaces_applies(current) is False
 
     historical = current.clone()
@@ -128,7 +183,6 @@ def test_vcs_state_delete_waits_for_non_moved_integrate_consumer() -> None:
 def test_vcs_permission_schema_adoption_preserves_provenance_target() -> None:
     """The append-only adoption changes only the package ledger identity."""
 
-    from django.apps import apps
     from django.contrib.contenttypes.models import ContentType
     from django.utils import timezone
     from rebac.models import PackageManagedRecord, SchemaDefinition
@@ -161,7 +215,6 @@ def test_vcs_permission_schema_adoption_preserves_provenance_target() -> None:
 def test_vcs_permission_schema_adoption_rejects_destination_collision() -> None:
     """A pre-existing destination owner fails before any source record moves."""
 
-    from django.apps import apps
     from django.contrib.contenttypes.models import ContentType
     from django.utils import timezone
     from rebac.models import PackageManagedRecord, SchemaDefinition
@@ -200,26 +253,29 @@ def test_vcs_permission_schema_adoption_rejects_destination_collision() -> None:
 def test_vcs_permission_schema_adoption_survives_reconcile_and_sync() -> None:
     """The next native reconcile/sync retains schema identities and live grants."""
 
-    from django.apps import apps
     from django.core.management import call_command
     from rebac.models import PackageManagedRecord, SchemaDefinition, active_relationship_model
 
     call_command("rebac", "sync", verbosity=0)
     definition = SchemaDefinition.objects.get(resource_type="integrate_vcs/source")
-    records = list(
-        PackageManagedRecord.objects.filter(
-            package=NEW_PACKAGE,
-            external_id__startswith="definition:integrate_vcs/source",
+    records = (
+        list(
+            PackageManagedRecord.objects.filter(
+                package=NEW_PACKAGE,
+                external_id__startswith="definition:integrate_vcs/source",
+            )
         )
-    ) + list(
-        PackageManagedRecord.objects.filter(
-            package=NEW_PACKAGE,
-            external_id__startswith="relation:integrate_vcs/source#",
+        + list(
+            PackageManagedRecord.objects.filter(
+                package=NEW_PACKAGE,
+                external_id__startswith="relation:integrate_vcs/source#",
+            )
         )
-    ) + list(
-        PackageManagedRecord.objects.filter(
-            package=NEW_PACKAGE,
-            external_id__startswith="permission:integrate_vcs/source#",
+        + list(
+            PackageManagedRecord.objects.filter(
+                package=NEW_PACKAGE,
+                external_id__startswith="permission:integrate_vcs/source#",
+            )
         )
     )
     before = {
@@ -268,13 +324,17 @@ def test_vcs_permission_schema_adoption_survives_reconcile_and_sync() -> None:
         )
         for record in after_records
     } == before
-    assert active_relationship_model().objects.filter(
-        resource_type="integrate_vcs/source",
-        resource_id="source-proof",
-        relation="proof",
-        subject_type="angee/role",
-        subject_id="admin",
-    ).exists()
+    assert (
+        active_relationship_model()
+        .objects.filter(
+            resource_type="integrate_vcs/source",
+            resource_id="source-proof",
+            relation="proof",
+            subject_type="angee/role",
+            subject_id="admin",
+        )
+        .exists()
+    )
 
 
 @pytest.fixture
@@ -484,7 +544,9 @@ class Migration(migrations.Migration):
     adopted.options["db_table"] = "resources_legacy"
     current.add_model(adopted)
     current.alter_field(
-        "resources", "consumer", "legacy",
+        "resources",
+        "consumer",
+        "legacy",
         models.ForeignKey("integrate_vcs.Legacy", on_delete=models.CASCADE),
         preserve_default=True,
     )
@@ -493,7 +555,9 @@ class Migration(migrations.Migration):
     if consumer_cutover:
         written = materializer.materialize(apps=current.apps)
         assert [path.name for path in written] == [
-            "0001_adopt_legacy.py", "0003_consumer_cutover.py", "0004_delete_legacy.py",
+            "0001_adopt_legacy.py",
+            "0003_consumer_cutover.py",
+            "0004_delete_legacy.py",
         ]
         assert materializer.materialize(apps=current.apps) == ()
         materializer.check()
@@ -710,12 +774,14 @@ def test_declared_compatible_released_source_remains_immutable(runtime_migration
     source_path.write_text(source_path.read_text(encoding="utf-8") + "# current source\n", encoding="utf-8")
     write_addon_manifest(
         addon,
-        migrations=(dict(
-            name="rename_legacy",
-            app_label="resources",
-            module="runtime_migrations.rename_legacy",
-            compatible_source_sha256=[released_digest],
-        ),),
+        migrations=(
+            dict(
+                name="rename_legacy",
+                app_label="resources",
+                module="runtime_migrations.rename_legacy",
+                compatible_source_sha256=[released_digest],
+            ),
+        ),
     )
 
     assert materializer.materialize() == ()
@@ -729,17 +795,20 @@ def test_declared_compatible_released_source_remains_immutable(runtime_migration
 
 @pytest.mark.parametrize("digest", ["not-a-digest", "A" * 64, 7])
 def test_compatible_source_digest_requires_exact_lowercase_sha256(
-    runtime_migration_probe, digest: object,
+    runtime_migration_probe,
+    digest: object,
 ) -> None:
     materializer, addon, _, _, _ = runtime_migration_probe
     write_addon_manifest(
         addon,
-        migrations=(dict(
-            name="rename_legacy",
-            app_label="resources",
-            module="runtime_migrations.rename_legacy",
-            compatible_source_sha256=[digest],
-        ),),
+        migrations=(
+            dict(
+                name="rename_legacy",
+                app_label="resources",
+                module="runtime_migrations.rename_legacy",
+                compatible_source_sha256=[digest],
+            ),
+        ),
     )
 
     with pytest.raises(RuntimeError, match="compatible_source_sha256"):
@@ -1026,12 +1095,8 @@ def test_agent_session_identity_migration_waits_for_complete_identity_state() ->
     """The bridge data migration becomes applicable only after both owning apps exist."""
 
     identity = importlib.import_module("angee.workflows.runtime_migrations.workflow_identity")
-    bridge = importlib.import_module(
-        "angee.workflows_agents.runtime_migrations.agent_session_identity"
-    )
-    resources = importlib.import_module(
-        "angee.workflows_agents.runtime_migrations.agent_session_resources"
-    )
+    bridge = importlib.import_module("angee.workflows_agents.runtime_migrations.agent_session_identity")
+    resources = importlib.import_module("angee.workflows_agents.runtime_migrations.agent_session_resources")
     assert bridge.Migration.dependencies == []
     assert resources.Migration.dependencies == [("resources", "__latest__")]
     legacy = ProjectState()
@@ -1042,12 +1107,8 @@ def test_agent_session_identity_migration_waits_for_complete_identity_state() ->
 
     migrated = identity.Migration("probe", "workflows").mutate_state(legacy)
     assert bridge.applies(migrated) is False
-    migrated.add_model(
-        ModelState("agents", "AgentSession", [("id", models.AutoField(primary_key=True))])
-    )
-    migrated.add_model(
-        ModelState("resources", "Resource", [("id", models.AutoField(primary_key=True))])
-    )
+    migrated.add_model(ModelState("agents", "AgentSession", [("id", models.AutoField(primary_key=True))]))
+    migrated.add_model(ModelState("resources", "Resource", [("id", models.AutoField(primary_key=True))]))
     assert bridge.applies(migrated) is True
     assert resources.applies(migrated) is True
 
@@ -1063,10 +1124,16 @@ def test_decision_target_migration_requires_and_adds_the_complete_pair() -> None
     assert module.applies(migrated) is False
 
     partial = ProjectState()
-    partial.add_model(ModelState("workflows", "Decision", [
-        ("id", models.AutoField(primary_key=True)),
-        ("target_model", models.CharField(default="", max_length=255)),
-    ]))
+    partial.add_model(
+        ModelState(
+            "workflows",
+            "Decision",
+            [
+                ("id", models.AutoField(primary_key=True)),
+                ("target_model", models.CharField(default="", max_length=255)),
+            ],
+        )
+    )
     with pytest.raises(ImproperlyConfigured, match="partial Decision target pair"):
         module.applies(partial)
 
@@ -1107,9 +1174,7 @@ def test_historical_integration_status_split_remains_replayable(
 
     from angee.integrate.models import integration_status_axes  # noqa: PLC0415
 
-    lifecycle_values = importlib.import_module(
-        "angee.integrate.runtime_migrations.integration_lifecycle_values"
-    )
+    lifecycle_values = importlib.import_module("angee.integrate.runtime_migrations.integration_lifecycle_values")
     assert integration_status_axes(legacy_status) == split_axes
     assert dict(lifecycle_values.FORWARD_VALUES).get(split_axes[0], split_axes[0]) == current_lifecycle
 

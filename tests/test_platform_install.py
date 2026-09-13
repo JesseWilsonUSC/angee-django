@@ -109,7 +109,6 @@ def test_install_appends_the_root_and_reflects_pending(
     assert row.pending is True
     assert str(row.state) == Addon.State.DISABLED  # not composed until the next boot
     assert to_object_ref(row).resource_id == str(row.pk)
-    assert Addon.legacy_rebac_id_lookup(row.name) == {"name": row.name}
 
 
 def test_install_is_idempotent_for_an_already_listed_root(

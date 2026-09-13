@@ -9,6 +9,7 @@ from django.contrib.auth.models import Group
 from django.db import connection, models, transaction
 from django.db.models.deletion import Collector
 from django.test import override_settings
+from django.test.utils import isolate_apps
 from rebac import RebacMixin, SubjectRef, actor_context, system_context, to_object_ref
 from rebac.models import active_relationship_model
 
@@ -239,6 +240,7 @@ def test_deletion_preview_counts_fast_deletes(monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.django_db(transaction=True)
+@isolate_apps("django.contrib.auth")
 def test_deletion_preview_hides_rebac_child_leaves_without_read_access() -> None:
     """Actor-scoped previews do not expose related resource row labels or ids."""
 
@@ -297,6 +299,7 @@ def test_deletion_preview_hides_rebac_child_leaves_without_read_access() -> None
 
 
 @pytest.mark.django_db(transaction=True)
+@isolate_apps("django.contrib.auth")
 def test_delete_user_removes_denormalized_subject_relationships() -> None:
     """Deleting an ``auth/user`` row removes tuples where it is the subject."""
 

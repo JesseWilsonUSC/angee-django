@@ -1493,13 +1493,10 @@ def test_iam_group_public_identity_is_sqid_addressable() -> None:
     assert public_id_of(group) == group_id
     assert group_id.startswith("grp_")
     assert public_id_for(iam_schema.Group, group.pk) == group_id
-    assert (
-        instance_from_public_id(
-            iam_schema.Group,
-            group_id,
-        ).pk
-        == group.pk
-    )
+    with system_context(reason="test.iam.group.identity.lookup"):
+        resolved = instance_from_public_id(iam_schema.Group, group_id)
+    assert resolved is not None
+    assert resolved.pk == group.pk
 
 
 @pytest.mark.django_db

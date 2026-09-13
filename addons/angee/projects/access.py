@@ -148,17 +148,17 @@ def resync_project_access() -> int:
 
     project_model = apps.get_model("projects", "Project")
     binding_model = apps.get_model("projects", "ProjectBinding")
-    relationships: set[RelationshipTuple] = set()
+    relationships: dict[str, RelationshipTuple] = {}
     with system_context(reason="projects.access.resync"), transaction.atomic():
         for project in project_model._base_manager.select_related("folder").filter(folder__isnull=False).order_by("pk"):
             relationship = _relationship(to_object_ref(project), canonical_record_target(project.folder))
-            relationships.add(relationship)
+            relationships[str(relationship)] = relationship
         for binding in binding_model._base_manager.select_related("project", "content_type").order_by("pk"):
             relationship = _relationship(
                 to_object_ref(binding.project),
                 CanonicalRecordTarget(binding.content_type, binding.object_id),
             )
-            relationships.add(relationship)
+            relationships[str(relationship)] = relationship
         for resource_type in _binding_resource_types(binding_model):
             delete_relationships(
                 RelationshipFilter(
@@ -168,7 +168,7 @@ def resync_project_access() -> int:
                 )
             )
         if relationships:
-            write_relationships(sorted(relationships, key=str))
+            write_relationships(relationships[key] for key in sorted(relationships))
     return len(relationships)
 
 

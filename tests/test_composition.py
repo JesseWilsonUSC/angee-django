@@ -10,6 +10,7 @@ from django.apps import apps
 from django.db import connection, models
 from rebac import MissingActorError, RebacMixin, SubjectRef, system_context
 
+from angee.base import identity as identity_module
 from angee.base.identity import (
     canonical_subject_ref,
     instance_from_public_id,
@@ -101,7 +102,7 @@ def test_system_check_enforces_pk_rebac_identity_only_for_table_backed_models(
 ) -> None:
     """Managed model identities are PKs while synthetic anchors retain named ids."""
 
-    monkeypatch.setattr(PublicIdThing._meta, "rebac_id_attr", "sqid")
+    monkeypatch.setattr(PublicIdThing._meta, "rebac_id_attr", "sqid", raising=False)
     assert [error.id for error in PublicIdThing._check_rebac_pk_identity()] == ["angee.E018"]
     monkeypatch.setattr(PublicIdThing._meta, "pk", SimpleNamespace(name="parent", attname="parent_id"))
     monkeypatch.setattr(PublicIdThing._meta, "rebac_id_attr", "parent")
@@ -112,18 +113,12 @@ def test_system_check_enforces_pk_rebac_identity_only_for_table_backed_models(
     assert PublicIdThing._check_rebac_pk_identity() == []
 
 
-def test_legacy_rebac_lookup_delegates_to_the_public_identity_owner() -> None:
-    """The one-shot upgrade hook decodes old sqids through the model field."""
-
-    public_id = PublicIdThing.public_id_from_pk(42)
-    assert PublicIdThing.legacy_rebac_id_lookup(public_id) == {"sqid": public_id}
-
-
 def test_subject_identity_converts_only_at_the_public_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Model subjects store PKs while transport subjects retain opaque public ids."""
 
+    monkeypatch.setattr(identity_module, "model_for_resource_type", lambda _resource_type: PublicIdThing)
     canonical = SubjectRef.of("tests/public-id-thing", "42")
     public = public_subject_ref(canonical)
 

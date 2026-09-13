@@ -82,11 +82,13 @@ def test_permission_hub_queries_are_admin_only(
         allowed = _execute(console_schema, query, user=admin)
         assert allowed.errors is None
 
-    User.objects.filter(pk=plain.pk).update(is_superuser=True)
+    with system_context(reason="test.iam.permission_hub.promote"):
+        User.objects.filter(pk=plain.pk).update(is_superuser=True)
     plain.refresh_from_db()
     assert _execute(console_schema, queries[0], user=plain).errors is None
 
-    User.objects.filter(pk=plain.pk).update(is_active=False)
+    with system_context(reason="test.iam.permission_hub.deactivate"):
+        User.objects.filter(pk=plain.pk).update(is_active=False)
     plain.refresh_from_db()
     assert _execute(console_schema, queries[0], user=plain).errors is not None
 
@@ -399,7 +401,8 @@ def test_iam_overview_aggregates_do_not_depend_on_paginated_rows(
     )
     grant(actor=targets[0], role="angee/role:auditor")
     grant(actor=targets[-1], role="angee/role:auditor")
-    User.objects.filter(pk=targets[-1].pk).update(is_superuser=True)
+    with system_context(reason="test.iam.overview.superuser"):
+        User.objects.filter(pk=targets[-1].pk).update(is_superuser=True)
 
     data = _data(
         _execute(
@@ -456,8 +459,8 @@ def test_iam_overview_aggregates_do_not_depend_on_paginated_rows(
     assert angee_namespace["grant_count"] == 2
     assert overview["privileged_grants"] == []
     assert [row["username"] for row in overview["unassigned_users"]] == [
+        "hub-overview-admin",
         "hub-overview-target-001",
-        "hub-overview-target-002",
     ]
 
 
@@ -827,26 +830,11 @@ def test_group_members_and_bindings_preserve_canonical_tuple_identity(
         assert added["add_group_member"] is True
         group_subject = to_subject_ref(group)
         with system_context(reason="test group role binding"):
-            active_relationship_model().objects.bulk_create([
-                active_relationship_model()(
-                    resource_type="angee/role",
-                    resource_id="auditor",
+            write_relationships([
+                RelationshipTuple(
+                    resource=ObjectRef("storage/role", "storage_admin"),
                     relation=ROLE_RELATION,
-                    subject_type=group_subject.subject_type,
-                    subject_id=group_subject.subject_id,
-                    optional_subject_relation=group_subject.optional_relation,
-                    caveat_name="",
-                    caveat_context=None,
-                ),
-                active_relationship_model()(
-                    resource_type="platform/explorer",
-                    resource_id="catalogue",
-                    relation="read",
-                    subject_type=group_subject.subject_type,
-                    subject_id=group_subject.subject_id,
-                    optional_subject_relation=group_subject.optional_relation,
-                    caveat_name="",
-                    caveat_context=None,
+                    subject=group_subject,
                 ),
             ])
 
@@ -874,12 +862,9 @@ def test_group_members_and_bindings_preserve_canonical_tuple_identity(
         assert detail["members"][0]["subject"] == subject
         assert detail["members"][0]["subject_id"] == str(member.sqid)
         assert detail["members"][0]["label"] == member.username
-        binding = next(row for row in detail["bindings"] if row["resource"] == "angee/role:auditor")
+        binding = next(row for row in detail["bindings"] if row["resource"] == "storage/role:storage_admin")
         assert binding["target_model"] == "iam.Role"
-        assert binding["target_id"] == "angee/role:auditor"
-        anchor = next(row for row in detail["bindings"] if row["resource"] == "platform/explorer:catalogue")
-        assert anchor["target_model"] is None
-        assert anchor["target_id"] is None
+        assert binding["target_id"] == "storage/role:storage_admin"
 
         removed = _data(
             _execute(

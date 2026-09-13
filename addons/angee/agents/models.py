@@ -614,12 +614,6 @@ class MCPTool(SqidMixin, AuditMixin, AngeeModel):
 
         return self.name
 
-    @classmethod
-    def legacy_rebac_id_lookup(cls, value: str) -> dict[str, Any]:
-        """Resolve the retired server-qualified authorization identity."""
-
-        return {"grant_id": value}
-
     @staticmethod
     def make_grant_id(server_sqid: str, tool_name: str) -> str:
         """Return the canonical server-qualified identity for a tool."""

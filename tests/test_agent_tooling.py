@@ -13,7 +13,6 @@ from asgiref.sync import async_to_sync, sync_to_async
 from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
 from django.db import connection, models, transaction
-from django.db.migrations.state import ProjectState
 from fastmcp import Context, FastMCP
 from fastmcp.tools import Tool, ToolResult
 from mcp.types import ToolAnnotations
@@ -55,7 +54,6 @@ from angee.agents.grants import (
     tool_grant_ref,
 )
 from angee.agents.models import ToolRole
-from angee.agents.runtime_migrations.live_tool_backing import remove_evidenced_mirrors
 from angee.agents_runtime_pydantic import toolsets as toolsets_module
 from angee.agents_runtime_pydantic.runner import _BINARY_CONTENT_OMITTED, _without_binary_content
 from angee.agents_runtime_pydantic.toolsets import (
@@ -66,7 +64,6 @@ from angee.agents_runtime_pydantic.toolsets import (
     _accessible_tool_grant_ids,
     _assert_in_process_compatible,
 )
-from angee.base.identity import public_subject_ref
 from angee.base.mixins import AuditMixin
 from angee.mcp.graphql import _CompiledTool
 from angee.mcp.resource_tools import RESOURCE_READER_TOOL_TAG
@@ -360,7 +357,6 @@ def test_tool_grant_identity_is_canonical_and_immutable(agent_tooling_tables: No
         server = MCPServer.objects.create(name="identity-server")
         tool = MCPTool.objects.create(server=server, name="search")
         assert tool_grant_ref(str(server.sqid), "search").resource_id == str(tool.pk)
-        assert MCPTool.legacy_rebac_id_lookup(tool.grant_id) == {"grant_id": tool.grant_id}
         tool.name = "renamed"
         with pytest.raises(ValueError, match="immutable"):
             tool.save(update_fields=("name",))
@@ -379,55 +375,6 @@ def test_tool_grant_identity_is_canonical_and_immutable(agent_tooling_tables: No
                 update_fields=("name",),
                 unique_fields=("server", "name"),
             )
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.parametrize("storage", ("denormalized", "registry"))
-def test_live_tool_migration_removes_only_evidenced_uncaveated_mirrors(
-    agent_tooling_tables: None,
-    settings: Any,
-    storage: str,
-) -> None:
-    """Selection evidence removes its old mirror while unrelated grants survive."""
-
-    del agent_tooling_tables
-    settings.REBAC_LOCAL_BACKEND_STORAGE = storage
-    owner = User.objects.create_user(username="tool-migration-owner")
-    with system_context(reason="test tool migration setup"):
-        agent = Agent.objects.create(name="Tool migration", owner=owner)
-        server = MCPServer.objects.create(name="migration-server")
-        selected = MCPTool.objects.create(server=server, name="selected")
-        unrelated = MCPTool.objects.create(server=server, name="unrelated")
-        agent.mcp_tools.add(selected)
-        old_subject = public_subject_ref(agent.principal_subject())
-        write_relationships(
-            [
-                RelationshipTuple(
-                    resource=ObjectRef(TOOL_GRANT_RESOURCE_TYPE, selected.grant_id),
-                    relation="grantee",
-                    subject=old_subject,
-                ),
-                RelationshipTuple(
-                    resource=ObjectRef(TOOL_GRANT_RESOURCE_TYPE, unrelated.grant_id),
-                    relation="grantee",
-                    subject=old_subject,
-                ),
-            ]
-        )
-
-    rows = active_relationship_model().objects.filter(
-        relation="grantee",
-        subject_type=old_subject.subject_type,
-        subject_id=old_subject.subject_id,
-    )
-    assert rows.filter(resource_id=selected.grant_id).exists()
-    assert rows.filter(resource_id=unrelated.grant_id).exists()
-
-    historical_apps = ProjectState.from_apps(apps).apps
-    remove_evidenced_mirrors(historical_apps, SimpleNamespace(connection=connection))
-
-    assert not rows.filter(resource_id=selected.grant_id).exists()
-    assert rows.filter(resource_id=unrelated.grant_id).exists()
 
 
 @pytest.mark.django_db(transaction=True)

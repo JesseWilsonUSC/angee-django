@@ -20,7 +20,7 @@ from rebac.backends import backend
 from rebac.relationships import write_relationships
 
 from angee.projects.access import bind
-from tests.conftest import Folder, Vendor, _clear_model_tables, _create_missing_tables
+from tests.conftest import Backend, Drive, Folder, Vendor, _clear_model_tables, _create_missing_tables
 from tests.iam_models import Group
 from tests.integrate_models import Integration
 from tests.messaging_models import Channel, Fragment, Message, Thread
@@ -56,6 +56,8 @@ def test_group_membership_reaches_and_revokes_project_resource_cascade(
         Vendor,
         Integration,
         Channel,
+        Backend,
+        Drive,
         Folder,
         *PROJECT_TEST_MODELS,
         Fragment,
@@ -73,7 +75,17 @@ def test_group_membership_reaches_and_revokes_project_resource_cascade(
             group.add_member(str(SubjectRef(to_object_ref(service))))
             vendor = Vendor.objects.create(slug="composite", display_name="Composite")
             channel = Channel.objects.create(vendor=vendor, owner=owner, backend_class="manual")
-            folder = Folder.objects.create(name="Composite files", owner=owner)
+            storage_backend = Backend.objects.create(
+                slug="composite",
+                label="Composite",
+                backend_class="local",
+            )
+            drive = Drive.objects.create(
+                backend=storage_backend,
+                slug="composite",
+                name="Composite",
+            )
+            folder = Folder.objects.create(drive=drive, name="Composite files", owner=owner)
         with actor_context(owner):
             project = Project.objects.create(title="Composite access")
             thread = Thread.objects.create(channel=channel)
@@ -93,13 +105,12 @@ def test_group_membership_reaches_and_revokes_project_resource_cascade(
             )
 
         for member in (person, service):
-            with actor_context(member):
-                assert project.has_access("write")
-                assert folder.has_access("write")
-                assert channel.has_access("write")
-                assert thread.has_access("write")
-                assert message.has_access("read")
-                assert message.has_access("write")
+            assert project.with_actor(member).has_access("write")
+            assert folder.with_actor(member).has_access("write")
+            assert channel.with_actor(member).has_access("write")
+            assert thread.with_actor(member).has_access("write")
+            assert message.with_actor(member).has_access("read")
+            assert message.with_actor(member).has_access("write")
             assert backend().check_access(
                 subject=SubjectRef(to_object_ref(member)),
                 action="member",
@@ -107,17 +118,21 @@ def test_group_membership_reaches_and_revokes_project_resource_cascade(
             ).allowed
 
         with system_context(reason="test composite revoke"):
-            group.remove_member(str(SubjectRef(to_object_ref(person))))
-            group.remove_member(str(SubjectRef(to_object_ref(service))))
+            assert group.remove_member(str(SubjectRef(to_object_ref(person))))
+            assert group.remove_member(str(SubjectRef(to_object_ref(service))))
 
         for former_member in (person, service):
-            with actor_context(former_member):
-                assert not project.has_access("write")
-                assert not folder.has_access("write")
-                assert not channel.has_access("write")
-                assert not thread.has_access("write")
-                assert not message.has_access("read")
-                assert not message.has_access("write")
+            assert not backend().check_access(
+                subject=SubjectRef(to_object_ref(former_member)),
+                action="member",
+                resource=to_object_ref(group),
+            ).allowed
+            assert not project.with_actor(former_member).has_access("write")
+            assert not folder.with_actor(former_member).has_access("write")
+            assert not channel.with_actor(former_member).has_access("write")
+            assert not thread.with_actor(former_member).has_access("write")
+            assert not message.with_actor(former_member).has_access("read")
+            assert not message.with_actor(former_member).has_access("write")
             assert not backend().check_access(
                 subject=SubjectRef(to_object_ref(former_member)),
                 action="member",

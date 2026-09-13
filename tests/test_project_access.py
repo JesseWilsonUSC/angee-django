@@ -84,7 +84,18 @@ def test_project_binding_grants_and_revokes_thread_message_access(
 
     del project_access_schema
     user_model = apps.get_model("iam", "User")
-    models = (Vendor, Integration, Channel, Folder, *PROJECT_TEST_MODELS, Fragment, Thread, Message)
+    models = (
+        Vendor,
+        Integration,
+        Channel,
+        Backend,
+        Drive,
+        Folder,
+        *PROJECT_TEST_MODELS,
+        Fragment,
+        Thread,
+        Message,
+    )
     created = _create_missing_tables(models)
     try:
         owner = user_model.objects.create_user(username="project-owner")
@@ -110,24 +121,30 @@ def test_project_binding_grants_and_revokes_thread_message_access(
                 [RelationshipTuple(to_object_ref(project), "editor", to_subject_ref(editor))]
             )
         with system_context(reason="tests.project_access.folder"):
-            folder = Folder.objects.create(name="Project files", owner=owner)
+            storage_backend = Backend.objects.create(
+                slug="project-folder",
+                label="Project folder",
+                backend_class="local",
+            )
+            drive = Drive.objects.create(
+                backend=storage_backend,
+                slug="project-folder",
+                name="Project folder",
+            )
+            folder = Folder.objects.create(drive=drive, name="Project files", owner=owner)
         with actor_context(owner):
             project.folder = folder
             project.save(update_fields=("folder", "updated_at"))
             bind(project=project, target=folder)
             project.folder = None
             project.save(update_fields=("folder", "updated_at"))
-        with actor_context(editor):
-            assert folder.has_access("write")
-        with actor_context(owner):
-            unbind(project=project, target=folder)
-        with actor_context(editor):
-            assert not folder.has_access("write")
-        with actor_context(editor):
-            assert channel.has_access("write")
-            assert thread.has_access("write")
-            assert message.has_access("read")
-            assert message.has_access("write")
+        assert folder.with_actor(editor).has_access("write")
+        unbind(project=project.with_actor(owner), target=folder.with_actor(owner))
+        assert not folder.with_actor(editor).has_access("write")
+        assert channel.with_actor(editor).has_access("write")
+        assert thread.with_actor(editor).has_access("write")
+        assert message.with_actor(editor).has_access("read")
+        assert message.with_actor(editor).has_access("write")
         with actor_context(owner):
             rolled_back = Thread.objects.create()
             with pytest.raises(RuntimeError, match="rollback"):
@@ -138,16 +155,13 @@ def test_project_binding_grants_and_revokes_thread_message_access(
                 [RelationshipTuple(to_object_ref(rolled_back), "project", SubjectRef(to_object_ref(project)))]
             )
             resync_project_access()
-        with actor_context(editor):
-            assert not rolled_back.has_access("write")
-            assert channel.has_access("write")
-        with actor_context(owner):
-            unbind(project=project, target=channel)
-        with actor_context(editor):
-            assert not channel.has_access("write")
-            assert not thread.has_access("write")
-            assert not message.has_access("read")
-            assert not message.has_access("write")
+        assert not rolled_back.with_actor(editor).has_access("write")
+        assert channel.with_actor(editor).has_access("write")
+        unbind(project=project.with_actor(owner), target=channel.with_actor(owner))
+        assert not channel.with_actor(editor).has_access("write")
+        assert not thread.with_actor(editor).has_access("write")
+        assert not message.with_actor(editor).has_access("read")
+        assert not message.with_actor(editor).has_access("write")
         assert binding.pk is not None
     finally:
         _clear_model_tables(models)
@@ -164,7 +178,7 @@ def test_binding_edits_and_deletes_require_authority(project_access_schema: Any)
 
     del project_access_schema
     user_model = apps.get_model("iam", "User")
-    models = (Folder, *PROJECT_TEST_MODELS)
+    models = (Backend, Drive, Folder, *PROJECT_TEST_MODELS)
     created = _create_missing_tables(models)
     try:
         owner = user_model.objects.create_user(username="binding-owner")
@@ -172,8 +186,18 @@ def test_binding_edits_and_deletes_require_authority(project_access_schema: Any)
         with actor_context(owner):
             project = Project.objects.create(title="Protected")
         with system_context(reason="tests.project_access.targets"):
-            first = Folder.objects.create(name="First", owner=owner)
-            second = Folder.objects.create(name="Second", owner=owner)
+            storage_backend = Backend.objects.create(
+                slug="binding-targets",
+                label="Binding targets",
+                backend_class="local",
+            )
+            drive = Drive.objects.create(
+                backend=storage_backend,
+                slug="binding-targets",
+                name="Binding targets",
+            )
+            first = Folder.objects.create(drive=drive, name="First", owner=owner)
+            second = Folder.objects.create(drive=drive, name="Second", owner=owner)
         with actor_context(owner):
             binding = bind(project=project, target=first)
         with actor_context(outsider), pytest.raises(PermissionDenied):
