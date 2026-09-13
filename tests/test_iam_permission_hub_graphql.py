@@ -15,7 +15,6 @@ from django.test import RequestFactory, override_settings
 from rebac import (
     ObjectRef,
     RelationshipTuple,
-    app_settings,
     resolve_subjects,
     system_context,
     to_object_ref,
@@ -523,7 +522,7 @@ def test_permission_hub_mutations_are_admin_only(
         }
     """
     variables = {
-        "subject": str(to_subject_ref(target)),
+        "subject": f"auth/user:{target.sqid}",
         "role": "knowledge/role:vault_viewer",
     }
 
@@ -532,6 +531,13 @@ def test_permission_hub_mutations_are_admin_only(
 
     granted = _data(_execute(console_schema, grant_mutation, variables, user=admin))
     assert granted["grant_role"] is True
+    stored = active_relationship_model().objects.get(
+        resource_type="knowledge/role",
+        resource_id="vault_viewer",
+        relation=ROLE_RELATION,
+        subject_type="auth/user",
+    )
+    assert stored.subject_id == str(target.pk)
 
     denied_revoke = _execute(console_schema, revoke_mutation, variables, user=plain)
     assert denied_revoke.errors is not None
@@ -803,7 +809,7 @@ def test_group_members_and_bindings_preserve_canonical_tuple_identity(
         member = User.objects.create_user(username=f"group-detail-{storage}-member")
         with system_context(reason="test group detail setup"):
             group = iam_schema.Group.objects.create(name=f"Reviewers {storage}")
-        subject = str(to_subject_ref(member))
+        subject = f"auth/user:{member.sqid}"
         schema = _schema("console")
 
         added = _data(
@@ -864,8 +870,9 @@ def test_group_members_and_bindings_preserve_canonical_tuple_identity(
                 user=admin,
             )
         )["groups_by_pk"]
-        assert detail["assignment_subject"] == f"auth/group:{group.pk}#member"
+        assert detail["assignment_subject"] == f"auth/group:{group.sqid}#member"
         assert detail["members"][0]["subject"] == subject
+        assert detail["members"][0]["subject_id"] == str(member.sqid)
         assert detail["members"][0]["label"] == member.username
         binding = next(row for row in detail["bindings"] if row["resource"] == "angee/role:auditor")
         assert binding["target_model"] == "iam.Role"
@@ -941,12 +948,12 @@ def test_recipient_resources_follow_user_and_group_read_permissions(
             "id": service.sqid,
             "username": service.username,
             "first_name": "Research agent",
-            user_subject_field: str(to_subject_ref(service)),
+            user_subject_field: f"auth/user:{service.sqid}",
         }]
         assert data["groups"] == [{
             "id": group_id,
             "name": group.name,
-            group_subject_field: str(to_subject_ref(group)),
+            group_subject_field: f"auth/group:{group.sqid}#member",
         }]
         assert to_subject_ref(group).subject_id == str(group.pk)
         assert to_subject_ref(group).subject_id != group_id

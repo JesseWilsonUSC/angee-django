@@ -113,7 +113,6 @@ class Organization(AbstractOrganization, Party):
         app_label = "parties"
         db_table = "test_parties_organization"
         rebac_resource_type = "parties/organization"
-        rebac_id_attr = "sqid"
 
 
 class Person(AbstractPerson, Party):
@@ -126,7 +125,6 @@ class Person(AbstractPerson, Party):
         app_label = "parties"
         db_table = "test_parties_person"
         rebac_resource_type = "parties/person"
-        rebac_id_attr = "sqid"
 
 
 class MergeVeto(AbstractMergeVeto):
@@ -139,7 +137,6 @@ class MergeVeto(AbstractMergeVeto):
         app_label = "parties"
         db_table = "test_parties_merge_veto"
         rebac_resource_type = "parties/merge_veto"
-        rebac_id_attr = "sqid"
 
 
 class Address(AbstractAddress):
@@ -152,7 +149,6 @@ class Address(AbstractAddress):
         app_label = "parties"
         db_table = "test_parties_address"
         rebac_resource_type = "parties/address"
-        rebac_id_attr = "sqid"
 
 
 class PartyHandle(WorkflowPartyHandleContribution, AbstractPartyHandle):
@@ -165,7 +161,6 @@ class PartyHandle(WorkflowPartyHandleContribution, AbstractPartyHandle):
         app_label = "parties"
         db_table = "test_parties_party_handle"
         rebac_resource_type = "parties/party_handle"
-        rebac_id_attr = "sqid"
 
 
 class Circle(AbstractCircle):
@@ -178,7 +173,6 @@ class Circle(AbstractCircle):
         app_label = "parties"
         db_table = "test_parties_circle"
         rebac_resource_type = "parties/circle"
-        rebac_id_attr = "sqid"
 
 
 class CircleMember(AbstractCircleMember):
@@ -191,7 +185,6 @@ class CircleMember(AbstractCircleMember):
         app_label = "parties"
         db_table = "test_parties_circle_member"
         rebac_resource_type = "parties/circle_member"
-        rebac_id_attr = "sqid"
 
 
 class RelationshipKind(AbstractRelationshipKind):
@@ -204,7 +197,6 @@ class RelationshipKind(AbstractRelationshipKind):
         app_label = "parties"
         db_table = "test_parties_relationship_kind"
         rebac_resource_type = "parties/relationship_kind"
-        rebac_id_attr = "sqid"
 
 
 class Relationship(AbstractRelationship):
@@ -217,7 +209,6 @@ class Relationship(AbstractRelationship):
         app_label = "parties"
         db_table = "test_parties_relationship"
         rebac_resource_type = "parties/relationship"
-        rebac_id_attr = "sqid"
 
 
 class ThreadAttachment(AbstractThreadAttachment):
@@ -230,7 +221,6 @@ class ThreadAttachment(AbstractThreadAttachment):
         app_label = "messaging"
         db_table = "test_messaging_thread_attachment"
         rebac_resource_type = "messaging/thread_attachment"
-        rebac_id_attr = "sqid"
 
 
 class ThreadFollower(AbstractThreadFollower):
@@ -243,7 +233,6 @@ class ThreadFollower(AbstractThreadFollower):
         app_label = "messaging"
         db_table = "test_messaging_thread_follower"
         rebac_resource_type = "messaging/thread_follower"
-        rebac_id_attr = "sqid"
 
 
 class ThreadActivity(AbstractThreadActivity):
@@ -256,7 +245,6 @@ class ThreadActivity(AbstractThreadActivity):
         app_label = "messaging"
         db_table = "test_messaging_thread_activity"
         rebac_resource_type = "messaging/thread_activity"
-        rebac_id_attr = "sqid"
 
 
 class ThreadNotification(AbstractThreadNotification):
@@ -269,7 +257,6 @@ class ThreadNotification(AbstractThreadNotification):
         app_label = "messaging"
         db_table = "test_messaging_thread_notification"
         rebac_resource_type = "messaging/thread_notification"
-        rebac_id_attr = "sqid"
 
 
 class Reaction(AbstractReaction):
@@ -282,7 +269,6 @@ class Reaction(AbstractReaction):
         app_label = "messaging"
         db_table = "test_messaging_reaction"
         rebac_resource_type = "messaging/reaction"
-        rebac_id_attr = "sqid"
 
 
 class MessageStar(AbstractMessageStar):
@@ -295,7 +281,6 @@ class MessageStar(AbstractMessageStar):
         app_label = "messaging"
         db_table = "test_messaging_message_star"
         rebac_resource_type = "messaging/message_star"
-        rebac_id_attr = "sqid"
 
 
 class TrackingValue(AbstractTrackingValue):
@@ -308,7 +293,6 @@ class TrackingValue(AbstractTrackingValue):
         app_label = "messaging"
         db_table = "test_messaging_tracking_value"
         rebac_resource_type = "messaging/tracking_value"
-        rebac_id_attr = "sqid"
 
 
 class Part(AbstractPart):
@@ -321,7 +305,6 @@ class Part(AbstractPart):
         app_label = "messaging"
         db_table = "test_messaging_part"
         rebac_resource_type = "messaging/part"
-        rebac_id_attr = "sqid"
 
 
 class MessageEdge(AbstractMessageEdge):
@@ -334,7 +317,6 @@ class MessageEdge(AbstractMessageEdge):
         app_label = "messaging"
         db_table = "test_messaging_message_edge"
         rebac_resource_type = "messaging/message_edge"
-        rebac_id_attr = "sqid"
 
 
 class Participant(AbstractParticipant):
@@ -347,7 +329,6 @@ class Participant(AbstractParticipant):
         app_label = "messaging"
         db_table = "test_messaging_participant"
         rebac_resource_type = "messaging/participant"
-        rebac_id_attr = "sqid"
 
 
 class ThreadedTicket(SqidMixin, AuditMixin, ThreadedModelMixin, AngeeModel):

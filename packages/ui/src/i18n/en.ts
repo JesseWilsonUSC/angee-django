@@ -13,6 +13,7 @@ export const enUiMessages: Record<string, string> = {
   "access.add": "Add access",
   "access.remove": "Remove access",
   "access.empty": "No direct access has been granted.",
+  "access.noCommonPermission": "You do not have permission to grant access to all selected records.",
   "access.unavailableSubject": "This recipient type has no selectable resource.",
   "search.clear": "Clear search",
   "search.placeholder": "Search…",

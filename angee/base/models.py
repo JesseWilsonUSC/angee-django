@@ -28,7 +28,7 @@ from rebac.actors import to_subject_ref
 from rebac.errors import MissingActorError, NoActorResolvedError, PermissionDenied
 from rebac.managers import RebacManager, RebacQuerySet
 from rebac.models import active_relationship_model
-from rebac.resources import model_resource_type
+from rebac.resources import model_resource_type, resource_id_attr
 
 from angee.base.impl import ImplClassField
 from angee.base.mixins import SqidMixin, TimestampMixin
@@ -498,6 +498,7 @@ class AngeeModel(TimestampMixin, RebacMixin):
 
         errors = super().check(**kwargs)
         errors.extend(cls._check_catalogue_tier())
+        errors.extend(cls._check_rebac_pk_identity())
         errors.extend(cls._check_rebac_grantable())
         return errors
 
@@ -527,6 +528,25 @@ class AngeeModel(TimestampMixin, RebacMixin):
                 f"got default {default_tier!r} and tiers {tiers!r}.",
                 obj=cls,
                 id="angee.E014",
+            )
+        ]
+
+    @classmethod
+    def _check_rebac_pk_identity(cls) -> list[checks.CheckMessage]:
+        """Require table-backed Angee REBAC resources to use their primary key."""
+
+        if not cls._meta.managed or model_resource_type(cls) is None:
+            return []
+        pk = cls._meta.pk
+        pk_attname = pk.attname if pk is not None else "pk"
+        if resource_id_attr(cls) in {"pk", pk_attname}:
+            return []
+        return [
+            checks.Error(
+                f"{cls._meta.label} must use its primary key as its REBAC identity; "
+                f"got {resource_id_attr(cls)!r}.",
+                obj=cls,
+                id="angee.E018",
             )
         ]
 
@@ -567,7 +587,7 @@ class AngeeModel(TimestampMixin, RebacMixin):
                 errors.append(
                     checks.Error(
                         f"{cls._meta.label}.rebac_grantable relation {relation_name!r} "
-                        f"must store direct tuples, not use {relation.backing.kind!r} backing.",
+                        "must store direct tuples; backed relations cannot be granted.",
                         obj=cls,
                         id="angee.E016",
                     )
@@ -670,6 +690,12 @@ class AngeeModel(TimestampMixin, RebacMixin):
         """Return the Django lookup for this model's public identifier."""
 
         return {cls._meta.pk.name: value}
+
+    @classmethod
+    def legacy_rebac_id_lookup(cls, value: str) -> dict[str, Any]:
+        """Return the upgrade-only lookup for this model's former public REBAC id."""
+
+        return cls.public_id_lookup(value)
 
     @classmethod
     def public_id_from_pk(cls, value: Any) -> str:

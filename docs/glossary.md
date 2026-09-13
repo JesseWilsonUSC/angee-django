@@ -118,8 +118,8 @@ fact that answers "who" (audit stamps, history rows, revision authors) is an FK
 to that table.
 
 **Actor** — the `auth/user` REBAC subject bound to the current operation (the
-`django-zed-rebac` actor context). `actor_user_id` resolves its public subject id
-to the database primary key used by attribution FKs.
+`django-zed-rebac` actor context). Its subject ID is the user's database primary
+key; `actor_user_id` converts that canonical value to the FK's Python type.
 
 **User (row)** — the database-layer principal record. Not synonymous with "a
 human" or "a login": `kind` distinguishes `person` from `service`, and only
@@ -143,10 +143,14 @@ the stable database primary key used by existing authorization references.
 
 **Role** — a schema-declared reach anchor, such as `storage/role:storage_admin`.
 An addon declares the permission arms that give the role meaning. Membership
-is runtime data; creating a new name cannot create a permission arm.
+is runtime data; creating a new name cannot create a permission arm. Relations
+store the plain role subject, optionally constrained to a fixed role ID, and
+permission arrows compute its effective members.
 
 **Relation** — a named relationship on a resource, such as `reader` or
-`editor`. The resource schema owns its allowed subjects and permission reach.
+`editor`. The resource schema owns its allowed subject types; permissions own
+computed reach. A relation-backed userset such as `auth/group#member` may be a
+stored subject, while a computed permission such as `#effective_member` may not.
 
 **Binding** — a relationship tuple granting a principal or a group's member
 set a resource relation or role membership. A dynamic composite role is an IAM
@@ -175,7 +179,10 @@ projections. Labels describe buckets; identities distinguish them.
 
 **REBAC resource** — an authorization object (`ObjectRef`) in the
 `django-zed-rebac` schema. It names what an actor can read/write; it is separate
-from resource files and GraphQL data resources.
+from resource files and GraphQL data resources. A model-backed resource or
+subject uses its database primary key as the authorization ID. A sqid is that
+key's public representation, encoded and decoded at API boundaries by the
+model's public-ID field. Tableless anchors, such as roles, keep named IDs.
 
 **Symbolic model reference** — referring to a model by symbol/string across addon
 boundaries instead of importing it, to avoid import cycles.

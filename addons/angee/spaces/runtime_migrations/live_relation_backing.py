@@ -4,6 +4,14 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db import migrations
 from django.db.migrations.state import ProjectState
 
+from angee.base.fields import SqidField
+
+
+def _legacy_id(value, *, prefix):
+    """Encode one historical public id through its owning field implementation."""
+
+    return SqidField(real_field_name="id", prefix=prefix, min_length=8).public_id_from_value(value)
+
 
 def applies(project_state: ProjectState) -> bool:
     """Apply to the exact snapshot-backed roster after Thread.groups exists."""
@@ -80,7 +88,7 @@ def remove_evidenced_mirrors(apps, schema_editor) -> None:
     roster = (
         membership._base_manager.using(database)
         .filter(granted_user_id__isnull=False)
-        .values_list("group__sqid", "role", "granted_user__sqid")
+        .values_list("group_id", "role", "granted_user_id")
     )
     for group_id, role, user_id in roster.iterator():
         for rows, is_registry in stores:
@@ -88,10 +96,10 @@ def remove_evidenced_mirrors(apps, schema_editor) -> None:
                 rows,
                 registry=is_registry,
                 resource_type="spaces/group",
-                resource_id=str(group_id),
+                resource_id=_legacy_id(group_id, prefix="grp_"),
                 relation=str(role),
                 subject_type="auth/user",
-                subject_id=str(user_id),
+                subject_id=_legacy_id(user_id, prefix="usr_"),
             )
 
     thread = apps.get_model("messaging", "Thread")
@@ -100,7 +108,7 @@ def remove_evidenced_mirrors(apps, schema_editor) -> None:
     group = apps.get_model("spaces", "Group")
     group_field = _through_field_for(through, group)
     audiences = through._base_manager.using(database).values_list(
-        f"{thread_field.name}__sqid", f"{group_field.name}__sqid"
+        f"{thread_field.name}_id", f"{group_field.name}_id"
     )
     for thread_id, group_id in audiences.iterator():
         for rows, is_registry in stores:
@@ -108,10 +116,10 @@ def remove_evidenced_mirrors(apps, schema_editor) -> None:
                 rows,
                 registry=is_registry,
                 resource_type="messaging/thread",
-                resource_id=str(thread_id),
+                resource_id=_legacy_id(thread_id, prefix="thr_"),
                 relation="group",
                 subject_type="spaces/group",
-                subject_id=str(group_id),
+                subject_id=_legacy_id(group_id, prefix="grp_"),
             )
 
 

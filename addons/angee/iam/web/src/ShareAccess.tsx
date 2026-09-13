@@ -35,19 +35,9 @@ export function ShareRecordChrome(): React.ReactElement {
 export function ShareListChrome(): React.ReactElement {
   const list = useResourceViewActionContext();
   return <ShareAccess
-    resource={list.record?.resource ?? list.resource}
-    targetIds={list.record ? [list.record.recordId] : [...(list.selectedIds ?? [])].sort()}
-    record={list.record?.record}
+    resource={list.resource}
+    targetIds={[...(list.selectedIds ?? [])].sort()}
   />;
-}
-
-/** Open the shared access surface for an embedded single-record caller. */
-export function RecordAccessPanel({ resource, recordId, recordLabel }: {
-  resource: string;
-  recordId: string;
-  recordLabel: string;
-}): React.ReactElement {
-  return <ShareAccess resource={resource} targetIds={[recordId]} label={recordLabel} />;
 }
 
 function ShareAccess({ resource, targetIds, record, label }: {
@@ -123,6 +113,14 @@ function BoundShareAccess({ resource, targetIds, record, label: suppliedLabel }:
     })),
     [query.data?.record_access],
   );
+  const availableRelations = React.useMemo(() => {
+    const allowed = new Map(
+      (query.data?.record_access_options ?? []).map((option) => [option.relation, option.permission]),
+    );
+    return (resource.grantable ?? []).filter(
+      (relation) => allowed.get(relation.relation) === relation.permission,
+    );
+  }, [query.data?.record_access_options, resource.grantable]);
   const representation = record && resource.recordRepresentation
     ? rowValueAtPath(record, resource.recordRepresentation) : null;
   const label = suppliedLabel ?? (typeof representation === "string" && representation
@@ -138,7 +136,7 @@ function BoundShareAccess({ resource, targetIds, record, label: suppliedLabel }:
     </Button>}
     label={label}
     targetIds={stableTargetIds}
-    grantable={resource.grantable ?? []}
+    grantable={availableRelations}
     entries={entries}
     fetching={query.isFetching}
     error={query.error}

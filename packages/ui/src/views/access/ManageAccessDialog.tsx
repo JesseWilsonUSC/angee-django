@@ -2,12 +2,12 @@ import * as React from "react";
 import {
   modelLabelSegment,
   type DataResourceGrantableRelation,
-  type DataResourceSubjectSpecies,
+  type DataResourceSubjectType,
 } from "@angee/metadata";
 
 import { DialogForm } from "../../fragments/DialogForm";
 import { ErrorBanner } from "../../fragments/ErrorBanner";
-import { LoadingPanel } from "../../fragments/LoadingPanel";
+import { InlineEmpty } from "../../fragments/InlineEmpty";
 import { useUiT } from "../../i18n";
 import { ControlBandProvider } from "../../layouts/ControlBand";
 import { Button } from "../../ui/button";
@@ -64,17 +64,18 @@ function AccessContents({
 }: ManageAccessDialogProps): React.ReactElement {
   const t = useUiT();
   const [relationName, setRelationName] = React.useState(grantable[0]?.relation ?? "");
-  const [speciesKey, setSpeciesKey] = React.useState("");
+  const [selectedSubjectTypeKey, setSelectedSubjectTypeKey] = React.useState("");
   const [subject, setSubject] = React.useState("");
-  const [pickerRevision, setPickerRevision] = React.useState(0);
   const [pending, setPending] = React.useState(false);
   const relation = grantable.find((item) => item.relation === relationName) ?? grantable[0];
-  const species = relation?.subjects.filter(
-    (item): item is DataResourceSubjectSpecies & { resource: string } => Boolean(item.resource),
+  const subjectTypes = relation?.subjects.filter(
+    (item): item is DataResourceSubjectType & { resource: string } => Boolean(item.resource),
   ) ?? [];
-  const selectedSpecies = species.find((item) => subjectSpeciesKey(item) === speciesKey) ?? species[0];
+  const selectedSubjectType = subjectTypes.find((item) => subjectTypeKey(item) === selectedSubjectTypeKey) ?? subjectTypes[0];
+  const grantControlsUnavailable = !fetching && !error && grantable.length === 0;
+  const subjectPickerUnavailable = !fetching && !error && Boolean(relation) && subjectTypes.length === 0;
   const relationLabelId = React.useId();
-  const speciesLabelId = React.useId();
+  const subjectTypeLabelId = React.useId();
   const rowActions = React.useMemo(() => [defineRowAction<RecordAccessEntry>({
     kind: "page",
     id: "revoke",
@@ -103,8 +104,9 @@ function AccessContents({
       <ErrorBanner description={error?.message ?? null} actions={error ? (
         <Button size="sm" onClick={onRetry}>{t("collection.retry")}</Button>
       ) : undefined} />
-      {fetching && entries.length === 0 ? <LoadingPanel density="inline" /> : null}
-      <div className="grid gap-3">
+      {grantControlsUnavailable ? (
+        <InlineEmpty label={t("access.noCommonPermission")} />
+      ) : <div className="grid gap-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <FieldRoot>
               <FieldLabel id={relationLabelId} nativeLabel={false} render={<span />}>
@@ -115,33 +117,34 @@ function AccessContents({
                 value={relation?.relation ?? ""}
                 disabled={pending || fetching || Boolean(error)}
                 options={grantable.map((item) => ({ value: item.relation, label: item.relation }))}
-                onValueChange={(value) => { setRelationName(value ?? ""); setSpeciesKey(""); setSubject(""); }}
+                onValueChange={(value) => { setRelationName(value ?? ""); setSelectedSubjectTypeKey(""); setSubject(""); }}
               />
             </FieldRoot>
             <FieldRoot>
-              <FieldLabel id={speciesLabelId} nativeLabel={false} render={<span />}>
+              <FieldLabel id={subjectTypeLabelId} nativeLabel={false} render={<span />}>
                 {t("access.recipientType")}
               </FieldLabel>
               <Select
-                aria-labelledby={speciesLabelId}
-                value={selectedSpecies ? subjectSpeciesKey(selectedSpecies) : ""}
-                disabled={pending || fetching || Boolean(error) || species.length === 0}
-                options={species.map((item) => ({
-                  value: subjectSpeciesKey(item),
+                aria-labelledby={subjectTypeLabelId}
+                value={selectedSubjectType ? subjectTypeKey(selectedSubjectType) : ""}
+                disabled={pending || fetching || Boolean(error) || subjectTypes.length === 0}
+                options={subjectTypes.map((item) => ({
+                  value: subjectTypeKey(item),
                   label: `${modelLabelSegment(item.resource)}${item.relation ? ` (${item.relation})` : ""}`,
                 }))}
-                onValueChange={(value) => { setSpeciesKey(value ?? ""); setSubject(""); }}
+                onValueChange={(value) => { setSelectedSubjectTypeKey(value ?? ""); setSubject(""); }}
               />
             </FieldRoot>
           </div>
-          {selectedSpecies ? <SubjectPicker
-            key={`${relation?.relation}:${subjectSpeciesKey(selectedSpecies)}:${pickerRevision}`}
-            resource={selectedSpecies.resource}
+          {selectedSubjectType ? <SubjectPicker
+            key={`${relation?.relation}:${subjectTypeKey(selectedSubjectType)}`}
+            resource={selectedSubjectType.resource}
             value={subject}
             aria-label={t("access.recipient")}
             readOnly={pending || fetching || Boolean(error)}
             onChange={setSubject}
           /> : null}
+          {subjectPickerUnavailable ? <InlineEmpty label={t("access.unavailableSubject")} /> : null}
           <Button
             type="button" variant="primary" size="sm"
             disabled={pending || fetching || Boolean(error) || !subject || !relation || targetIds.length === 0}
@@ -151,14 +154,13 @@ function AccessContents({
               try {
                 if (await onGrant(relation.relation, subject)) {
                   setSubject("");
-                  setPickerRevision((value) => value + 1);
                 }
               } finally {
                 setPending(false);
               }
             }}
           >{t("access.add")}</Button>
-        </div>
+        </div>}
       {!error ? <RowsListView
         scope="local"
         presentation="embedded"
@@ -172,6 +174,6 @@ function AccessContents({
   );
 }
 
-function subjectSpeciesKey(species: DataResourceSubjectSpecies): string {
-  return `${species.type}#${species.relation ?? ""}`;
+function subjectTypeKey(subjectType: DataResourceSubjectType): string {
+  return `${subjectType.type}#${subjectType.relation ?? ""}`;
 }

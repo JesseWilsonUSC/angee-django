@@ -21,7 +21,6 @@ from rebac import (
 from rebac.resources import model_resource_type
 from rebac.types import RelationshipFilter
 
-from angee.base.identity import public_id_for
 from angee.base.permissions import effective_rebac_definition
 from angee.base.refs import CanonicalRecordTarget, canonical_record_model, canonical_record_target
 
@@ -180,7 +179,7 @@ def _relationship(project_ref: Any, target: CanonicalRecordTarget) -> Relationsh
     if target_model is None or not (resource_type := model_resource_type(target_model)):
         raise ValueError(f"{target.content_type} is not a REBAC resource.")
     return RelationshipTuple(
-        resource=ObjectRef(resource_type, public_id_for(target_model, target.object_id)),
+        resource=ObjectRef(resource_type, str(target.object_id)),
         relation=PROJECT_RELATION,
         subject=SubjectRef(project_ref),
     )

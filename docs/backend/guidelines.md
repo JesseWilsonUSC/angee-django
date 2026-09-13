@@ -380,9 +380,17 @@ data through REBAC, never a queryset bypass.
   is selected by `Agent.principal_subject()`; permissions and audit stamps use
   that same user. The agent's reach is its grants, independent of its owner's
   reach. Service users satisfy `authenticated` and `auth/user:*` like other
-  users. `actor_user_id` converts public subject ids to FK ids without a
-  subject-type resolver registry. See the glossary's Principal/Actor/Service
+  users. `actor_user_id` converts the canonical PK subject ID to its FK type
+  without a database lookup. See the glossary's Principal/Actor/Service
   account entries.
+- **Model-backed authorization IDs are primary keys.** Use the native
+  `to_object_ref(instance)` and `to_subject_ref(instance)` APIs; Angee models
+  retain the library's `pk` identity default. Sqids are public representations
+  owned by the model's public-ID field, not alternate authorization identities.
+  Transport subject strings pass through
+  [the public identity boundary](../../angee/base/identity.py) before reaching
+  REBAC, and outputs encode the PK there. Tableless role anchors keep named IDs.
+  Changing a public prefix or codec must never change grants.
 - **Container inheritance belongs to the resource and scope owners.** A
   resource's FK relations and arrows live in its own Zed definition. A scope
   contributes additional relations and arrows through its own
@@ -394,8 +402,8 @@ data through REBAC, never a queryset bypass.
   [record-access API](../../addons/angee/graphql/sharing.py) dispatches bulk
   grants and revocations through the model's checked methods. Addons do not
   define private share mutations. Metadata projects the grant surface and the
-  subject resource's canonical identity field; public display ids are not
-  necessarily REBAC subject ids.
+  subject resource's public identity field; the API converts selected public
+  subjects to canonical PK references before validating and writing grants.
 - **Recipient discovery follows identity read policy.** IAM's user resource
   includes readable people and service users; human-only membership pickers
   use its people collection. IAM owns the group model and declares its native
@@ -410,6 +418,42 @@ data through REBAC, never a queryset bypass.
   is a dynamic composite role: grant its `auth/group#member` set relations on
   records and membership in declared roles. Runtime data chooses memberships
   and grants; schema remains the only source of new permission arms.
+- **Relations constrain stored subjects; permissions compute their reach.** A
+  role hierarchy stores a plain role subject (`relation includes: <ns>/role`)
+  and expands it with `includes->effective_member`. Likewise, a resource stores
+  a role relation, optionally restricted to a fixed role ID
+  (`relation manager: <ns>/role:<id>`), and arrows through `effective_member`;
+  never name a permission such as `#effective_member` in a relation's allowed
+  subject types. Usersets backed by relations, such as `auth/group#member`,
+  remain valid stored subjects.
+- **Migrate permission-subject grants before syncing the replacement schema.**
+  Upgrades from the permission-userset schemas must materialize and apply the
+  addon-owned `role_subject_relations` migrations before `rebac sync` or tool
+  catalogue reconciliation. IAM owns role hierarchy edges; agents owns tool
+  bundles; money, sequence and UOM own their stored manager grants. These
+  transitions preserve IDs and grant conditions in both relationship stores.
+  A collision with different conditions requires an explicit resolution;
+  do not discard either grant or flatten effective membership into direct members.
+  See the [IAM transition](../../addons/angee/iam/runtime_migrations/role_subject_relations.py)
+  and [agent transition](../../addons/angee/agents/runtime_migrations/role_subject_relations.py).
+- **Migrate stored identities before resuming authorization traffic.** Stop
+  application writers before applying the addon migrations, then run the stack
+  host's `manage.py migrate_rebac_ids` to preview the one-time sqid-to-PK
+  transition, then `manage.py migrate_rebac_ids --apply`, before `rebac sync`
+  and catalogue reconciliation. The
+  [migration owner](../../angee/base/identity_migration.py) checks both physical
+  stores, validates model and registry evidence, and applies one transaction.
+  It preserves conditions and the newest transaction stamp when identical
+  grants converge; ambiguous IDs or conflicting conditions stop the upgrade.
+  The plan holds all stored relationships in memory and resolves distinct
+  references against their owning models, so budget the maintenance window
+  from the preview on the actual database. Historical audit records keep their
+  original representation. Downgrading application code alone does not reverse
+  this data transition.
+  Before `migrate`, inspect already-materialized migration copies: accepted
+  historical source digests preserve applied history, but do not repair an old
+  copied body that has not run. Handle verified unapplied copies under the
+  [migration policy](#migrations-and-runtime); never rewrite applied copies.
 - **Membership has one store and one writer.** Use `rebac.memberships` for
   direct memberships in groups and role containers. IAM's model and hub own
   authorization and subject-existence policy; the library owns tuple
@@ -477,10 +521,11 @@ data through REBAC, never a queryset bypass.
   const-backed relation to the role namespace and arrows through
   `effective_member`: `relation manager: storage/role // rebac:const=storage_admin`
   with `permission … = manager->effective_member` (mirror of `admin->member`).
-  A pinned-id allowed subject (`storage/role:storage_admin#effective_member`)
-  only declares which tuple subjects are legal; it never synthesizes the
-  per-row relationship. Use that shape for explicitly stored usersets, whose
-  relation or permission the native evaluator resolves.
+  A stored, per-resource relationship may instead restrict its allowed subject
+  to a fixed plain role (`relation manager: storage/role:storage_admin`) and
+  arrow through `manager->effective_member`; this retains the tuple and any
+  caveat. Appending the computed `#effective_member` permission to that allowed
+  subject is invalid.
   The const *target* role namespace needs its own `definition` + `managed=False`
   anchor model (like the resource's const admin), because a **non-member** check
   walks the arrow into `<ns>/role#admin`; without the anchor that const cannot

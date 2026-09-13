@@ -67,7 +67,6 @@ class MCPServer(AbstractMCPServer):
         app_label = "agents"
         db_table = "test_agents_mcp_server"
         rebac_resource_type = "agents/mcp_server"
-        rebac_id_attr = "sqid"
 
 
 class MCPTool(AbstractMCPTool):
@@ -80,7 +79,6 @@ class MCPTool(AbstractMCPTool):
         app_label = "agents"
         db_table = "test_agents_mcp_tool"
         rebac_resource_type = "agents/tool_grant"
-        rebac_id_attr = "grant_id"
 
 
 class ToolRole(AbstractToolRole):
@@ -103,7 +101,6 @@ class Agent(AbstractAgent):
         app_label = "agents"
         db_table = "test_agents_agent"
         rebac_resource_type = "agents/agent"
-        rebac_id_attr = "sqid"
 
 
 class AgentSession(AbstractAgentSession):
@@ -114,7 +111,6 @@ class AgentSession(AbstractAgentSession):
         app_label = "agents"
         db_table = "test_agents_session"
         rebac_resource_type = "agents/session"
-        rebac_id_attr = "sqid"
 
 
 class AgentTurn(AbstractAgentTurn):
@@ -125,7 +121,6 @@ class AgentTurn(AbstractAgentTurn):
         app_label = "agents"
         db_table = "test_agents_turn"
         rebac_resource_type = "agents/turn"
-        rebac_id_attr = "sqid"
 
 
 # Order: leaf models before `Agent`, whose M2M through-tables reference them.

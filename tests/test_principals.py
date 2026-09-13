@@ -9,7 +9,7 @@ import pytest
 from django.core.management import call_command
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from rebac import system_context, to_subject_ref
+from rebac import SubjectRef, system_context, to_subject_ref
 
 from angee.base.actors import actor_user_id
 from tests.conftest import IAM_CONNECTION_TEST_MODELS, INTEGRATE_TEST_MODELS, POSTS_TEST_MODELS, _clear_model_tables
@@ -54,8 +54,30 @@ def test_agent_principal_subject_is_its_service_user(agents_console_tables: None
     subject = agent.principal_subject()
 
     assert subject == to_subject_ref(agent.user)
+    assert subject.subject_id == str(agent.user_id)
     assert subject != to_subject_ref(owner)
-    assert actor_user_id(subject) == agent.user_id
+    with CaptureQueriesContext(connection) as captured:
+        assert actor_user_id(subject) == agent.user_id
+    assert captured.captured_queries == []
+
+
+def test_actor_user_id_rejects_an_invalid_canonical_pk_without_query(
+    agents_console_tables: None,
+) -> None:
+    """Malformed user subjects cannot become attribution foreign keys."""
+
+    actor = SubjectRef.of("auth/user", "not-a-primary-key")
+    with CaptureQueriesContext(connection) as captured:
+        assert actor_user_id(actor) is None
+    assert captured.captured_queries == []
+
+
+def test_actor_user_id_uses_the_models_prefixed_resource_type(settings: Any) -> None:
+    """Attribution follows the same native type namespace as subject creation."""
+
+    settings.REBAC_TYPE_PREFIX = "tenant/"
+    assert actor_user_id(SubjectRef.of("tenant/auth/user", "42")) == 42
+    assert actor_user_id(SubjectRef.of("auth/user", "42")) is None
 
 
 def test_agent_create_materializes_service_user(agents_console_tables: None) -> None:

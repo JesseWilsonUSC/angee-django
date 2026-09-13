@@ -23,7 +23,6 @@ from rebac import (
     to_subject_ref,
     write_relationships,
 )
-from rebac.roles import grant
 
 from angee.graphql.deletion import DeletePreview
 from angee.graphql.schema import SCHEMA_PART_KEYS, GraphQLSchemas

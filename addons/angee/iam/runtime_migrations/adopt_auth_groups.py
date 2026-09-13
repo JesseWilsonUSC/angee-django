@@ -11,14 +11,15 @@ from django.db import migrations, models
 from django.db.migrations.state import ProjectState
 from django.utils import timezone
 
-import angee.base.fields
-
 _BATCH_SIZE = 1_000
 
 
 def applies(project_state: ProjectState) -> bool:
     """Apply while auth owns groups and IAM has no concrete group table."""
 
+    owner = project_state.models.get(("iam", "user"))
+    if owner is None:
+        return False
     source = project_state.models.get(("auth", "group"))
     target = project_state.models.get(("iam", "group"))
     if source is None:
@@ -37,7 +38,6 @@ def applies(project_state: ProjectState) -> bool:
 def _is_current_group(model_state: Any) -> bool:
     name = model_state.fields.get("name")
     description = model_state.fields.get("description")
-    sqid = model_state.fields.get("sqid")
     return (
         isinstance(name, models.CharField)
         and name.max_length == 150
@@ -45,9 +45,6 @@ def _is_current_group(model_state: Any) -> bool:
         and isinstance(description, models.TextField)
         and description.blank
         and description.default == ""
-        and isinstance(sqid, angee.base.fields.SqidField)
-        and sqid.prefix == "grp_"
-        and sqid.real_field_name == "id"
     )
 
 
@@ -116,14 +113,6 @@ def group_state_operations() -> list[Any]:
                 ("updated_at", models.DateTimeField(auto_now=True, db_index=True)),
                 ("name", models.CharField(max_length=150, unique=True)),
                 ("description", models.TextField(blank=True, default="")),
-                (
-                    "sqid",
-                    angee.base.fields.SqidField(
-                        min_length=8,
-                        prefix="grp_",
-                        real_field_name="id",
-                    ),
-                ),
             ],
         ),
     ]

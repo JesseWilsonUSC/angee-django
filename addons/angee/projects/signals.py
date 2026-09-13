@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from django.apps import apps
 from django.db.models.signals import class_prepared, post_delete, post_save, pre_save
@@ -168,7 +168,7 @@ def _reconcile_binding(
     previous = getattr(instance, "_projects_previous_binding", _UNTRACKED)
     current = _binding_key(instance)
     if previous is not _UNTRACKED and previous != current:
-        _schedule_binding_key(instance, previous, using)
+        _schedule_binding_key(instance, cast(tuple[Any, Any, Any] | None, previous), using)
     _schedule_binding_key(instance, current, using)
 
 

@@ -235,6 +235,23 @@ def test_mcp_bearer_for_agent_with_no_attached_servers_is_declined(agents_consol
     assert resolve_actor(bearer) is None
 
 
+def test_mcp_bearer_for_ready_agent_without_service_user_is_declined(agents_console_tables: None) -> None:
+    """A valid bearer cannot act after its ready agent loses the service principal."""
+
+    owner = User.objects.create_user(username="mcp-no-user-owner", email="mcp-no-user@example.com")
+    with system_context(reason="test.mcp.actor.no_service_user"):
+        credential = _static_credential(owner, name="no-user-mcp-bearer", token="tok-no-user")
+        server = MCPServer.objects.create(
+            name="no-user", url="http://x/mcp/no-user/", credential=credential, placement=MCPPlacement.INTERNAL
+        )
+        agent = _provisioned_agent(owner, name="Missing Principal Agent")
+        agent.mcp_servers.add(server)
+        bearer = server.bearer_for(agent)
+        Agent._base_manager.filter(pk=agent.pk).update(user=None)
+
+    assert resolve_actor(bearer) is None
+
+
 @pytest.mark.parametrize(
     ("agent_kwargs", "mark_provisioned"),
     [

@@ -242,11 +242,14 @@ def test_agents_tool_grants_accept_user_group_and_role_subjects() -> None:
     grantee = next(relation for relation in grant.relations if relation.name == "grantee")
     assert {(subject.type, subject.id, subject.relation) for subject in grantee.allowed_subjects} == {
         ("auth/user", "", ""),
-        ("agents/toolrole", "", "effective_member"),
         ("auth/group", "", "member"),
     }
+    role = next(relation for relation in grant.relations if relation.name == "role")
+    assert {(subject.type, subject.id, subject.relation) for subject in role.allowed_subjects} == {
+        ("agents/toolrole", "", ""),
+    }
     use = next(permission for permission in grant.permissions if permission.name == "use")
-    assert "grantee" in _render_expr_names(use)
+    assert {"grantee", "role"} <= _render_expr_names(use)
 
 
 # ---------- full wiring: emit + repoint + sync + resolve ----------

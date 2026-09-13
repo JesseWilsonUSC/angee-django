@@ -14,7 +14,7 @@ export interface ResourceViewActionContext {
   refresh: () => void;
   /** Public ids selected by the collection owner. */
   selectedIds?: ReadonlySet<string>;
-  /** Saved record enclosing this collection; nested actions target it. */
+  /** Saved record enclosing this collection, for actions that explicitly target the parent. */
   record?: RecordChromeContext | null;
 }
 

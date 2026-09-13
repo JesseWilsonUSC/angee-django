@@ -13,6 +13,7 @@ from asgiref.sync import async_to_sync, sync_to_async
 from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
 from django.db import connection, models, transaction
+from django.db.migrations.state import ProjectState
 from fastmcp import Context, FastMCP
 from fastmcp.tools import Tool, ToolResult
 from mcp.types import ToolAnnotations
@@ -31,7 +32,15 @@ from pydantic_ai.toolsets._tool_search import parse_discovered_tools
 from pydantic_ai.toolsets.function import FunctionToolset
 from pydantic_ai.usage import RunUsage
 from pydantic_core import to_jsonable_python
-from rebac import ObjectRef, RelationshipTuple, SubjectRef, actor_context, system_context
+from rebac import (
+    ObjectRef,
+    RelationshipTuple,
+    SubjectRef,
+    actor_context,
+    system_context,
+    to_object_ref,
+    to_subject_ref,
+)
 from rebac.backends import backend
 from rebac.models import active_relationship_model
 from rebac.relationships import write_relationships
@@ -57,6 +66,7 @@ from angee.agents_runtime_pydantic.toolsets import (
     _accessible_tool_grant_ids,
     _assert_in_process_compatible,
 )
+from angee.base.identity import public_subject_ref
 from angee.base.mixins import AuditMixin
 from angee.mcp.graphql import _CompiledTool
 from angee.mcp.resource_tools import RESOURCE_READER_TOOL_TAG
@@ -191,7 +201,7 @@ def test_native_tool_grants_run_as_agent_service_user_and_regate(
 
     assert not active_relationship_model().objects.filter(
         resource_type=TOOL_GRANT_RESOURCE_TYPE,
-        resource_id=read_row.grant_id,
+        resource_id=str(read_row.pk),
         relation="grantee",
         subject_type="auth/user",
         subject_id=agent.principal_subject().subject_id,
@@ -240,30 +250,49 @@ def test_toolrole_and_group_grantee_paths(
     owner = User.objects.create_user(username="tool-bundle-owner")
     with system_context(reason="test tool bundle setup"):
         agent = Agent.objects.create(name="Tool Bundle Agent", owner=owner)
+        human = User.objects.create_user(username="tool-bundle-human", kind="person")
+        group = apps.get_model("iam", "Group").objects.create(name="research")
         server = MCPServer.objects.create(name="bundle-server")
+        MCPTool.objects.create(server=server, name="role_reader")
+        MCPTool.objects.create(server=server, name="group_reader")
         role_ref = tool_grant_ref(str(server.sqid), "role_reader")
         group_ref = tool_grant_ref(str(server.sqid), "group_reader")
         write_relationships(
             [
                 RelationshipTuple(
-                    resource=ObjectRef("agents/toolrole", "readers"),
+                    resource=ObjectRef("agents/toolrole", "reader_members"),
                     relation="member",
                     subject=agent.principal_subject(),
                 ),
                 RelationshipTuple(
-                    resource=role_ref,
-                    relation="grantee",
-                    subject=SubjectRef.of("agents/toolrole", "readers", "effective_member"),
+                    resource=ObjectRef("agents/toolrole", "reader_members"),
+                    relation="member",
+                    subject=to_subject_ref(human),
                 ),
                 RelationshipTuple(
-                    resource=ObjectRef("auth/group", "research"),
+                    resource=ObjectRef("agents/toolrole", "readers"),
+                    relation="includes",
+                    subject=SubjectRef.of("agents/toolrole", "reader_members"),
+                ),
+                RelationshipTuple(
+                    resource=role_ref,
+                    relation="role",
+                    subject=SubjectRef.of("agents/toolrole", "readers"),
+                ),
+                RelationshipTuple(
+                    resource=role_ref,
+                    relation="approver",
+                    subject=to_subject_ref(human),
+                ),
+                RelationshipTuple(
+                    resource=to_object_ref(group),
                     relation="member",
                     subject=agent.principal_subject(),
                 ),
                 RelationshipTuple(
                     resource=group_ref,
                     relation="grantee",
-                    subject=SubjectRef.of("auth/group", "research", "member"),
+                    subject=to_subject_ref(group),
                 ),
             ]
         )
@@ -276,6 +305,16 @@ def test_toolrole_and_group_grantee_paths(
         )
     )
     assert advertised == {role_ref.resource_id, group_ref.resource_id}
+    assert backend().check_access(
+        subject=to_subject_ref(human),
+        action="use_approved",
+        resource=role_ref,
+    ).allowed
+    assert not backend().check_access(
+        subject=agent.principal_subject(),
+        action="use_approved",
+        resource=role_ref,
+    ).allowed
 
 
 @pytest.mark.django_db(transaction=True)
@@ -314,13 +353,14 @@ def test_server_qualified_grants_do_not_collide(agent_tooling_tables: None) -> N
 
 @pytest.mark.django_db(transaction=True)
 def test_tool_grant_identity_is_canonical_and_immutable(agent_tooling_tables: None) -> None:
-    """The catalogue row owns the runtime grant id and rejects identity drift."""
+    """The catalogue row PK owns authorization while its public key stays immutable."""
 
     del agent_tooling_tables
     with system_context(reason="test tool identity"):
         server = MCPServer.objects.create(name="identity-server")
         tool = MCPTool.objects.create(server=server, name="search")
-        assert tool.grant_id == tool_grant_ref(str(server.sqid), "search").resource_id
+        assert tool_grant_ref(str(server.sqid), "search").resource_id == str(tool.pk)
+        assert MCPTool.legacy_rebac_id_lookup(tool.grant_id) == {"grant_id": tool.grant_id}
         tool.name = "renamed"
         with pytest.raises(ValueError, match="immutable"):
             tool.save(update_fields=("name",))
@@ -331,7 +371,7 @@ def test_tool_grant_identity_is_canonical_and_immutable(agent_tooling_tables: No
 
         bulk_tool = MCPTool(server=server, name="bulk-search")
         MCPTool.objects.bulk_create((bulk_tool,))
-        assert bulk_tool.grant_id == tool_grant_ref(str(server.sqid), "bulk-search").resource_id
+        assert tool_grant_ref(str(server.sqid), "bulk-search").resource_id == str(bulk_tool.pk)
         with pytest.raises(ValueError, match="immutable"):
             MCPTool.objects.bulk_create(
                 (MCPTool(server=server, name="bulk-search"),),
@@ -342,12 +382,16 @@ def test_tool_grant_identity_is_canonical_and_immutable(agent_tooling_tables: No
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("storage", ("denormalized", "registry"))
 def test_live_tool_migration_removes_only_evidenced_uncaveated_mirrors(
     agent_tooling_tables: None,
+    settings: Any,
+    storage: str,
 ) -> None:
     """Selection evidence removes its old mirror while unrelated grants survive."""
 
     del agent_tooling_tables
+    settings.REBAC_LOCAL_BACKEND_STORAGE = storage
     owner = User.objects.create_user(username="tool-migration-owner")
     with system_context(reason="test tool migration setup"):
         agent = Agent.objects.create(name="Tool migration", owner=owner)
@@ -355,28 +399,33 @@ def test_live_tool_migration_removes_only_evidenced_uncaveated_mirrors(
         selected = MCPTool.objects.create(server=server, name="selected")
         unrelated = MCPTool.objects.create(server=server, name="unrelated")
         agent.mcp_tools.add(selected)
+        old_subject = public_subject_ref(agent.principal_subject())
         write_relationships(
             [
                 RelationshipTuple(
-                    resource=tool_grant_ref(str(server.sqid), selected.name),
+                    resource=ObjectRef(TOOL_GRANT_RESOURCE_TYPE, selected.grant_id),
                     relation="grantee",
-                    subject=agent.principal_subject(),
+                    subject=old_subject,
                 ),
                 RelationshipTuple(
-                    resource=tool_grant_ref(str(server.sqid), unrelated.name),
+                    resource=ObjectRef(TOOL_GRANT_RESOURCE_TYPE, unrelated.grant_id),
                     relation="grantee",
-                    subject=agent.principal_subject(),
+                    subject=old_subject,
                 ),
             ]
         )
 
-    remove_evidenced_mirrors(apps, SimpleNamespace(connection=connection))
-
     rows = active_relationship_model().objects.filter(
         relation="grantee",
-        subject_type=agent.principal_subject().subject_type,
-        subject_id=agent.principal_subject().subject_id,
+        subject_type=old_subject.subject_type,
+        subject_id=old_subject.subject_id,
     )
+    assert rows.filter(resource_id=selected.grant_id).exists()
+    assert rows.filter(resource_id=unrelated.grant_id).exists()
+
+    historical_apps = ProjectState.from_apps(apps).apps
+    remove_evidenced_mirrors(historical_apps, SimpleNamespace(connection=connection))
+
     assert not rows.filter(resource_id=selected.grant_id).exists()
     assert rows.filter(resource_id=unrelated.grant_id).exists()
 
@@ -518,13 +567,17 @@ def test_tool_grants_enumerate_the_canonical_catalogue(
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("storage", ("denormalized", "registry"))
 def test_builtin_catalogue_sync_is_deterministic_and_seeds_reader_bundle(
     agent_tooling_tables: None,
     monkeypatch: pytest.MonkeyPatch,
+    settings: Any,
+    storage: str,
 ) -> None:
     """Live code projects to MCPTool rows and one sync-owned reader role grant set."""
 
     del agent_tooling_tables
+    settings.REBAC_LOCAL_BACKEND_STORAGE = storage
     owner = User.objects.create_user(username="catalogue-sync-owner")
     with system_context(reason="test builtin catalogue setup"):
         agent = Agent.objects.create(name="Catalogue Sync", owner=owner)
@@ -561,6 +614,15 @@ def test_builtin_catalogue_sync_is_deterministic_and_seeds_reader_bundle(
     assert [row.name for row in rows] == ["query_records", "write_records"]
     assert rows[0].description == query_records.__doc__
     assert rows[0].input_schema["properties"]["search"]["type"] == "string"
+
+    reader_grant = active_relationship_model().objects.get(
+        resource_type=TOOL_GRANT_RESOURCE_TYPE,
+        resource_id=tool_grant_ref(str(server.sqid), "query_records").resource_id,
+        subject_type=RESOURCE_READER_ROLE.resource_type,
+        subject_id=RESOURCE_READER_ROLE.resource_id,
+    )
+    assert reader_grant.relation == "role"
+    assert reader_grant.optional_subject_relation == ""
 
     with system_context(reason="test builtin reader membership"):
         write_relationships(

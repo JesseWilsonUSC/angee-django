@@ -26,6 +26,7 @@ from pydantic import JsonValue
 from rebac import SubjectRef, actor_context, system_context
 from rebac.actors import to_subject_ref
 
+from angee.base.identity import canonical_subject_ref
 from angee.workflows.attempts import RecoveryCapability, RecoveryMode
 from angee.workflows.steps import DecisionSpec, StepEffect, StepImpl, StepOutcome, StepResult, positive_int
 
@@ -336,7 +337,7 @@ def _identity_input(value: Any) -> dict[str, Any]:
         raise ValidationError({"input": "Identity context must be an object."})
     if assignee:
         try:
-            SubjectRef.parse(assignee)
+            canonical_subject_ref(assignee)
         except (TypeError, ValueError) as error:
             raise ValidationError({"input": "Identity assignee must be a subject reference."}) from error
     normalized = {
@@ -377,7 +378,7 @@ def _identity_selection_authority(proposal: Mapping[str, Any], *, run: Any) -> S
     if str(decision.resolution.get("party_id") or "") != proposal["party_id"]:
         raise ValidationError({"selection_decision_id": "Selection Decision chose a different Party."})
     try:
-        actor = SubjectRef.parse(decision.resolved_by)
+        actor = canonical_subject_ref(decision.resolved_by)
     except (TypeError, ValueError) as error:
         raise ValidationError({"selection_decision_id": "Selection Decision requires a human resolver."}) from error
     if get_user_model().objects.active_person_for_subject(actor) is None:
@@ -589,7 +590,7 @@ def _decision_actor(approved: Mapping[str, Any]) -> Any:
     """Resolve the human who completed the Decision as the accountable writer."""
 
     try:
-        subject = SubjectRef.parse(str(approved.get("_resolved_by") or ""))
+        subject = canonical_subject_ref(str(approved.get("_resolved_by") or ""))
     except (TypeError, ValueError) as error:
         raise ValidationError({"decision": "Identity review requires a human resolver."}) from error
     user = get_user_model().objects.active_person_for_subject(subject)

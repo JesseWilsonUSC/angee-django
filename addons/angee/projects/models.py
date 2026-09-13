@@ -50,7 +50,7 @@ class ProjectQuerySet(AngeeQuerySet[Any]):
         return super().bulk_update(objs, fields, **kwargs)
 
 
-class ProjectManager(AngeeManager.from_queryset(ProjectQuerySet)):
+class ProjectManager(AngeeManager.from_queryset(ProjectQuerySet)):  # type: ignore[misc]
     """Own the idempotent Task-to-Project maturation write."""
 
     def bulk_create(self, objs: Any, **kwargs: Any) -> Any:
@@ -352,7 +352,6 @@ class Project(AuditMixin, ThreadedModelMixin, HistoryMixin, RevisionMixin, Angee
         abstract = True
         ordering = ("status", "target_date", "title", "sqid")
         rebac_resource_type = "projects/project"
-        rebac_id_attr = "sqid"
         constraints = (
             models.UniqueConstraint(
                 fields=("converted_from",),
@@ -394,29 +393,29 @@ class Project(AuditMixin, ThreadedModelMixin, HistoryMixin, RevisionMixin, Angee
     def pause(self) -> Project:
         """Pause this project, idempotently."""
 
-        return self._set_status(self.ProjectStatus.PAUSED)
+        return self._set_status(str(self.ProjectStatus.PAUSED))
 
     def resume(self) -> Project:
         """Return this project to open work, idempotently."""
 
-        return self._set_status(self.ProjectStatus.OPEN)
+        return self._set_status(str(self.ProjectStatus.OPEN))
 
     def complete(self) -> Project:
         """Complete this project, idempotently."""
 
-        return self._set_status(self.ProjectStatus.DONE)
+        return self._set_status(str(self.ProjectStatus.DONE))
 
     def drop(self) -> Project:
         """Drop this project, idempotently."""
 
-        return self._set_status(self.ProjectStatus.DROPPED)
+        return self._set_status(str(self.ProjectStatus.DROPPED))
 
-    def _set_status(self, status: ProjectStatus) -> Project:
+    def _set_status(self, status: str) -> Project:
         """Persist one lifecycle target while preserving exact replay no-ops."""
 
         if self.status == status:
             return self
-        self.status = status
+        cast(Any, self).status = status
         self.save(update_fields=("status", "updated_at"))
         return self
 
@@ -443,7 +442,6 @@ class Milestone(AuditMixin, AngeeDataModel):
         abstract = True
         ordering = ("project", "sort_order", "sqid")
         rebac_resource_type = "projects/milestone"
-        rebac_id_attr = "sqid"
         constraints = (
             models.UniqueConstraint(
                 fields=("project", "sort_order"),
@@ -558,7 +556,6 @@ class Task(AuditMixin, ThreadedModelMixin, HistoryMixin, AngeeDataModel):
         abstract = True
         ordering = ("project", "sort_order", "sub_sort_order", "sqid")
         rebac_resource_type = "projects/task"
-        rebac_id_attr = "sqid"
         constraints = (
             models.UniqueConstraint(
                 fields=("project", "sort_order"),
@@ -606,9 +603,9 @@ class Task(AuditMixin, ThreadedModelMixin, HistoryMixin, AngeeDataModel):
 
         if self.status == self.TaskStatus.DONE and self.done_at is not None and self.dropped_at is None:
             return self
-        self.status = self.TaskStatus.DONE
+        cast(Any, self).status = str(self.TaskStatus.DONE)
         self.done_at = self.done_at or timezone.now()
-        self.dropped_reason = None
+        cast(Any, self).dropped_reason = None
         self.dropped_at = None
         self.save(update_fields=("status", "done_at", "dropped_reason", "dropped_at", "updated_at"))
         return self
@@ -622,8 +619,8 @@ class Task(AuditMixin, ThreadedModelMixin, HistoryMixin, AngeeDataModel):
             raise ValidationError({"reason": "Choose duplicate, declined, or obsolete."}) from error
         if self.status == self.TaskStatus.DROPPED and self.dropped_reason == reason_member and self.dropped_at:
             return self
-        self.status = self.TaskStatus.DROPPED
-        self.dropped_reason = reason_member
+        cast(Any, self).status = str(self.TaskStatus.DROPPED)
+        cast(Any, self).dropped_reason = str(reason_member)
         self.dropped_at = self.dropped_at or timezone.now()
         self.done_at = None
         self.save(update_fields=("status", "dropped_reason", "dropped_at", "done_at", "updated_at"))
@@ -639,9 +636,9 @@ class Task(AuditMixin, ThreadedModelMixin, HistoryMixin, AngeeDataModel):
             and self.dropped_at is None
         ):
             return self
-        self.status = self.TaskStatus.OPEN
+        cast(Any, self).status = str(self.TaskStatus.OPEN)
         self.done_at = None
-        self.dropped_reason = None
+        cast(Any, self).dropped_reason = None
         self.dropped_at = None
         self.save(update_fields=("status", "done_at", "dropped_reason", "dropped_at", "updated_at"))
         return self
@@ -732,7 +729,6 @@ class TaskRelation(AuditMixin, AngeeDataModel):
         abstract = True
         ordering = ("task", "related_task", "sqid")
         rebac_resource_type = "projects/task_relation"
-        rebac_id_attr = "sqid"
         constraints = (
             models.UniqueConstraint(
                 fields=("task", "related_task"),
@@ -762,14 +758,16 @@ class TaskRelation(AuditMixin, AngeeDataModel):
     def _canonicalize_symmetric_pair(self) -> bool:
         """Order symmetric relation endpoints by primary key."""
 
+        task_id = cast(Any, self).task_id
+        related_task_id = cast(Any, self).related_task_id
         if (
             self.kind not in self.SYMMETRIC_KINDS
-            or self.task_id is None
-            or self.related_task_id is None
-            or self.task_id < self.related_task_id
+            or task_id is None
+            or related_task_id is None
+            or task_id < related_task_id
         ):
             return False
-        self.task_id, self.related_task_id = self.related_task_id, self.task_id
+        cast(Any, self).task_id, cast(Any, self).related_task_id = related_task_id, task_id
         return True
 
     @property
@@ -819,7 +817,6 @@ class Participant(AuditMixin, AngeeDataModel):
         abstract = True
         ordering = ("project", "kind", "sqid")
         rebac_resource_type = "projects/participant"
-        rebac_id_attr = "sqid"
         constraints = (
             models.UniqueConstraint(
                 fields=("project", "party"),
@@ -865,7 +862,6 @@ class ProjectBinding(AuditMixin, RecordRefMixin, AngeeDataModel):
         abstract = True
         ordering = ("project", "content_type", "object_id", "sqid")
         rebac_resource_type = "projects/project_binding"
-        rebac_id_attr = "sqid"
         constraints = (
             models.UniqueConstraint(
                 fields=("project", "content_type", "object_id"),
@@ -973,7 +969,6 @@ class Link(AuditMixin, RecordRefMixin, AngeeDataModel):
         abstract = True
         ordering = ("-updated_at", "url", "sqid")
         rebac_resource_type = "projects/link"
-        rebac_id_attr = "sqid"
         constraints = (
             models.UniqueConstraint(
                 fields=("content_type", "object_id", "url"),

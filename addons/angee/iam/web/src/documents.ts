@@ -12,6 +12,9 @@ export const RecordAccessDocument = graphql(`
     record_access(target_type: $targetType, target_ids: $targetIds) {
       target_id relation subject subject_type label
     }
+    record_access_options(target_type: $targetType, target_ids: $targetIds) {
+      relation permission
+    }
   }
 `);
 

@@ -76,7 +76,7 @@ const TypeNamesSchema = v.objectWithRest({
   deletePayload: OptionalString,
   revision: OptionalString,
 }, OptionalString);
-const SubjectSpeciesSchema = v.looseObject({
+const SubjectTypeSchema = v.looseObject({
   type: v.string(),
   relation: OptionalString,
   resource: OptionalString,
@@ -84,7 +84,7 @@ const SubjectSpeciesSchema = v.looseObject({
 const GrantableRelationSchema = v.looseObject({
   relation: v.string(),
   permission: v.string(),
-  subjects: v.pipe(v.array(SubjectSpeciesSchema), v.readonly()),
+  subjects: v.pipe(v.array(SubjectTypeSchema), v.readonly()),
 });
 const ResourceSchema = v.looseObject({
   schemaName: v.string(),
@@ -130,7 +130,7 @@ export type DataResourceSubtitleMetadata = v.InferOutput<typeof SubtitleSchema>;
 export type DataResourceLinesMetadata = v.InferOutput<typeof LinesSchema>;
 export type DataResourceRootMetadata = v.InferOutput<typeof RootsSchema>;
 export type DataResourceTypeMetadata = v.InferOutput<typeof TypeNamesSchema>;
-export type DataResourceSubjectSpecies = v.InferOutput<typeof SubjectSpeciesSchema>;
+export type DataResourceSubjectType = v.InferOutput<typeof SubjectTypeSchema>;
 export type DataResourceGrantableRelation = v.InferOutput<typeof GrantableRelationSchema>;
 export type DataResourceMetadata = v.InferOutput<typeof ResourceSchema>;
 export type AngeeSchemaMetadata = v.InferOutput<typeof SchemaMetadataSchema>;

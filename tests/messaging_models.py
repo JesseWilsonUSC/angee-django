@@ -31,7 +31,6 @@ class Directory(AbstractDirectory, Integration):
         app_label = "parties"
         db_table = "test_parties_directory"
         rebac_resource_type = "parties/directory"
-        rebac_id_attr = "sqid"
 
 
 class Folder(AbstractContactFolder):
@@ -44,7 +43,6 @@ class Folder(AbstractContactFolder):
         app_label = "parties"
         db_table = "test_parties_folder"
         rebac_resource_type = "parties/folder"
-        rebac_id_attr = "sqid"
 
 
 class Party(AbstractParty):
@@ -57,7 +55,6 @@ class Party(AbstractParty):
         app_label = "parties"
         db_table = "test_parties_party"
         rebac_resource_type = "parties/party"
-        rebac_id_attr = "sqid"
 
 
 class Handle(AbstractHandle):
@@ -70,7 +67,6 @@ class Handle(AbstractHandle):
         app_label = "parties"
         db_table = "test_parties_handle"
         rebac_resource_type = "parties/handle"
-        rebac_id_attr = "sqid"
 
 
 class Fragment(AbstractFragment):
@@ -95,7 +91,6 @@ class Channel(AbstractChannel, Integration):
         app_label = "messaging"
         db_table = "test_messaging_channel"
         rebac_resource_type = "messaging/channel"
-        rebac_id_attr = "sqid"
 
 
 class Thread(ThreadProjects, ThreadSpace, ThreadPublic, AbstractThread):
@@ -112,7 +107,6 @@ class Thread(ThreadProjects, ThreadSpace, ThreadPublic, AbstractThread):
         app_label = "messaging"
         db_table = "test_messaging_thread"
         rebac_resource_type = "messaging/thread"
-        rebac_id_attr = "sqid"
 
 
 class MessageSubtype(AbstractMessageSubtype):
@@ -141,4 +135,3 @@ class Message(MessagePublic, AbstractMessage):
         app_label = "messaging"
         db_table = "test_messaging_message"
         rebac_resource_type = "messaging/message"
-        rebac_id_attr = "sqid"

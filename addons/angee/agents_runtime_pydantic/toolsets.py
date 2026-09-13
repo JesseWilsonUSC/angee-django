@@ -39,7 +39,12 @@ from pydantic_core import SchemaValidator, core_schema
 from rebac import PermissionDenied, SubjectRef, actor_context
 from rebac.backends import backend
 
-from angee.agents.grants import TOOL_GRANT_RESOURCE_TYPE, builtin_mcp_server, tool_grant_ref
+from angee.agents.grants import (
+    TOOL_GRANT_RESOURCE_TYPE,
+    builtin_mcp_server,
+    tool_grant_ids,
+    tool_grant_ref,
+)
 from angee.agents.models import BUILTIN_MCP_ANGEE
 from angee.mcp.graphql import _CompiledTool
 from angee.mcp.server import mcp_server
@@ -116,9 +121,14 @@ class AngeeToolset(AbstractToolset[Any]):
             server_sqid = await sync_to_async(lambda: str(builtin_mcp_server().sqid), thread_sensitive=True)()
         server = await sync_to_async(mcp_server, thread_sensitive=True)()
         tools: dict[str, ToolsetTool[Any]] = {}
-        for registered in sorted(await server.list_tools(), key=lambda item: item.name):
+        registered_tools = sorted(await server.list_tools(), key=lambda item: item.name)
+        grant_ids = await sync_to_async(tool_grant_ids, thread_sensitive=True)(
+            server_sqid,
+            tuple(tool.name for tool in registered_tools),
+        )
+        for registered in registered_tools:
             name = registered.name
-            grant_id = tool_grant_ref(server_sqid, name).resource_id
+            grant_id = grant_ids.get(name)
             if grant_id not in granted:
                 continue
             _assert_in_process_compatible(registered)
@@ -195,10 +205,14 @@ class ToolGrantToolset(WrapperToolset[Any]):
 
         granted = await self.access.granted_ids()
         tools = await self.wrapped.get_tools(ctx)
+        grant_ids = await sync_to_async(tool_grant_ids, thread_sensitive=True)(
+            self.server_sqid,
+            tools,
+        )
         return {
             name: tool
             for name, tool in tools.items()
-            if tool_grant_ref(self.server_sqid, name).resource_id in granted
+            if grant_ids.get(name) in granted
         }
 
     async def call_tool(

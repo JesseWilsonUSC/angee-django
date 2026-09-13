@@ -11,8 +11,9 @@ import pytest
 from django.apps import apps
 from django.core.management import call_command
 from django.db import IntegrityError, connection, transaction
-from rebac import PermissionDenied, actor_context, system_context
-from rebac.models import active_relationship_model
+from rebac import PermissionDenied, actor_context, system_context, to_object_ref, to_subject_ref
+from rebac.backends import backend
+from rebac.models import SchemaRelation, active_relationship_model
 
 from angee.compose.permissions import (
     apply_schema_paths,
@@ -78,12 +79,15 @@ def spaces_tables(transactional_db: Any, tmp_path: Path) -> Iterator[None]:
 def _role_relations(group: Group, user: Any) -> set[str]:
     """Return roster roles resolved live for ``user`` on ``group``."""
 
-    with actor_context(user):
-        return {
-            role
-            for role in ("owner", "moderator", "member", "viewer")
-            if group.has_access(f"roster_{role}")
-        }
+    # The fixture may still be inside system_context; dispatching an explicit
+    # subject to the backend evaluates policy without an ambient sudo bypass.
+    return {
+        role
+        for role in ("owner", "moderator", "member", "viewer")
+        if backend().check_access(
+            subject=to_subject_ref(user), action=f"roster_{role}", resource=to_object_ref(group),
+        ).allowed
+    }
 
 
 def _wildcard_reader_exists(group: Group) -> bool:
@@ -91,7 +95,7 @@ def _wildcard_reader_exists(group: Group) -> bool:
 
     return active_relationship_model().objects.filter(
         resource_type="spaces/group",
-        resource_id=group.sqid,
+        resource_id=str(group.pk),
         relation="reader",
         subject_type="auth/user",
         subject_id="*",
@@ -103,7 +107,7 @@ def _group_relationship_count(group: Group) -> int:
 
     return active_relationship_model().objects.filter(
         resource_type="spaces/group",
-        resource_id=group.sqid,
+        resource_id=str(group.pk),
     ).count()
 
 
@@ -288,11 +292,35 @@ def test_membership_crud_and_pair_uniqueness(spaces_tables: None) -> None:
         assert Membership.objects.count() == 0
 
 
-def test_membership_lifecycle_reconciles_role_relationships(spaces_tables: None) -> None:
-    """Confirm, dismiss, role change, and queryset delete keep one direct role tuple."""
+@pytest.mark.parametrize("storage", ["denormalized", "registry"])
+def test_membership_lifecycle_filters_live_roles(
+    spaces_tables: None, settings: Any, storage: str,
+) -> None:
+    """Pending, dismissed and unrelated roles deny in direct and queryset checks."""
 
     del spaces_tables
+    settings.REBAC_LOCAL_BACKEND_STORAGE = storage
     user, person = _person_for("spaces-member")
+    other_user, other_person = _person_for("spaces-other-member")
+
+    for role in ("owner", "moderator", "member", "viewer"):
+        persisted = SchemaRelation.objects.get(definition__resource_type="spaces/group", name=f"roster_{role}")
+        assert persisted.backing == {
+            "kind": "fk",
+            "path": "memberships__party__person__user",
+            "filters": {
+                "memberships__is_confirmed": True,
+                "memberships__is_dismissed": False,
+                "memberships__role": role,
+            },
+        }
+
+    def assert_roles(group: Group, expected: set[str]) -> None:
+        assert _role_relations(group, user) == expected
+        for role in ("owner", "moderator", "member", "viewer"):
+            scoped = Group.objects.with_actor(user).with_action(f"roster_{role}").filter(pk=group.pk)
+            assert scoped.exists() == (role in expected), str(scoped.query)
+
     with system_context(reason="spaces membership lifecycle"):
         group = Group.objects.create(name="Community", slug="community")
         membership = Membership.objects.create(
@@ -300,21 +328,26 @@ def test_membership_lifecycle_reconciles_role_relationships(spaces_tables: None)
             party=person,
             role=Membership.MembershipRole.OWNER,
         )
-        assert _role_relations(group, user) == set()
+        other_membership = Membership.objects.create(
+            group=group, party=other_person, role=Membership.MembershipRole.VIEWER,
+        )
+        other_membership.confirm()
+        assert_roles(group, set())
+        assert _role_relations(group, other_user) == {"viewer"}
 
         membership.confirm()
-        assert _role_relations(group, user) == {"owner"}
+        assert_roles(group, {"owner"})
 
         membership.dismiss()
-        assert _role_relations(group, user) == set()
+        assert_roles(group, set())
 
         membership.confirm()
         membership.role = Membership.MembershipRole.MODERATOR
         membership.save(update_fields=["role", "updated_at"])
-        assert _role_relations(group, user) == {"moderator"}
+        assert_roles(group, {"moderator"})
 
         Membership.objects.filter(pk=membership.pk).delete()
-        assert _role_relations(group, user) == set()
+        assert_roles(group, set())
 
 
 def test_membership_repoint_revokes_the_stored_subject(spaces_tables: None) -> None:
@@ -412,7 +445,7 @@ def test_membership_without_a_platform_user_grants_nothing(spaces_tables: None) 
 
     assert not active_relationship_model().objects.filter(
         resource_type="spaces/group",
-        resource_id=group.sqid,
+        resource_id=str(group.pk),
         relation__in=("owner", "moderator", "member", "viewer"),
     ).exists()
 
@@ -472,7 +505,7 @@ def test_group_delete_revokes_membership_and_group_relationships(spaces_tables: 
         assert _role_relations(group, user) == {"owner"}
         assert _group_relationship_count(group) == 1
 
-        resource_id = group.sqid
+        resource_id = str(group.pk)
         group.delete()
 
     assert not active_relationship_model().objects.filter(

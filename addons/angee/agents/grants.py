@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from asgiref.sync import async_to_sync
@@ -17,28 +18,53 @@ from angee.mcp.resource_tools import RESOURCE_READER_TOOL_TAG
 from angee.mcp.server import mcp_server
 
 TOOL_GRANT_RESOURCE_TYPE = "agents/tool_grant"
-"""REBAC definition for MCPTool rows keyed by server-qualified tool id."""
+"""REBAC definition for primary-keyed MCPTool catalogue rows."""
 
 TOOL_GRANTEE_RELATION = "grantee"
 """Stored grant relation independent of live Agent.mcp_tools selections."""
+
+TOOL_ROLE_RELATION = "role"
+"""Stored tool-bundle relation resolved through ToolRole.effective_member."""
 
 RESOURCE_READER_ROLE = ObjectRef("agents/toolrole", "resource_reader")
 """Built-in bundle granted to successfully provisioned in-process agents."""
 
 
 def tool_grant_ref(server_sqid: str, tool_name: str) -> ObjectRef:
-    """Return the canonical v1 grant object for one server-qualified tool.
+    """Resolve one public server/tool key to its model-backed grant object.
 
-    This is the sole constructor for tool-grant refs. Grant writers and runtime
-    checkers must both call it so a later scoped-id revision cannot drift between
-    persistence and authorization.
+    The server sqid and tool name remain catalogue/API keys. The persisted tool
+    row owns authorization identity, so grant writers and runtime checkers resolve
+    that boundary once and store its primary key.
     """
 
     tool_model = apps.get_model("agents", "MCPTool")
-    return ObjectRef(
-        TOOL_GRANT_RESOURCE_TYPE,
-        tool_model.make_grant_id(server_sqid, tool_name),
-    )
+    grant_ids = tool_grant_ids(server_sqid, (tool_name,))
+    try:
+        grant_id = grant_ids[tool_name]
+    except KeyError as error:
+        raise tool_model.DoesNotExist(
+            f"No MCP tool {tool_name!r} exists for server {server_sqid!r}."
+        ) from error
+    return ObjectRef(TOOL_GRANT_RESOURCE_TYPE, grant_id)
+
+
+def tool_grant_ids(server_sqid: str, tool_names: Iterable[str]) -> dict[str, str]:
+    """Resolve public catalogue keys to primary-key authorization identities."""
+
+    tool_model = apps.get_model("agents", "MCPTool")
+    server_model = apps.get_model("agents", "MCPServer")
+    server_lookup = {
+        f"server__{field}": value
+        for field, value in server_model.public_id_lookup(server_sqid).items()
+    }
+    return {
+        str(name): str(pk)
+        for name, pk in tool_model._base_manager.filter(
+            **server_lookup,
+            name__in=tool_names,
+        ).values_list("name", "pk")
+    }
 
 
 def builtin_mcp_server() -> Any:
@@ -99,28 +125,27 @@ def grant_resource_reader_role(agent: Any) -> None:
 def _sync_resource_reader_grants(server: Any, registered: list[Any]) -> None:
     """Replace the sync-owned generated-reader grants for ``resource_reader``."""
 
-    subject = SubjectRef.of(
-        RESOURCE_READER_ROLE.resource_type,
-        RESOURCE_READER_ROLE.resource_id,
-        "effective_member",
-    )
+    subject = SubjectRef(RESOURCE_READER_ROLE)
     delete_relationships(
         RelationshipFilter(
             resource_type=TOOL_GRANT_RESOURCE_TYPE,
-            relation=TOOL_GRANTEE_RELATION,
+            relation=TOOL_ROLE_RELATION,
             subject_type=subject.subject_type,
             subject_id=subject.subject_id,
             optional_subject_relation=subject.optional_relation,
         )
     )
+    reader_names = tuple(
+        tool.name for tool in registered if RESOURCE_READER_TOOL_TAG in tool.tags
+    )
+    grant_ids = tool_grant_ids(str(server.sqid), reader_names)
     writes = [
         RelationshipTuple(
-            resource=tool_grant_ref(str(server.sqid), tool.name),
-            relation=TOOL_GRANTEE_RELATION,
+            resource=ObjectRef(TOOL_GRANT_RESOURCE_TYPE, grant_ids[name]),
+            relation=TOOL_ROLE_RELATION,
             subject=subject,
         )
-        for tool in registered
-        if RESOURCE_READER_TOOL_TAG in tool.tags
+        for name in reader_names
     ]
     if writes:
         write_relationships(writes)

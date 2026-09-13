@@ -34,7 +34,7 @@ export {
   useSchemaFieldMetadata,
   type AngeeSchemaMetadata,
   type DataResourceAggregateMeasureMetadata,
-  type DataResourceSubjectSpecies,
+  type DataResourceSubjectType,
   type DataResourceGrantableRelation,
   type DataResourceFieldMetadata,
   type DataResourceLinesMetadata,

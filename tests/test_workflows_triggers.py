@@ -82,7 +82,6 @@ class SecuredTriggerSubject(AngeeDataModel):
         app_label = "chatterdemo"
         db_table = "test_workflows_secured_trigger_subject"
         rebac_resource_type = "chatterdemo/doc"
-        rebac_id_attr = "sqid"
 
 
 class UnpublishedTriggerSubject(models.Model):

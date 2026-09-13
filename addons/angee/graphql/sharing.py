@@ -8,6 +8,7 @@ from django.db import transaction
 from rebac import PermissionDenied, SubjectRef, resolve_subjects
 from rebac.resources import model_for_resource_type
 
+from angee.base.identity import canonical_subject_ref, public_subject_ref
 from angee.base.models import AngeeModel, DirectRecordAccess
 from angee.graphql.actions import ActionResult, action_guard, authorized_permission_target
 from angee.graphql.ids import PublicID
@@ -30,7 +31,7 @@ class RecordAccessType:
         return cls(
             target_id=target_id,
             relation=access.relation,
-            subject=str(access.subject),
+            subject=str(public_subject_ref(access.subject)),
             subject_type=access.subject.subject_type,
             label=label,
         )
@@ -69,14 +70,23 @@ class RecordAccessQuery:
 
     @strawberry.field
     def record_access_options(
-        self, info: strawberry.Info, target_type: str, target_id: PublicID,
+        self, info: strawberry.Info, target_type: str, target_ids: list[PublicID],
     ) -> list[RecordAccessOption]:
-        """Return declared relations the caller may manage on this record."""
+        """Return relations the caller may manage on every selected record."""
 
         model = _shareable_model(target_type)
-        _target, allowed = _authorized_record_access(info, model, target_id)
+        if not target_ids:
+            raise ValueError("Record access options require at least one target id.")
         declaration = model.get_rebac_grantable()
-        return [RecordAccessOption(relation=relation, permission=declaration[relation]) for relation in allowed]
+        allowed = set(declaration)
+        for target_id in dict.fromkeys(target_ids):
+            _target, target_allowed = _authorized_record_access(info, model, target_id)
+            allowed.intersection_update(target_allowed)
+        return [
+            RecordAccessOption(relation=relation, permission=permission)
+            for relation, permission in declaration.items()
+            if relation in allowed
+        ]
 
 
 @strawberry.type
@@ -122,7 +132,7 @@ class RecordAccessMutation:
         if not target_ids:
             raise ValueError("Revoking record access requires at least one target id.")
         permission = model.record_access_permission(relation)
-        subject_ref = SubjectRef.parse(subject)
+        subject_ref = canonical_subject_ref(subject)
         with transaction.atomic():
             targets = [authorized_permission_target(info, model, target_id, permission) for target_id in target_ids]
             for target in targets:
@@ -142,7 +152,7 @@ def _shareable_model(target_type: str) -> type[AngeeModel]:
 def _grant_subject(value: str) -> SubjectRef:
     """Return one concrete, existing subject for a new direct grant."""
 
-    subject = SubjectRef.parse(value)
+    subject = canonical_subject_ref(value)
     if subject.subject_id == "*":
         raise ValueError("Record access grants require a concrete subject.")
     if subject not in resolve_subjects((subject,)):

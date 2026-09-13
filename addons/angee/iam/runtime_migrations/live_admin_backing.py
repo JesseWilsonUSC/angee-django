@@ -8,6 +8,8 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db import migrations, models
 from django.db.migrations.state import ProjectState
 
+from angee.base.fields import SqidField
+
 _ADMIN_TYPE = "angee/role"
 _ADMIN_ID = "admin"
 _MEMBER_RELATION = "member"
@@ -25,10 +27,10 @@ def applies(project_state: ProjectState) -> bool:
     user = project_state.models.get(("iam", "user"))
     if user is None:
         return False
-    required = {"sqid", "is_superuser", "is_active"}
+    required = {"is_superuser", "is_active"}
     if not required.issubset(user.fields):
         raise ImproperlyConfigured(
-            "angee.iam:live_admin_backing requires User.sqid, is_superuser, and is_active"
+            "angee.iam:live_admin_backing requires User.is_superuser and User.is_active"
         )
     if not isinstance(user.fields["is_superuser"], models.BooleanField) or not isinstance(
         user.fields["is_active"],
@@ -62,11 +64,12 @@ def remove_evidenced_admin_mirrors(apps: Any, schema_editor: Any) -> None:
 
     database = schema_editor.connection.alias
     user = apps.get_model("iam", "User")
+    codec = SqidField(real_field_name="id", prefix="usr_", min_length=8)
     evidenced = {
-        str(value)
+        codec.public_id_from_value(value)
         for value in user._base_manager.using(database)
         .filter(is_superuser=True)
-        .values_list("sqid", flat=True)
+        .values_list("pk", flat=True)
     }
     stores = (
         (apps.get_model("rebac", "Relationship"), False),

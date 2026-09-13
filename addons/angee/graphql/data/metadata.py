@@ -570,7 +570,7 @@ def _grantable_relations(
     model: type[models.Model] | None,
     resources_by_model: dict[type[models.Model], data_contract.DataResourceMetadata],
 ) -> tuple[data_contract.GrantableRelationMetadata, ...]:
-    """Project a model's checked grant declaration through selectable resources."""
+    """Project grants through resources exposing their model's subject relation."""
 
     if model is None or not issubclass(model, AngeeModel):
         return ()
@@ -596,7 +596,11 @@ def _grantable_relations(
                     relation=allowed.relation or None,
                     resource=(
                         subject_resource.model_label
-                        if subject_resource is not None and subject_resource.subject_field is not None
+                        if subject_resource is not None
+                        and subject_model is not None
+                        and subject_resource.subject_field is not None
+                        and (getattr(subject_model._meta, "rebac_subject_relation", "") or "")
+                        == (allowed.relation or "")
                         else None
                     ),
                 )

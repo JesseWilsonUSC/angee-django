@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from django.apps import apps
@@ -25,6 +24,10 @@ def test_group_adoption_covers_absent_and_proxy_iam_state() -> None:
 
     state = ProjectState.from_apps(apps)
     assert not applies(state)
+    without_owner = state.clone()
+    without_owner.remove_model("iam", "user")
+    without_owner.remove_model("iam", "group")
+    assert not applies(without_owner)
     without_iam = state.clone()
     without_iam.remove_model("iam", "group")
     assert applies(without_iam)
@@ -54,7 +57,7 @@ def test_group_adoption_state_operation_builds_concrete_model_from_both_historie
         group = migrated.models[("iam", "group")]
         assert not group.options.get("proxy", False)
         assert group.fields["name"].unique
-        assert group.fields["sqid"].prefix == "grp_"
+        assert "sqid" not in group.fields
 
 
 @pytest.mark.django_db(transaction=True)

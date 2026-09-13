@@ -14,4 +14,3 @@ class Integration(IntegrationProjects, AbstractIntegration):
         app_label = "integrate"
         db_table = "test_integrate_integration"
         rebac_resource_type = "integrate/integration"
-        rebac_id_attr = "sqid"

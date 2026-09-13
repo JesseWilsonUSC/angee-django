@@ -29,7 +29,7 @@ from rebac.schema import Definition, Permission, Relation, Schema, render_allowe
 from strawberry import auto
 from strawberry.scalars import JSON
 
-from angee.base.identity import instance_from_public_id
+from angee.base.identity import instance_from_public_id, public_subject_ref
 from angee.graphql.access import ActorSelfChangeReadGate
 from angee.graphql.data import hasura_model_resource, hasura_pydantic_resource
 from angee.graphql.deletion import DeletePreview, attach_delete_preview_metadata
@@ -46,14 +46,17 @@ from angee.iam.roles import (
     IAM_OVERVIEW_DEFAULT_PEEK_LIMIT as _IAM_OVERVIEW_DEFAULT_PEEK_LIMIT,
 )
 from angee.iam.roles import (
-    IAMGroupBindingRow,
-    IAMGroupMemberRow,
     IAMGrantRow,
     IAMRoleRow,
+)
+from angee.iam.roles import (
     grant_role as _grant_role_owner,
+)
+from angee.iam.roles import (
     group_bindings as _group_bindings_owner,
+)
+from angee.iam.roles import (
     group_members as _group_members_owner,
-    revoke_role as _revoke_role_owner,
 )
 from angee.iam.roles import (
     iam_overview as _iam_overview_owner,
@@ -72,6 +75,9 @@ from angee.iam.roles import (
 )
 from angee.iam.roles import (
     relationship_rows as _relationship_rows_owner,
+)
+from angee.iam.roles import (
+    revoke_role as _revoke_role_owner,
 )
 
 User = cast(type[Any], get_user_model())
@@ -99,9 +105,9 @@ class UserType(AngeeNode):
 
     @strawberry_django.field
     def assignment_subject(self) -> str:
-        """Canonical REBAC subject used by workflow and approval assignments."""
+        """Public subject used by workflow and approval assignment inputs."""
 
-        return str(to_subject_ref(cast(Any, self)))
+        return str(public_subject_ref(to_subject_ref(cast(Any, self))))
 
     @strawberry_django.field(only=["first_name", "last_name", "username"])
     def display_name(self) -> str:
@@ -167,9 +173,9 @@ class GroupType(AngeeNode):
 
     @strawberry.field
     def assignment_subject(self) -> str:
-        """Canonical member subject for assigning work to this group."""
+        """Public member subject for assigning work to this group."""
 
-        return str(to_subject_ref(cast(Any, self)))
+        return str(public_subject_ref(to_subject_ref(cast(Any, self))))
 
     @strawberry_django.field
     def members(self) -> list[IAMGroupMemberType]:

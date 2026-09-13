@@ -4,6 +4,14 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db import migrations, models
 from django.db.migrations.state import ProjectState
 
+from angee.base.fields import SqidField
+
+
+def _legacy_id(value, *, prefix):
+    """Encode one historical public id through its owning field implementation."""
+
+    return SqidField(real_field_name="id", prefix=prefix, min_length=8).public_id_from_value(value)
+
 
 def applies(project_state: ProjectState) -> bool:
     """Apply only to the exact pre-grant-id MCP catalogue state."""
@@ -64,12 +72,13 @@ def _delete_tuple(rows, *, registry=False, **identity):
 
 
 def populate_grant_ids(apps, schema_editor) -> None:
-    """Backfill each tool from its persisted server sqid and tool name."""
+    """Backfill each tool from its persisted server primary key and tool name."""
 
     database = schema_editor.connection.alias
     tool_model = apps.get_model("agents", "MCPTool")
-    for tool in tool_model._base_manager.using(database).select_related("server").iterator():
-        tool.grant_id = f"{str(tool.server.sqid).strip()}.{str(tool.name).strip()}"
+    for tool in tool_model._base_manager.using(database).iterator():
+        server_id = _legacy_id(tool.server_id, prefix="mcp_")
+        tool.grant_id = f"{server_id}.{str(tool.name).strip()}"
         tool.save(update_fields=("grant_id",))
 
 
@@ -94,7 +103,7 @@ def remove_evidenced_mirrors(apps, schema_editor) -> None:
     tool_agent_field = _through_field_for(tool_through, agent)
     tool_field = _through_field_for(tool_through, tool)
     selections = tool_through._base_manager.using(database).values_list(
-        f"{tool_agent_field.name}__user__sqid",
+        f"{tool_agent_field.name}__user_id",
         f"{tool_field.name}__grant_id",
     )
     for user_id, grant_id in selections.iterator():
@@ -108,7 +117,7 @@ def remove_evidenced_mirrors(apps, schema_editor) -> None:
                 resource_id=str(grant_id),
                 relation="grantee",
                 subject_type="auth/user",
-                subject_id=str(user_id),
+                subject_id=_legacy_id(user_id, prefix="usr_"),
             )
 
     server_through = agent.mcp_servers.through
@@ -116,8 +125,8 @@ def remove_evidenced_mirrors(apps, schema_editor) -> None:
     server_agent_field = _through_field_for(server_through, agent)
     server_field = _through_field_for(server_through, server)
     server_selections = server_through._base_manager.using(database).values_list(
-        f"{server_agent_field.name}__sqid",
-        f"{server_field.name}__sqid",
+        f"{server_agent_field.name}_id",
+        f"{server_field.name}_id",
     )
     for agent_id, server_id in server_selections.iterator():
         for rows, is_registry in stores:
@@ -125,10 +134,10 @@ def remove_evidenced_mirrors(apps, schema_editor) -> None:
                 rows,
                 registry=is_registry,
                 resource_type="agents/mcp_server",
-                resource_id=str(server_id),
+                resource_id=_legacy_id(server_id, prefix="mcp_"),
                 relation="agent",
                 subject_type="agents/agent",
-                subject_id=str(agent_id),
+                subject_id=_legacy_id(agent_id, prefix="agt_"),
             )
 
 

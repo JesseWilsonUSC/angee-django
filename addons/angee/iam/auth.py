@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.backends import BaseBackend, ModelBackend as DjangoModelBackend
+from django.contrib.auth.backends import BaseBackend
+from django.contrib.auth.backends import ModelBackend as DjangoModelBackend
 
 
 def can_authenticate_user(user: Any) -> bool:

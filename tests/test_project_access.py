@@ -20,6 +20,7 @@ from rebac import (
     to_subject_ref,
     write_relationships,
 )
+from rebac.models import active_relationship_model
 
 from angee.compose.permissions import apply_schema_paths, extension_source_map
 from angee.fs import write_atomic
@@ -98,6 +99,13 @@ def test_project_binding_grants_and_revokes_thread_message_access(
             message = Message.objects.create(thread=thread)
             binding = bind(project=project, target=channel)
             assert bind(project=project, target=channel).pk == binding.pk
+            assert active_relationship_model().objects.filter(
+                resource_type="integrate/integration",
+                resource_id=str(channel.pk),
+                relation="project",
+                subject_type="projects/project",
+                subject_id=str(project.pk),
+            ).exists()
             write_relationships(
                 [RelationshipTuple(to_object_ref(project), "editor", to_subject_ref(editor))]
             )

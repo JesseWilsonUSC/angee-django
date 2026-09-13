@@ -36,7 +36,7 @@ from rebac.schema import (
     relation_is_writable,
 )
 
-from angee.base.identity import public_id_for
+from angee.base.identity import canonical_subject_ref, public_id_for, public_subject_ref
 
 IAM_OVERVIEW_DEFAULT_PEEK_LIMIT = 6
 IAM_OVERVIEW_MAX_PEEK_LIMIT = 100
@@ -123,6 +123,7 @@ class IAMGrantRow(BaseModel):
             subject_type = str(row.subject_type)
             subject_id = str(row.subject_id)
             role = role_ref(resource_type, resource_id)
+            public_subject = public_subject_ref(subject)
             grants.append(
                 cls(
                     id=grant_public_id(
@@ -133,11 +134,11 @@ class IAMGrantRow(BaseModel):
                         optional_subject_relation=str(row.optional_subject_relation),
                         caveat_name=str(row.caveat_name),
                     ),
-                    subject=str(subject),
-                    subject_id=subject_id,
+                    subject=str(public_subject),
+                    subject_id=public_subject.subject_id,
                     subject_type=subject_type,
                     subject_relation=subject.optional_relation,
-                    subject_label=labels.get(subject) or str(subject),
+                    subject_label=labels.get(subject) or str(public_subject),
                     role=role,
                     role_name=resource_id,
                     namespace=role_namespace(resource_type),
@@ -300,7 +301,7 @@ def validate_subject(
 ) -> SubjectRef:
     """Return a concrete supported IAM subject for a new membership grant."""
 
-    subject = SubjectRef.parse(value)
+    subject = canonical_subject_ref(value)
     expected_relation = "" if subject.subject_type == "auth/user" else "member"
     supported = subject.subject_type in {"auth/user", "auth/group"}
     if not supported or subject.optional_relation != expected_relation:
@@ -439,24 +440,27 @@ def group_members(group: Any) -> list[IAMGroupMemberRow]:
         for row in rows
     ]
     labels = {subject: str(instance) for subject, instance in resolve_subjects(subjects).items()}
-    return [
-        IAMGroupMemberRow(
-            id=grant_public_id(
-                resource_type=str(row.resource_type),
-                resource_id=str(row.resource_id),
+    members: list[IAMGroupMemberRow] = []
+    for row, subject in zip(rows, subjects, strict=True):
+        public_subject = public_subject_ref(subject)
+        members.append(
+            IAMGroupMemberRow(
+                id=grant_public_id(
+                    resource_type=str(row.resource_type),
+                    resource_id=str(row.resource_id),
+                    subject_type=subject.subject_type,
+                    subject_id=subject.subject_id,
+                    optional_subject_relation=subject.optional_relation,
+                    caveat_name=str(row.caveat_name),
+                ),
+                subject=str(public_subject),
                 subject_type=subject.subject_type,
-                subject_id=subject.subject_id,
-                optional_subject_relation=subject.optional_relation,
+                subject_id=public_subject.subject_id,
+                label=labels.get(subject) or str(public_subject),
                 caveat_name=str(row.caveat_name),
-            ),
-            subject=str(subject),
-            subject_type=subject.subject_type,
-            subject_id=subject.subject_id,
-            label=labels.get(subject) or str(subject),
-            caveat_name=str(row.caveat_name),
+            )
         )
-        for row, subject in zip(rows, subjects, strict=True)
-    ]
+    return members
 
 
 def group_bindings(group: Any) -> list[IAMGroupBindingRow]:
@@ -476,6 +480,7 @@ def group_bindings(group: Any) -> list[IAMGroupBindingRow]:
         resource_type = str(row.resource_type)
         resource_id = str(row.resource_id)
         target_model, target_id = targets[(resource_type, resource_id)]
+        public_resource = public_subject_ref(SubjectRef.of(resource_type, resource_id))
         result.append(
             IAMGroupBindingRow(
                 id=grant_public_id(
@@ -487,9 +492,9 @@ def group_bindings(group: Any) -> list[IAMGroupBindingRow]:
                     caveat_name=str(row.caveat_name),
                     relation=str(row.relation),
                 ),
-                resource=f"{resource_type}:{resource_id}",
+                resource=str(public_resource),
                 resource_type=resource_type,
-                resource_id=resource_id,
+                resource_id=public_resource.subject_id,
                 relation=str(row.relation),
                 caveat_name=str(row.caveat_name),
                 target_model=target_model,

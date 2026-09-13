@@ -312,7 +312,7 @@ class DataResourceSubtitleMetadata:
 
 @dataclass(frozen=True, slots=True)
 class RecordAccessSubjectMetadata:
-    """One selectable subject species accepted by a grantable relation."""
+    """An accepted subject type and relation, with its matching picker resource."""
 
     type: str
     relation: str | None

@@ -72,7 +72,6 @@ class Group(HierarchyMixin, SqidMixin, AuditMixin, AngeeModel):
         abstract = True
         ordering = ("name", "sqid")
         rebac_resource_type = "spaces/group"
-        rebac_id_attr = "sqid"
 
     def __str__(self) -> str:
         """Return the group name for Django displays."""
@@ -194,7 +193,6 @@ class Membership(ScoredLinkMixin, SqidMixin, AuditMixin, AngeeModel):
         abstract = True
         ordering = ("group", "role", "sqid")
         rebac_resource_type = "spaces/membership"
-        rebac_id_attr = "sqid"
         constraints = (
             models.UniqueConstraint(
                 fields=("group", "party"),

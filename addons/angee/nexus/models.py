@@ -70,7 +70,6 @@ class Tie(SqidMixin, AngeeModel):
         abstract = True
         ordering = ("-gravity", "sqid")
         rebac_resource_type = "nexus/tie"
-        rebac_id_attr = "sqid"
         constraints = (
             models.CheckConstraint(
                 condition=models.Q(party_a__lt=models.F("party_b")),
@@ -176,7 +175,6 @@ class Cadence(SqidMixin, AngeeModel):
         abstract = True
         ordering = ("touch_due_at", "sqid")
         rebac_resource_type = "nexus/cadence"
-        rebac_id_attr = "sqid"
         constraints = (
             models.UniqueConstraint(
                 fields=("user", "party"),

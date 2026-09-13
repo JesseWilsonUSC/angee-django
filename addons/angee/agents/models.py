@@ -26,7 +26,7 @@ from django.utils import timezone
 from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import Model, ModelRequestParameters
 from pydantic_ai.settings import ModelSettings
-from rebac import SubjectRef, system_context
+from rebac import SubjectRef, system_context, to_subject_ref
 from rebac.mixins import RebacModelBase
 
 from angee.agents.backends import InferenceBackend
@@ -178,7 +178,6 @@ class InferenceProvider(ImplDefaultsMixin, metaclass=RebacModelBase):
         abstract = True
         ordering = ("name",)
         rebac_resource_type = "agents/inference_provider"
-        rebac_id_attr = "sqid"
 
     def __str__(self) -> str:
         """Return the provider's display label."""
@@ -283,7 +282,6 @@ class InferenceModel(SqidMixin, AuditMixin, AngeeModel):
         abstract = True
         ordering = ("provider", "name")
         rebac_resource_type = "agents/inference_model"
-        rebac_id_attr = "sqid"
         constraints = (models.UniqueConstraint(fields=("provider", "name"), name="uniq_agents_inference_model_name"),)
 
     def __str__(self) -> str:
@@ -382,7 +380,6 @@ class Skill(SqidMixin, AuditMixin, AngeeModel):
         abstract = True
         ordering = ("name", "path")
         rebac_resource_type = "agents/skill"
-        rebac_id_attr = "sqid"
         constraints = (models.UniqueConstraint(fields=("source", "path"), name="uniq_agents_skill_path"),)
 
     def __str__(self) -> str:
@@ -431,7 +428,6 @@ class MCPServer(SqidMixin, AuditMixin, AngeeModel):
         abstract = True
         ordering = ("name",)
         rebac_resource_type = "agents/mcp_server"
-        rebac_id_attr = "sqid"
 
     def __str__(self) -> str:
         """Return the server's name."""
@@ -573,7 +569,7 @@ class MCPToolQuerySet(AngeeQuerySet):
         return super().bulk_update(objs, fields, batch_size=batch_size)
 
 
-class MCPToolManager(AngeeManager.from_queryset(MCPToolQuerySet)):
+class MCPToolManager(AngeeManager.from_queryset(MCPToolQuerySet)):  # type: ignore[misc]
     """Manager carrying MCP tool identity invariants through bulk APIs."""
 
     def bulk_create(self, objs: Any, **kwargs: Any) -> Any:
@@ -611,13 +607,18 @@ class MCPTool(SqidMixin, AuditMixin, AngeeModel):
         abstract = True
         ordering = ("server", "name")
         rebac_resource_type = "agents/tool_grant"
-        rebac_id_attr = "grant_id"
         constraints = (models.UniqueConstraint(fields=("server", "name"), name="uniq_agents_mcp_tool_name"),)
 
     def __str__(self) -> str:
         """Return the tool's name."""
 
         return self.name
+
+    @classmethod
+    def legacy_rebac_id_lookup(cls, value: str) -> dict[str, Any]:
+        """Resolve the retired server-qualified authorization identity."""
+
+        return {"grant_id": value}
 
     @staticmethod
     def make_grant_id(server_sqid: str, tool_name: str) -> str:
@@ -811,7 +812,6 @@ class Agent(SqidMixin, AuditMixin, AngeeModel):
         abstract = True
         ordering = ("-updated_at",)
         rebac_resource_type = "agents/agent"
-        rebac_id_attr = "sqid"
 
     def __str__(self) -> str:
         """Return the agent's name."""
@@ -1310,7 +1310,6 @@ class AgentSession(SqidMixin, AuditMixin, AngeeModel):
         abstract = True
         ordering = ("-updated_at", "sqid")
         rebac_resource_type = "agents/session"
-        rebac_id_attr = "sqid"
 
     def __str__(self) -> str:
         """Return the session title or its agent name."""
@@ -1415,7 +1414,6 @@ class AgentTurn(SqidMixin, AuditMixin, AngeeModel):
         abstract = True
         ordering = ("session", "index")
         rebac_resource_type = "agents/turn"
-        rebac_id_attr = "sqid"
         constraints = (models.UniqueConstraint(fields=("session", "index"), name="uniq_agents_turn_session_index"),)
 
     @transition(

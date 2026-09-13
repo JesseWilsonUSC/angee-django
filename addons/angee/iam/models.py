@@ -17,10 +17,10 @@ from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import UnicodeUsernameValidator
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
-from django.db.models import Exists, OuterRef, Q, Subquery, TextField
+from django.db.models import Exists, OuterRef, Q, TextField
 from django.db.models.functions import Cast
 from django.utils import timezone
-from rebac import SubjectRef, current_actor, resolve_subjects, subject_id_attr, system_context
+from rebac import SubjectRef, current_actor, resolve_subjects, system_context
 from rebac.memberships import grant as grant_membership
 from rebac.memberships import revoke as revoke_membership
 from rebac.permissions_mixin import RebacPermissionsMixin
@@ -28,7 +28,7 @@ from rebac.resources import model_resource_type
 from rebac.roles import ROLE_RELATION
 
 from angee.base.fields import StateField
-from angee.base.identity import instance_from_public_id
+from angee.base.identity import canonical_subject_ref, instance_from_public_id
 from angee.base.mixins import SqidMixin
 from angee.base.models import AngeeManager, AngeeModel, AngeeQuerySet, role_anchor
 from angee.iam.identity import user_label
@@ -68,7 +68,7 @@ class Group(SqidMixin, AngeeModel):
     def member_subject(value: str, *, require_existing: bool = True) -> SubjectRef:
         """Validate one canonical user subject accepted by group membership."""
 
-        subject = SubjectRef.parse(value)
+        subject = canonical_subject_ref(value)
         if subject.subject_type != "auth/user" or subject.optional_relation:
             raise ValueError("Group members must use canonical 'auth/user:<id>' subjects.")
         if require_existing and subject not in resolve_subjects((subject,)):
@@ -165,19 +165,8 @@ class UserQuerySet(AngeeQuerySet[Any]):
             subject_type=model_resource_type(self.model),
             optional_subject_relation="",
         )
-        attribute = subject_id_attr(self.model)
-        subject_lookup = self.model._meta.pk.name if attribute == "pk" and self.model._meta.pk else attribute
-        if subject_lookup == "sqid":
-            subject_ids = tuple(
-                dict.fromkeys(
-                    str(subject_id)
-                    for subject_id in user_grants.values_list("subject_id", flat=True)
-                    if subject_id
-                )
-            )
-            assigned_user_pks = self.model._default_manager.filter(sqid__in=subject_ids).values("pk")
-            return cast(Self, self.exclude(pk__in=Subquery(assigned_user_pks)))
-
+        pk = self.model._meta.pk
+        subject_lookup = pk.name if pk is not None else "pk"
         users = self.annotate(_iam_subject_id=Cast(subject_lookup, output_field=TextField()))
         assigned = user_grants.filter(subject_id=OuterRef("_iam_subject_id"))
         return cast(Self, users.annotate(_iam_has_role=Exists(assigned)).filter(_iam_has_role=False))
@@ -288,7 +277,7 @@ class UserManager(AngeeManager.from_queryset(UserQuerySet), BaseUserManager):  #
             return None
         try:
             return self.system_context(reason="iam.subject.active_person").active_people().filter(
-                **{subject_id_attr(self.model): subject.subject_id}
+                pk=subject.subject_id
             ).first()
         except (TypeError, ValueError, ValidationError):
             return None

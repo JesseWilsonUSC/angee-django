@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+from angee.base.fields import SqidField
 from angee.spaces.runtime_migrations.live_relation_backing import remove_evidenced_mirrors
 
 
@@ -40,8 +41,8 @@ def test_spaces_cleanup_derives_exact_roster_and_thread_mirror_pairs() -> None:
 
     denormalized = _Rows()
     registry = _Rows()
-    membership_rows = _Rows([("grp_one", "moderator", "usr_one")])
-    audience_rows = _Rows([("thr_one", "grp_one")])
+    membership_rows = _Rows([(11, "moderator", 12)])
+    audience_rows = _Rows([(13, 11)])
     group = object()
     thread = SimpleNamespace()
     thread_field = SimpleNamespace(
@@ -69,22 +70,25 @@ def test_spaces_cleanup_derives_exact_roster_and_thread_mirror_pairs() -> None:
 
     remove_evidenced_mirrors(historical_apps, editor)
 
+    group_id = _public_id(11, "grp_")
+    user_id = _public_id(12, "usr_")
+    thread_id = _public_id(13, "thr_")
     assert denormalized.deleted == [
         {
             "resource_type": "spaces/group",
-            "resource_id": "grp_one",
+            "resource_id": group_id,
             "relation": "moderator",
             "subject_type": "auth/user",
-            "subject_id": "usr_one",
+            "subject_id": user_id,
             "optional_subject_relation": "",
             "caveat_name": "",
         },
         {
             "resource_type": "messaging/thread",
-            "resource_id": "thr_one",
+            "resource_id": thread_id,
             "relation": "group",
             "subject_type": "spaces/group",
-            "subject_id": "grp_one",
+            "subject_id": group_id,
             "optional_subject_relation": "",
             "caveat_name": "",
         },
@@ -92,3 +96,7 @@ def test_spaces_cleanup_derives_exact_roster_and_thread_mirror_pairs() -> None:
     assert len(registry.deleted) == 2
     assert all("resource_fk__resource_type" in row for row in registry.deleted)
     assert all("subject_fk__resource_type" in row for row in registry.deleted)
+
+
+def _public_id(value: int, prefix: str) -> str:
+    return SqidField(real_field_name="id", prefix=prefix, min_length=8).public_id_from_value(value)

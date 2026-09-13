@@ -23,6 +23,9 @@ def test_live_admin_cleanup_accepts_only_the_complete_iam_user_state() -> None:
 
     state = ProjectState.from_apps(apps)
     assert applies(state)
+    without_virtual_id = state.clone()
+    without_virtual_id.models[("iam", "user")].fields.pop("sqid", None)
+    assert applies(without_virtual_id)
     absent = state.clone()
     absent.remove_model("iam", "user")
     assert not applies(absent)

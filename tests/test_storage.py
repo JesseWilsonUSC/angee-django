@@ -17,7 +17,7 @@ from django.core.exceptions import SuspiciousFileOperation
 from django.core.management import call_command
 from django.db import connection, models
 from django.db.models.signals import post_save
-from rebac import actor_context, app_settings, system_context
+from rebac import actor_context, system_context
 from rebac.actors import to_subject_ref
 from rebac.errors import PermissionDenied
 from rebac.roles import grant
