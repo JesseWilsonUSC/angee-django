@@ -68,6 +68,7 @@ class Party(SqidMixin, AuditMixin, AngeeModel):
     """
 
     runtime = True
+    rebac_grantable = {"reader": "write"}
 
     sqid = SqidField(real_field_name="id", prefix="pty_", min_length=8)
     display_name = models.TextField()
