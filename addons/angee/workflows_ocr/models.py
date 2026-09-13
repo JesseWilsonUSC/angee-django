@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
@@ -14,6 +15,14 @@ from angee.base.models import AngeeModel
 from angee.base.refs import RecordRefMixin
 from angee.workflows_ocr.engines import OcrEngine
 from angee.workflows_ocr.managers import ExtractionManager, ImmutableEvidenceManager
+
+
+@dataclass(frozen=True, slots=True)
+class FactAuthority:
+    """Retained provenance classification for one Extraction result fact."""
+
+    kind: Literal["source", "correction", "unverified"]
+    decision_id: str = ""
 
 
 class Extraction(SqidMixin, AuditMixin, RecordRefMixin, AngeeModel):
@@ -67,6 +76,35 @@ class Extraction(SqidMixin, AuditMixin, RecordRefMixin, AngeeModel):
 
     def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
         raise ValueError("Extraction evidence is retained and cannot be deleted.")
+
+    def fact_authority(self, pointer: str) -> FactAuthority:
+        """Classify retained source or Decision-backed correction provenance."""
+
+        if not isinstance(pointer, str) or not pointer.startswith("/"):
+            raise ValueError("Extraction fact authority requires a JSON pointer.")
+        provenance = self.provenance if isinstance(self.provenance, dict) else {}
+        claims = provenance.get("claims")
+        if isinstance(claims, dict) and isinstance(claims.get(pointer), list) and claims[pointer]:
+            return FactAuthority("source")
+        corrections = provenance.get("corrections")
+        if not isinstance(corrections, list):
+            return FactAuthority("unverified")
+        for correction in reversed(corrections):
+            if not isinstance(correction, dict) or correction.get("kind") != "human_correction":
+                continue
+            paths = correction.get("corrected_paths")
+            if not isinstance(paths, list):
+                continue
+            if any(
+                isinstance(path, str)
+                and (pointer == path or pointer.startswith(f"{path.rstrip('/')}/"))
+                for path in paths
+            ):
+                decision_id = correction.get("decision_id")
+                if isinstance(decision_id, str) and decision_id:
+                    return FactAuthority("correction", decision_id)
+                return FactAuthority("unverified")
+        return FactAuthority("unverified")
 
 
 class ExtractionSource(SqidMixin, AngeeModel):

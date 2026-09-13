@@ -508,11 +508,19 @@ class ExtractionServiceTests(TestCase):
             )
         engine_class.assert_not_called()
         acquire_sources.assert_not_called()
+        self.assertEqual(original.fact_authority("/number").kind, "source")
+        self.assertEqual(original.fact_authority("/rows").kind, "source")
         self.assertEqual(repeated.pk, corrected.pk)
         self.assertEqual(corrected.revision, original.revision + 1)
         self.assertEqual(corrected.result, {"number": "NEW", "rows": ["same"]})
         self.assertEqual(corrected.provenance["claims"], {"/rows": [{"part_position": 0}]})
         self.assertEqual(corrected.provenance["used_model_roles"], [])
+        corrected_number = corrected.fact_authority("/number")
+        self.assertEqual(
+            (corrected_number.kind, corrected_number.decision_id),
+            ("correction", str(decision.sqid)),
+        )
+        self.assertEqual(corrected.fact_authority("/rows").kind, "source")
         self.assertEqual(
             corrected.provenance["corrections"][-1],
             {
@@ -563,6 +571,32 @@ class ExtractionServiceTests(TestCase):
                 list(original.pages.values_list(*page_fields)),
                 list(corrected.pages.values_list(*page_fields)),
             )
+
+    def test_human_correction_classifies_changed_array_element_without_source_authority(self) -> None:
+        with actor_context(self.owner):
+            original = extract(
+                files=self.files,
+                schema=SCHEMA,
+                model=None,
+                authorized_target=self.drive,
+                engine="fake_document",
+                config={
+                    "result": {"number": "OLD", "rows": ["same"]},
+                    "source_text": "OLD same",
+                },
+            )
+        decision = self._decision(original)
+        with actor_context(self.owner):
+            corrected = revise(
+                original,
+                result={"number": "OLD", "rows": ["reviewed"]},
+                decision=decision,
+            )
+
+        self.assertEqual(original.fact_authority("/rows").kind, "source")
+        reviewed = corrected.fact_authority("/rows/0")
+        self.assertEqual((reviewed.kind, reviewed.decision_id), ("correction", str(decision.sqid)))
+        self.assertEqual(corrected.fact_authority("/rows").kind, "unverified")
 
     def test_human_correction_rejects_invalid_authority_schema_result_and_stale_reuse(self) -> None:
         with actor_context(self.owner):
