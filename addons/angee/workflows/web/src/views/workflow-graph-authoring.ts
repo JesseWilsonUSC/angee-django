@@ -1,4 +1,4 @@
-import type { GraphViewGeometry, GraphViewPosition, JsonValue } from "@angee/ui";
+import { isJsonObject, type GraphViewGeometry, type GraphViewPosition, type JsonValue } from "@angee/ui";
 
 import { workflowNodeKind, type WorkflowGraphNodeKind } from "./graph-data";
 import type { DefinitionEdge, DefinitionNode } from "./workflow-definition-state";
@@ -117,9 +117,7 @@ function storedPosition(position: GraphViewPosition): JsonValue {
 }
 
 function jsonObject(value: JsonValue): Readonly<Record<string, JsonValue>> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value
-    : {};
+  return isJsonObject(value) ? value : {};
 }
 
 export function graphWithMapBody(

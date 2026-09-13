@@ -12,10 +12,11 @@ import {
   structuredFieldErrorPaths,
   useFormSpecFields,
   useFormViewValues,
+  jsonObjectFromUnknown,
+  jsonValueFromUnknown,
   type FormSpecFieldDescriptor,
   type JsonValue,
   type RecordToolbarContext,
-  jsonValueFromUnknown,
 } from "@angee/ui";
 
 import { WorkflowEventConditionDraftDocument } from "../documents.console";
@@ -64,7 +65,7 @@ function EventConditionDraft({
 }): React.ReactElement {
   const t = useWorkflowsT();
   const model = typeof config.model === "string" ? config.model : "";
-  const condition = jsonObject(config.condition) ?? {};
+  const condition = jsonObjectFromUnknown(config.condition) ?? {};
   const conditionInput = Object.hasOwn(config, "condition")
     ? jsonValueFromUnknown(config.condition)
     : {};
@@ -404,12 +405,6 @@ function hasOpaqueConditions(condition: JsonObject, fields: readonly ConditionFi
 }
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function jsonObject(value: unknown): JsonObject | undefined {
-  const json = jsonValueFromUnknown(value);
-  return json !== null && json !== undefined && typeof json === "object" && !Array.isArray(json)
-    ? json
-    : undefined;
 }
 function eventModel(value: unknown): string {
   return isObject(value) && typeof value.model === "string" ? value.model : "";
