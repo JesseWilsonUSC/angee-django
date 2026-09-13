@@ -4,7 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { jsonWidget } from "./json";
-import { jsonValueFromUnknown } from "./json-value";
+import { jsonObjectFromUnknown, jsonValueFromUnknown } from "./json-value";
 
 describe("json widget", () => {
   afterEach(cleanup);
@@ -57,6 +57,10 @@ describe("json widget", () => {
       omitted: undefined,
       nested: { kept: "value", omitted: undefined },
     })).toEqual({ kept: true, nested: { kept: "value" } });
+    expect(jsonObjectFromUnknown({ key: "value", omitted: undefined })).toEqual({
+      key: "value",
+    });
+    expect(jsonObjectFromUnknown(["value"])).toBeUndefined();
     expect(() => jsonValueFromUnknown(Number.POSITIVE_INFINITY)).toThrow();
     expect(jsonValueFromUnknown(undefined)).toBeUndefined();
     expect(() => jsonValueFromUnknown([undefined])).toThrow();

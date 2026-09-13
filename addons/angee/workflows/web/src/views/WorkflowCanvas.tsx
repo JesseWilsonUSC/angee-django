@@ -30,6 +30,7 @@ import {
   useImplConfigFields,
   useImplPrefill,
   useFormViewValues,
+  isJsonObject,
   type GraphViewConnection,
   type GraphViewEdge,
   type GraphViewGeometry,
@@ -769,7 +770,7 @@ function operationEffectLabel(effect: string, t: WorkflowT): string {
 }
 
 function jsonObject(value: JsonValue | undefined): Record<string, JsonValue> {
-  return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value)
+  return isJsonObject(value)
     ? structuredClone(value)
     : {};
 }

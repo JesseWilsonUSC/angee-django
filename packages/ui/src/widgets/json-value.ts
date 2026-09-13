@@ -1,12 +1,14 @@
 import * as v from "valibot";
 
+export type JsonObject = { readonly [key: string]: JsonValue };
+
 export type JsonValue =
   | null
   | boolean
   | number
   | string
   | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue };
+  | JsonObject;
 
 function isPlainObject(input: unknown): input is Record<string, unknown> {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
@@ -36,6 +38,17 @@ export function jsonValueFromUnknown(value: unknown): JsonValue | undefined {
   return value === undefined
     ? undefined
     : v.parse(JsonValueSchema, omitUndefinedObjectProperties(value));
+}
+
+/** Validate an untyped value and retain it only when its JSON root is an object. */
+export function jsonObjectFromUnknown(value: unknown): JsonObject | undefined {
+  const json = jsonValueFromUnknown(value);
+  return isJsonObject(json) ? json : undefined;
+}
+
+/** Narrow an already validated JSON value to an object root. */
+export function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return isPlainObject(value);
 }
 
 function omitUndefinedObjectProperties(value: unknown): unknown {
