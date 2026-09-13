@@ -18,9 +18,9 @@ from django.test import override_settings
 from rebac import actor_context, anonymous_actor, current_actor
 from rebac.graphql.strawberry import RebacChannelsConsumerMixin
 
-from angee.graphql import publishing, subscriptions
+from angee.graphql import access, publishing, subscriptions
 from angee.graphql.consumers import AngeeGraphQLWSConsumer
-from angee.graphql.events import ChangeEvent, ChangePayload
+from angee.graphql.events import ChangeEvent, ChangePayload, ChangeRelatedRecord
 from angee.graphql.schema import GraphQLSchemas
 from angee.graphql.subscriptions import changes
 from tests.conftest import SchemaAddon
@@ -287,10 +287,34 @@ def test_subscription_resolver_denies_without_current_actor(
 
 
 def test_change_occurrence_identity_round_trips_and_legacy_payloads_remain_unidentified() -> None:
-    payload = ChangePayload(model="tests.Row", id="1", action="update", occurrence_id="change-1")
+    payload = ChangePayload(
+        model="tests.Row", id="1", action="update", occurrence_id="change-1",
+        related_records=(ChangeRelatedRecord(model="tests.Parent", id="parent-1"),),
+    )
     assert ChangePayload.from_mapping(payload.as_message()).occurrence_id == "change-1"
+    assert ChangePayload.from_mapping(payload.as_message()).related_records == payload.related_records
     assert ChangePayload.from_mapping({"model": "tests.Row", "id": "1", "action": "update"}).occurrence_id is None
     assert payload.redacted({"secret"}).occurrence_id == "change-1"
+
+
+def test_change_gate_omits_an_unreadable_related_parent(monkeypatch) -> None:
+    """A readable child event never discloses a parent outside the actor's read scope."""
+
+    gate = object.__new__(access.ChangeReadGate)
+    gate.actor = ANON
+    parent_model = SimpleNamespace()
+    monkeypatch.setattr(access.apps, "get_model", lambda label: parent_model)
+    monkeypatch.setattr(access, "read_scoped_queryset", lambda model, actor: None)
+    monkeypatch.setattr(
+        access,
+        "instance_from_public_id",
+        lambda *args, **kwargs: pytest.fail("an absent read scope must not fall back to an unscoped lookup"),
+    )
+    change = ChangePayload(
+        model="tests.Child", id="child-1", action="update",
+        related_records=(ChangeRelatedRecord(model="tests.Parent", id="parent-1"),),
+    )
+    assert gate._filter_related_records(change).related_records == ()
 
 
 def test_publish_respects_broadcasts_changes_optout(monkeypatch) -> None:

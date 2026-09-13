@@ -42,6 +42,7 @@ from angee.base.models import AngeeDataModel
 from angee.base.refs import RecordRefMixin
 from angee.base.scoping import system_queryset
 from angee.base.transitions import StateTransitions, TransitionNotAllowed, save_state, transition
+from angee.graphql.events import ChangeRelatedRecord
 from angee.graphql.schema import GraphQLSchemas
 from angee.resources.mixins import ResourceLoadMixin, ResourceWritePreparation
 from angee.workflows.attempts import (
@@ -1913,6 +1914,12 @@ class StepRun(AuditMixin, AngeeDataModel):
     error = models.TextField(blank=True)
     stacktrace = models.TextField(blank=True)
 
+    def change_related_records(self) -> tuple[ChangeRelatedRecord, ...]:
+        """Invalidate exact reads of this execution's parent workflow run."""
+
+        run_model = self._meta.get_field("run").related_model
+        return (ChangeRelatedRecord(run_model._meta.label, run_model.public_id_from_pk(self.run_id)),)
+
     status_transitions = StateTransitions(
         status,
         {
@@ -2211,6 +2218,15 @@ class StepAttempt(AuditMixin, AngeeDataModel):
 
     sqid_prefix = "wsa_"
     step_run = models.ForeignKey("workflows.StepRun", on_delete=models.PROTECT, related_name="attempts")
+
+    def change_related_records(self) -> tuple[ChangeRelatedRecord, ...]:
+        """Invalidate exact reads of this attempt's execution journal row."""
+
+        step_run_model = self._meta.get_field("step_run").related_model
+        return (ChangeRelatedRecord(
+            step_run_model._meta.label,
+            step_run_model.public_id_from_pk(self.step_run_id),
+        ),)
     retry_of = models.OneToOneField(
         "self",
         on_delete=models.PROTECT,

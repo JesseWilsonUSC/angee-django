@@ -1,7 +1,11 @@
 import { InfiniteQueryObserver, isCancelledError, QueryClient, QueryObserver } from "@tanstack/react-query";
 import { expect, test } from "vitest";
 
-import { invalidateAuthoredQueries, invalidateAuthoredQueriesForChange } from "./query-invalidation";
+import {
+  authoredQueryReadsChange,
+  invalidateAuthoredQueries,
+  invalidateAuthoredQueriesForChange,
+} from "./query-invalidation";
 
 function pending<T>() {
   let resolve!: (value: T) => void;
@@ -12,6 +16,13 @@ function pending<T>() {
 function client() {
   return new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
 }
+
+test("a related-only model with no target rows is fail-closed", () => {
+  expect(authoredQueryReadsChange({
+    angeeModels: ["workflows.StepRun"],
+    angeeRelatedModels: ["workflows.StepRun"],
+  }, "workflows.StepRun", "wsr_unrelated")).toBe(false);
+});
 
 test("an unrelated row event does not starve an exact record's pending first request", async () => {
   const cache = client();
@@ -40,6 +51,48 @@ test("an unrelated row event does not starve an exact record's pending first req
     expect(requests).toBe(1);
     expect(firstSignal.aborted).toBe(false);
     await invalidateAuthoredQueriesForChange(cache, "workflows.Decision", "wdc_current");
+    expect(requests).toBe(2);
+    expect(firstSignal.aborted).toBe(true);
+    expect(observer.getCurrentResult().data).toBe(2);
+  } finally {
+    first.resolve(1);
+    unsubscribe(); cache.clear();
+  }
+});
+
+test("a related child refreshes an exact parent without unrelated-child starvation", async () => {
+  const cache = client();
+  const first = pending<number>();
+  let requests = 0;
+  let firstSignal!: AbortSignal;
+  const options = {
+    queryKey: ["run-inspection", "wfr_current"],
+    meta: {
+      angeeModels: ["workflows.StepRun", "workflows.WorkflowRun"],
+      angeeRecords: [{ model: "workflows.WorkflowRun", id: "wfr_current" }],
+    },
+    queryFn: ({ signal }: { signal: AbortSignal }) => {
+      requests++;
+      if (requests === 1) {
+        firstSignal = signal;
+        return first.promise;
+      }
+      return Promise.resolve(requests);
+    },
+  };
+  const observer = new QueryObserver(cache, options);
+  const unsubscribe = observer.subscribe(() => undefined);
+  try {
+    await invalidateAuthoredQueriesForChange(
+      cache, "workflows.StepRun", "wsr_other",
+      [{ model: "workflows.WorkflowRun", id: "wfr_other" }],
+    );
+    expect(requests).toBe(1);
+    expect(firstSignal.aborted).toBe(false);
+    await invalidateAuthoredQueriesForChange(
+      cache, "workflows.StepRun", "wsr_child",
+      [{ model: "workflows.WorkflowRun", id: "wfr_current" }],
+    );
     expect(requests).toBe(2);
     expect(firstSignal.aborted).toBe(true);
     expect(observer.getCurrentResult().data).toBe(2);

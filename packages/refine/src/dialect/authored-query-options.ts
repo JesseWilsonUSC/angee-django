@@ -75,6 +75,7 @@ export function authoredQueryOptions<TDocument extends AuthoredDocument>(
   variables?: AuthoredVariables<TDocument>,
   models: readonly string[] = [],
   records: readonly { model: string; id: string }[] = [],
+  relatedModels: readonly string[] = [],
 ): UnusedSkipTokenOptions<
   DocumentData<TDocument>, Error, DocumentData<TDocument>,
   ReturnType<typeof authoredQueryKey<TDocument>>
@@ -86,7 +87,7 @@ export function authoredQueryOptions<TDocument extends AuthoredDocument>(
   const queryKey = authoredQueryKey(document, variables, dataProviderName);
   return queryOptions({
     queryKey,
-    meta: sharedAuthoredMeta(client, queryKey, models, records),
+    meta: sharedAuthoredMeta(client, queryKey, models, records, relatedModels),
     queryFn: (context) => requestAuthoredData<DocumentData<TDocument>>(
       dataProvider,
       dataProviderName,
@@ -108,6 +109,7 @@ export function sharedAuthoredMeta(
   queryKey: QueryKey,
   models: readonly string[],
   records: readonly { model: string; id: string }[] = [],
+  relatedModels: readonly string[] = [],
 ) {
   const defaulted = client.defaultQueryOptions({ queryKey });
   const query = client.getQueryCache().build(client, defaulted);
@@ -125,17 +127,28 @@ export function sharedAuthoredMeta(
     : previous.length > 0 && !Array.isArray(meta.angeeRecords)
       ? previous
       : [];
+  const previousRelated = Array.isArray(meta.angeeRelatedModels)
+    ? meta.angeeRelatedModels as string[]
+    : [];
   meta.angeeModels = [...new Set([...previous, ...models])].sort();
-  const exactModels = new Set(records.map((record) => record.model));
+  const exactModels = new Set([
+    ...records.map((record) => record.model),
+    ...relatedModels,
+  ]);
   const broadModels = [...new Set([
     ...previousBroad,
     ...models.filter((model) => !exactModels.has(model)),
   ])].sort();
+  const exactRelatedModels = [...new Set([...previousRelated, ...relatedModels])]
+    .filter((model) => !broadModels.includes(model))
+    .sort();
   const exactRecords = [...new Map([...previousRecords, ...records].map((record) => {
       const value = record as { model: string; id: string };
       return [`${value.model}:${value.id}`, value];
     })).values()].filter((record) => !broadModels.includes(record.model));
   if (broadModels.length > 0) meta.angeeBroadModels = broadModels;
+  if (exactRelatedModels.length > 0) meta.angeeRelatedModels = exactRelatedModels;
+  else delete meta.angeeRelatedModels;
   if (exactRecords.length > 0) {
     meta.angeeRecords = exactRecords;
   } else {

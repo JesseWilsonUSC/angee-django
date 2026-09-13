@@ -54,8 +54,6 @@ import {
 } from "./graph-data";
 
 const WORKFLOW_MODEL = "workflows.Workflow";
-const STEP_MODEL = "workflows.Step";
-const EDGE_MODEL = "workflows.Edge";
 const RUN_MODEL = "workflows.WorkflowRun";
 const STEP_RUN_MODEL = "workflows.StepRun";
 const STEP_ATTEMPT_MODEL = "workflows.StepAttempt";
@@ -259,23 +257,44 @@ export function RunTimelinePanel({ runId, onReprocess }: { runId: string; onRepr
   const runQuery = useAuthoredQuery(
     WorkflowRunInspectionDocument,
     { run: runId },
-    { models: [RUN_MODEL, STEP_RUN_MODEL] },
+    {
+      models: [RUN_MODEL, STEP_RUN_MODEL],
+      records: [{ model: RUN_MODEL, id: runId }],
+      relatedModels: [STEP_RUN_MODEL],
+    },
   );
   const workflowId = runQuery.data?.workflow_runs_by_pk?.workflow.id ?? "";
   const graphQuery = useAuthoredQuery(
     WorkflowGraphDocument,
     { workflow: workflowId },
-    { enabled: workflowId.length > 0, models: [WORKFLOW_MODEL, STEP_MODEL, EDGE_MODEL, STEP_RUN_MODEL] },
+    {
+      enabled: workflowId.length > 0,
+      models: [WORKFLOW_MODEL],
+      records: [{ model: WORKFLOW_MODEL, id: workflowId }],
+    },
   );
   const selectionQuery = useAuthoredQuery(
     WorkflowInspectionSelectionDocument,
     { run: runId, execution: executionId ?? "", attempt: attemptId ?? "" },
-    { enabled: Boolean(executionId), models: [STEP_RUN_MODEL, STEP_ATTEMPT_MODEL] },
+    {
+      enabled: Boolean(executionId),
+      models: [STEP_RUN_MODEL, STEP_ATTEMPT_MODEL],
+      records: [
+        { model: STEP_RUN_MODEL, id: executionId ?? "" },
+        ...(attemptId ? [{ model: STEP_ATTEMPT_MODEL, id: attemptId }] : []),
+      ],
+      relatedModels: [STEP_ATTEMPT_MODEL],
+    },
   );
   const candidateQuery = useAuthoredQuery(
     WorkflowStepRunCandidateDocument,
     { run: runId, step: selectedStepId ?? "" },
-    { enabled: Boolean(selectedStepId) && !executionId, models: [STEP_RUN_MODEL] },
+    {
+      enabled: Boolean(selectedStepId) && !executionId,
+      models: [RUN_MODEL, STEP_RUN_MODEL],
+      records: [{ model: RUN_MODEL, id: runId }],
+      relatedModels: [STEP_RUN_MODEL],
+    },
   );
   const statusByStep = React.useMemo(() => {
     const aggregate = new Map<string, { status: string; counts: Map<string, number> }>();

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 from typing import Any
 
 from angee.base.permissions import effective_rebac_definition
 from django.core.exceptions import FieldDoesNotExist, ImproperlyConfigured
+from django.apps import apps
 from django.db import models
 from rebac import ObjectRef, SubjectRef, current_actor
 from rebac.backends import backend
@@ -15,6 +17,8 @@ from rebac.resources import model_resource_type
 from rebac.schema.walker import field_gated_actions
 
 from angee.graphql.events import ChangeEvent, ChangePayload
+from angee.base.identity import instance_from_public_id
+from angee.base.scoping import read_scoped_queryset
 
 
 def actor_can_read(resource: ObjectRef) -> bool:
@@ -150,10 +154,27 @@ class ChangeReadGate:
     def _emit(self, change: ChangePayload) -> ChangeEvent:
         """Redact one policy-approved change and project its GraphQL event."""
 
+        change = self._filter_related_records(change)
         if not self.resource_type:
             return ChangeEvent.from_payload(change)
         resource = ObjectRef(self.resource_type, change.resource_identifier)
         return ChangeEvent.from_payload(self._redact(change, resource))
+
+    def _filter_related_records(self, change: ChangePayload) -> ChangePayload:
+        """Retain only canonical related rows readable by this subscriber."""
+
+        readable = []
+        for reference in change.related_records:
+            try:
+                model = apps.get_model(reference.model)
+            except (LookupError, ValueError):
+                continue
+            scope = read_scoped_queryset(model, self.actor)
+            if scope is None:
+                continue
+            if instance_from_public_id(model, reference.id, queryset=scope) is not None:
+                readable.append(reference)
+        return replace(change, related_records=tuple(readable))
 
     def _redact(
         self,

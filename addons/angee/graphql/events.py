@@ -19,6 +19,14 @@ from angee.base.serialization import json_safe
 
 
 @dataclass(frozen=True, slots=True)
+class ChangeRelatedRecord:
+    """Canonical parent record whose authored reads depend on this changed row."""
+
+    model: str
+    id: str
+
+
+@dataclass(frozen=True, slots=True)
 class ChangePayload:
     """Channel-layer payload describing one model row change."""
 
@@ -49,6 +57,9 @@ class ChangePayload:
     read_resource_id: str | None = None
     """Optional resource id paired with :attr:`read_resource_type`."""
 
+    related_records: tuple[ChangeRelatedRecord, ...] = ()
+    """Readable parent records whose exact authored reads depend on this change."""
+
     during_ingestion: bool = False
     """Whether the change happened inside a sync ingestion context; not part of the wire message."""
 
@@ -74,6 +85,7 @@ class ChangePayload:
         if model_resource_type(type(instance)):
             resource_id = model_resource_id(instance)
         read_resource = _change_read_resource(instance)
+        related_records = _change_related_records(instance)
         return cls(
             model=instance._meta.label,
             id=public_id_of(instance),
@@ -84,6 +96,7 @@ class ChangePayload:
             resource_id=resource_id,
             read_resource_type=None if read_resource is None else read_resource.resource_type,
             read_resource_id=None if read_resource is None else read_resource.resource_id,
+            related_records=related_records,
             during_ingestion=during_ingestion,
         )
 
@@ -112,6 +125,11 @@ class ChangePayload:
             read_resource_id=(
                 str(payload["read_resource_id"]) if payload.get("read_resource_id") is not None else None
             ),
+            related_records=tuple(
+                ChangeRelatedRecord(model=str(item["model"]), id=str(item["id"]))
+                for item in payload.get("related_records", ())
+                if isinstance(item, Mapping) and item.get("model") and item.get("id")
+            ),
         )
 
     def as_message(self) -> dict[str, Any]:
@@ -131,6 +149,10 @@ class ChangePayload:
         if self.read_resource_type is not None and self.read_resource_id is not None:
             payload["read_resource_type"] = self.read_resource_type
             payload["read_resource_id"] = self.read_resource_id
+        if self.related_records:
+            payload["related_records"] = [
+                {"model": item.model, "id": item.id} for item in self.related_records
+            ]
         return payload
 
     @property
@@ -195,6 +217,18 @@ def _change_read_resource(instance: models.Model) -> ObjectRef | None:
     return resource
 
 
+def _change_related_records(instance: models.Model) -> tuple[ChangeRelatedRecord, ...]:
+    """Return model-owned canonical parents for exact authored-query invalidation."""
+
+    resolver = getattr(instance, "change_related_records", None)
+    if not callable(resolver):
+        return ()
+    records = tuple(resolver())
+    if any(not isinstance(record, ChangeRelatedRecord) for record in records):
+        raise TypeError("change_related_records() must return ChangeRelatedRecord values")
+    return records
+
+
 def _concrete_local_field(
     instance: models.Model,
     name: str,
@@ -213,6 +247,14 @@ def _concrete_local_field(
 
 
 @strawberry.type
+class ChangeRelatedRecordType:
+    """Canonical related record exposed with an authorized change event."""
+
+    model: str
+    id: strawberry.ID
+
+
+@strawberry.type
 class ChangeEvent:
     """Read-gated notification that one model instance changed."""
 
@@ -222,6 +264,7 @@ class ChangeEvent:
     occurrence_id: str | None = None
     changed_fields: list[str] | None = None
     changed_values: JSON | None = None
+    related_records: list[ChangeRelatedRecordType] = strawberry.field(default_factory=list)
 
     @classmethod
     def from_payload(cls, payload: ChangePayload | Mapping[str, Any]) -> ChangeEvent:
@@ -235,4 +278,8 @@ class ChangeEvent:
             occurrence_id=payload.occurrence_id,
             changed_fields=list(payload.changed_fields) if payload.changed_fields is not None else None,
             changed_values=cast(JSON | None, payload.changed_values),
+            related_records=[
+                ChangeRelatedRecordType(model=item.model, id=strawberry.ID(item.id))
+                for item in payload.related_records
+            ],
         )

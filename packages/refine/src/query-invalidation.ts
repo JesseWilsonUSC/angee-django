@@ -27,9 +27,11 @@ export function authoredQueryReadsChange(meta: unknown, model: string, id: strin
   if (!authoredQueryReadsAnyModel(meta, [model])) return false;
   const metadata = recordValue(meta);
   const records = metadata?.angeeRecords;
-  if (!Array.isArray(records)) return true;
   const broadModels = metadata?.angeeBroadModels;
   if (Array.isArray(broadModels) && broadModels.includes(model)) return true;
+  const relatedModels = metadata?.angeeRelatedModels;
+  if (Array.isArray(relatedModels) && relatedModels.includes(model)) return false;
+  if (!Array.isArray(records)) return true;
   return records.some((value) => {
     const record = recordValue(value);
     return record?.model === model && record?.id === id;
@@ -41,10 +43,12 @@ export async function invalidateAuthoredQueriesForChange(
   queryClient: Pick<QueryClient, "cancelQueries" | "invalidateQueries">,
   model: string,
   id: string,
+  relatedRecords: readonly { model: string; id: string }[] = [],
 ): Promise<void> {
   return invalidateAuthoredQueriesMatching(
     queryClient,
-    (query) => authoredQueryReadsChange(query.meta, model, id),
+    (query) => authoredQueryReadsChange(query.meta, model, id)
+      || relatedRecords.some((record) => authoredQueryReadsChange(query.meta, record.model, record.id)),
   );
 }
 
