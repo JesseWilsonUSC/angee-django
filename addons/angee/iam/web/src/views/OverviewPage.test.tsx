@@ -25,7 +25,7 @@ vi.mock("../SubjectControl", () => ({
   ),
 }));
 
-import { AppRuntimeProvider, ModalsHost, baseIcons } from "@angee/ui";
+import { AppRuntimeProvider, ModalsHost, baseIcons, defaultWidgets } from "@angee/ui";
 
 import { OverviewPage } from "./OverviewPage";
 
@@ -88,7 +88,7 @@ function overviewData(): unknown {
 
 function renderPage(children: ReactNode): ReturnType<typeof render> {
   return render(
-    <AppRuntimeProvider runtime={{ icons: baseIcons }}>
+    <AppRuntimeProvider runtime={{ icons: baseIcons, widgets: defaultWidgets }}>
       <ModalsHost>{children}</ModalsHost>
     </AppRuntimeProvider>,
   );
