@@ -77,7 +77,7 @@ test.describe("shared record access", () => {
     await expect(page.getByRole("button", { name: "Star" })).toHaveCount(0);
     await agentShare.click();
     const agentDialog = page.getByRole("dialog", { name: "Share Demo Agent" });
-    const agentStatus = page.getByRole("list").filter({ hasText: "Ready" });
+    const agentStatus = page.locator("[role='list']").filter({ hasText: "Ready" });
     await expect(agentStatus).toHaveCSS("isolation", "isolate");
     await expect(page.locator(".z-modal-backdrop")).toHaveCSS("z-index", "100");
     await expect(agentDialog).toHaveCSS("z-index", "101");
