@@ -20,11 +20,6 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...await importOriginal<typeof import("@tanstack/react-router")>(),
   useNavigate: () => vi.fn(),
 }));
-vi.mock("./i18n", () => ({
-  enWorkflowsPartiesMessages: {},
-  useWorkflowsPartiesT: () => (key: string) => key,
-}));
-
 import workflows from "../../../workflows/web/src/index";
 import workflowsParties, { SelectedPartyDecision } from "./index";
 
