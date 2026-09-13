@@ -112,7 +112,7 @@ describe("IAM schema page", () => {
     sdkMocks.schema.isFetching = true;
     renderPage();
 
-    expect(screen.getByText("Loading schema…")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading schema…" })).toBeTruthy();
     // No explorer/inspector is published, so the shell falls back to its own
     // primary/secondary content.
     expect(screen.getByTestId("shell-primary").childNodes).toHaveLength(0);
