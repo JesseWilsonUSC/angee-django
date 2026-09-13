@@ -5,7 +5,11 @@ import type * as React from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
 vi.mock("../../fragments/DialogForm", () => ({
-  DialogForm: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DialogForm: ({ children, title, trigger }: {
+    children: React.ReactNode;
+    title: string;
+    trigger: React.ReactNode;
+  }) => <div>{trigger}<h1>{title}</h1>{children}</div>,
 }));
 
 vi.mock("./SubjectPicker", () => ({
@@ -21,6 +25,25 @@ vi.mock("../resource/RowsListView", () => ({
 import { ManageAccessDialog } from "./ManageAccessDialog";
 
 afterEach(cleanup);
+
+test("provides the canonical Share trigger and selection label", () => {
+  render(<ManageAccessDialog
+    open
+    onOpenChange={vi.fn()}
+    targetIds={["1", "2"]}
+    grantable={[]}
+    entries={[]}
+    fetching={false}
+    error={null}
+    onRetry={vi.fn()}
+    onGrant={vi.fn()}
+    onRevoke={vi.fn()}
+  />);
+
+  const trigger = screen.getByRole("button", { name: "Share" });
+  expect(trigger.querySelector("svg")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Share 2 selected records" })).toBeTruthy();
+});
 
 test("explains an empty grantable intersection while retaining existing access entries", () => {
   render(<ManageAccessDialog

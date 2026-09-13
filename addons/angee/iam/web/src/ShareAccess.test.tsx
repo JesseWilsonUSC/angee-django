@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -57,26 +56,16 @@ vi.mock("@angee/refine", () => ({
 vi.mock("@angee/ui", async () => {
   const React = await import("react");
   return {
-    Button: ({ children, variant, size, ...props }: {
-      children: ReactNode;
-      variant: string;
-      size: string;
-    }) => <button {...props} data-variant={variant} data-size={size}>{children}</button>,
-    Glyph: ({ name }: { name: string }) => <span data-glyph={name} />,
     ManageAccessDialog: (props: Record<string, unknown>) => {
       mocks.dialogProps = props;
-      const trigger = props.trigger as ReactElement<{ onClick?: () => void }>;
-      return React.cloneElement(trigger, {
-        onClick: () => (props.onOpenChange as (open: boolean) => void)(true),
-      });
+      return <button
+        type="button"
+        onClick={() => (props.onOpenChange as (open: boolean) => void)(true)}
+      >Open access dialog</button>;
     },
     useActionResultRun: () => async (run: () => unknown) => run(),
     useRecordChromeContext: () => mocks.record,
     useResourceViewActionContext: () => mocks.list,
-    useUiT: () => (key: string, values?: { count?: number }) => ({
-      "access.share": "Share",
-      "access.selection": `${values?.count ?? 0} selected records`,
-    })[key] ?? key,
   };
 });
 
@@ -117,14 +106,12 @@ describe("shared record access chrome", () => {
 
   afterEach(cleanup);
 
-  test("renders the default compact Share action and loads access on demand", () => {
+  test("delegates the default Share trigger and loads access on demand", () => {
     render(<ShareRecordChrome />);
 
-    const trigger = screen.getByRole("button", { name: "Share" });
-    expect(trigger.dataset.variant).toBe("icon");
-    expect(trigger.dataset.size).toBe("iconMd");
-    expect(trigger.querySelector('[data-glyph="share"]')).toBeTruthy();
+    const trigger = screen.getByRole("button", { name: "Open access dialog" });
     expect(mocks.dialogProps).toMatchObject({ label: "Welcome", targetIds: ["note-1"] });
+    expect(mocks.dialogProps?.trigger).toBeUndefined();
     expect(mocks.queryOptions).toMatchObject({ enabled: false });
 
     fireEvent.click(trigger);
@@ -137,11 +124,10 @@ describe("shared record access chrome", () => {
 
     render(<ShareListChrome />);
 
-    expect((screen.getByRole("button", { name: "Share" }) as HTMLButtonElement).disabled).toBe(false);
     expect(mocks.dialogProps).toMatchObject({
-      label: "2 selected records",
       targetIds: ["note-1", "note-2"],
     });
+    expect(mocks.dialogProps?.label).toBeUndefined();
   });
 
   test("nested collections share their enclosing record", () => {
@@ -160,6 +146,6 @@ describe("shared record access chrome", () => {
 
     render(<ShareRecordChrome />);
 
-    expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open access dialog" })).toBeNull();
   });
 });
