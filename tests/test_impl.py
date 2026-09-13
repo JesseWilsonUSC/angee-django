@@ -13,7 +13,7 @@ from django.db import models
 from django.test import override_settings
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from angee.base.impl import ImplBase, ImplChoice, ImplClassField
+from angee.base.impl import ImplBase, ImplChoice, ImplClassField, model_config_form_spec
 from tests.conftest import Integration, OAuthClient, VcsBridge
 
 
@@ -310,6 +310,49 @@ def test_typed_config_projects_explicit_dynamic_json_and_datetime_widgets() -> N
         "label": "Scheduled At",
         "presenceRequired": True,
     }
+
+
+def test_typed_config_validates_relation_form_metadata_at_projection() -> None:
+    """Relation extensions fail at their backend owner instead of in the browser."""
+
+    relation = {
+        "resource": "demo.Target",
+        "permission": "read",
+        "labelField": "name",
+        "filters": [{"operator": "and", "value": [
+            {"field": "status", "operator": "eq", "value": "active"},
+        ]}],
+        "create": {"resource": "demo.Target", "defaultValues": {"status": "active"}},
+    }
+
+    class RelatedConfig(BaseModel):
+        target_id: str = Field(json_schema_extra={"relation": relation})
+
+    spec = model_config_form_spec(RelatedConfig, owner="RelatedConfig")
+    assert spec["properties"]["target_id"]["relation"] == relation
+
+    class InvalidFilterConfig(BaseModel):
+        target_id: str = Field(json_schema_extra={"relation": {
+            "resource": "demo.Target",
+            "filters": [{"field": "status", "operator": "approximately", "value": "active"}],
+        }})
+
+    with pytest.raises(ImproperlyConfigured, match="invalid relation"):
+        model_config_form_spec(InvalidFilterConfig, owner="InvalidFilterConfig")
+
+    class InvalidKindConfig(BaseModel):
+        target_ids: list[str] = Field(json_schema_extra={"relation": {"resource": "demo.Target"}})
+
+    with pytest.raises(ImproperlyConfigured, match="relation on a non-string field"):
+        model_config_form_spec(InvalidKindConfig, owner="InvalidKindConfig")
+
+    class InvalidWidgetConfig(BaseModel):
+        target_id: str = Field(json_schema_extra={
+            "widget": "text", "relation": {"resource": "demo.Target"},
+        })
+
+    with pytest.raises(ImproperlyConfigured, match="relation with a non-relation widget"):
+        model_config_form_spec(InvalidWidgetConfig, owner="InvalidWidgetConfig")
 
 
 def test_typed_config_projects_nested_arrays_nullable_and_enum_contracts() -> None:

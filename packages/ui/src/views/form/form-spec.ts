@@ -74,14 +74,16 @@ export function formSpecInitialValues(
   for (const field of fields) {
     if (Object.hasOwn(payloadValues, field.name)) {
       const payloadValue = payloadValues[field.name];
-      values[field.name] = field.objectTemplate && payloadValue && typeof payloadValue === "object" && !Array.isArray(payloadValue)
-        ? formSpecInitialValues(field.objectTemplate, payloadValue)
-        : field.itemTemplate?.objectTemplate && Array.isArray(payloadValue)
-          ? payloadValue.map((item) => item && typeof item === "object" && !Array.isArray(item)
-            ? formSpecInitialValues(field.itemTemplate!.objectTemplate!, item)
-            : item)
-          : payloadValue;
-      continue;
+      if (isFormSpecValueCompatible(field, payloadValue)) {
+        values[field.name] = field.objectTemplate && payloadValue && typeof payloadValue === "object" && !Array.isArray(payloadValue)
+          ? formSpecInitialValues(field.objectTemplate, payloadValue)
+          : field.itemTemplate?.objectTemplate && Array.isArray(payloadValue)
+            ? payloadValue.map((item) => item && typeof item === "object" && !Array.isArray(item)
+              ? formSpecInitialValues(field.itemTemplate!.objectTemplate!, item)
+              : item)
+            : payloadValue;
+        continue;
+      }
     }
     if (field.hasDefault) {
       values[field.name] = field.defaultValue;
@@ -92,6 +94,24 @@ export function formSpecInitialValues(
     }
   }
   return values;
+}
+
+/** Keep retained payloads from passing values to widgets that cannot render them. */
+function isFormSpecValueCompatible(
+  field: FormSpecFieldDescriptor,
+  value: unknown,
+): boolean {
+  if (value === null) return Boolean(field.nullable);
+  switch (field.kind) {
+    case "string": return typeof value === "string";
+    case "integer": return typeof value === "number" && Number.isInteger(value);
+    case "number": return typeof value === "number" && Number.isFinite(value);
+    case "boolean": return typeof value === "boolean";
+    case "object": return typeof value === "object" && !Array.isArray(value);
+    case "array": return Array.isArray(value);
+    case "any": return true;
+    default: return false;
+  }
 }
 
 /** Seed one present form-spec value without conflating omission with null. */

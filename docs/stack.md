@@ -140,6 +140,7 @@ GPL code is incompatible with a framework composed into commercial consumers.
 | @agentclientprotocol/sdk | ACP client — agent JSON-RPC session, prompt/cancel, session-update stream (the agent image runs `@agentclientprotocol/claude-agent-acp`; both replace the deprecated `@zed-industries/*` names) | WebSocket ndjson transport to a routed agent + assistant-ui runtime bridge |
 | @assistant-ui/react | Chat thread UI — message store, composer, tool-call rendering | ACP-streaming runtime adapter and styled thread surface |
 | streamdown | Streamed-markdown render for assistant chunks | Assistant message body in the agent chat |
+| @noble/hashes | Portable audited SHA-256 for browser file bytes, including non-secure LAN HTTP origins where WebCrypto digest is unavailable | `@angee/storage` emits the lowercase content hash used by upload deduplication and finalize verification |
 | react-pdf (+ pdfjs-dist) | Inline PDF rendering (pdf.js) | storage file previewer |
 | @vidstack/react | Inline video/audio player | storage file previewer |
 | heic-to | Client-side HEIC/HEIF decode to a displayable image (current libheif-wasm) | storage HEIC previewer |

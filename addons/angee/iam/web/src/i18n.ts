@@ -22,6 +22,10 @@ export const enIamMessages: Record<string, string> = {
   // Typed assignment subjects shared by workflow and approval controls.
   "assignmentSubjects.users": "Users",
   "assignmentSubjects.groups": "Groups",
+  "assignmentSubjects.label": "Reviewers",
+  "assignmentSubjects.loading": "Loading reviewers…",
+  "assignmentSubjects.add": "Add reviewer",
+  "assignmentSubjects.unavailable": "Reviewer choices could not be loaded.",
 
   // Users page — form-section labels and actions.
   "users.group.profile": "Profile",

@@ -7,6 +7,7 @@ import { createElement } from "react";
 import { enIamMessages } from "./i18n";
 import { OAuthLoginMethods } from "./OAuthLoginMethods";
 import { LOGIN_CALLBACK_PATH } from "./redirects";
+import { assignmentSubjectsWidget } from "./assignment-subject-widget";
 import { oidcLoginSection } from "./views/oidc-section";
 
 export {
@@ -62,6 +63,7 @@ const identityMenu: readonly BaseMenuItem[] = [
 
 const iam = defineBaseAddon({
   id: "iam",
+  widgets: { assignmentSubjects: assignmentSubjectsWidget },
   routes: [
     {
       name: "iam.login.callback",

@@ -9,6 +9,7 @@ inside ``advance()``.
 from __future__ import annotations
 
 import json
+import re
 import traceback
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -857,6 +858,9 @@ def _create_decision(step_run: Any, spec: DecisionSpec) -> Any:
         priority=spec.priority,
         action=spec.action,
         payload=spec.payload,
+        target_model=spec.target_model,
+        target_id=spec.target_id,
+        target_tab=spec.target_tab,
         max_attempts=spec.max_attempts,
         expires_at=spec.expires_at,
         escalate_at=spec.escalate_at,
@@ -1068,11 +1072,14 @@ def _collect_relation_errors(
                 _collect_relation_errors(items, item, actor, path=item_path, errors=errors)
 
 
+_RELATION_PERMISSION = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
 def _relation_error(relation: dict[str, Any], value: Any, actor: Any) -> str | None:
     """Return the field error for one submitted relation id, or None when valid.
 
-    Unknown ids, wrong-model ids, and ids the actor may not write share one
-    message so the response does not disclose which records exist.
+    Unknown ids, wrong-model ids, and ids outside the declared permission scope
+    share one message so the response does not disclose which records exist.
     """
 
     if value in (None, ""):
@@ -1087,10 +1094,17 @@ def _relation_error(relation: dict[str, Any], value: Any, actor: Any) -> str | N
         model = apps.get_model(app_label, model_name)
     except (LookupError, ValueError):
         return f"Relation resource {resource!r} is not installed."
-    scoped = read_scoped_queryset(model, actor, action="write")
+    permission = relation.get("permission", "write")
+    if not isinstance(permission, str) or _RELATION_PERMISSION.fullmatch(permission) is None:
+        return "Relation value must reference a permitted record."
+    scoped = read_scoped_queryset(model, actor, action=permission)
     instance = instance_from_public_id(model, value, queryset=scoped)
     if instance is None:
-        return "Relation value must reference a record you can write."
+        return (
+            "Relation value must reference a record you can write."
+            if permission == "write"
+            else "Relation value must reference a permitted record."
+        )
     return None
 
 

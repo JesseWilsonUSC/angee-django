@@ -25,6 +25,7 @@ export { LARGE_VIEWPORT_QUERY, useMediaQuery } from "./use-media-query";
 export * from "./color-scheme";
 export * from "./theme";
 export { useContainerQuery } from "./use-container-query";
+export { createClientKey } from "./client-key";
 export type {
   UseRenderComponentProps,
   UseRenderRenderProp,

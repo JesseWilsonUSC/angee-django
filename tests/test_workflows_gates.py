@@ -550,6 +550,31 @@ def test_nested_decision_schema_validates_objects_and_array_rows_before_round_tr
     assert decision.resolution == resolution
 
 
+def test_decision_relation_permission_defaults_to_write_and_allows_declared_read(monkeypatch: Any) -> None:
+    """Relation selection changes scope only through a valid explicit permission."""
+
+    model = object()
+    actions: list[str] = []
+    monkeypatch.setattr(engine.apps, "get_model", lambda _app, _model: model)
+    monkeypatch.setattr(
+        engine,
+        "read_scoped_queryset",
+        lambda _model, _actor, *, action: actions.append(action) or object(),
+    )
+    monkeypatch.setattr(engine, "instance_from_public_id", lambda _model, _value, *, queryset: object())
+
+    assert engine._relation_error({"resource": "arp.Company"}, "company-1", object()) is None
+    assert engine._relation_error(
+        {"resource": "arp.Company", "permission": "read"}, "company-1", object(),
+    ) is None
+    assert actions == ["write", "read"]
+
+    assert engine._relation_error(
+        {"resource": "arp.Company", "permission": "read;delete"}, "company-1", object(),
+    ) == "Relation value must reference a permitted record."
+    assert actions == ["write", "read"]
+
+
 def test_escalation_timeout_writes_tuple_and_routes_escalated(
     workflow_gate_tables: None,
     no_workflow_queue: None,

@@ -253,6 +253,22 @@ describe("formSpecInitialValues", () => {
     expect(values).toEqual({ defaultNull: null, requiredNull: null, empty: "", zero: 0, disabled: false });
     expect(normalizeFormSpecValues(fields, { ...values, absent: undefined })).toEqual(values);
   });
+
+  test("falls back to schema defaults when retained payload types are incompatible", () => {
+    const fields = deserializeFormSpec({ properties: {
+      printedTerms: {
+        type: "string",
+        readOnly: true,
+        defaultValue: "Due 2026-09-01",
+      },
+      count: { type: "integer", defaultValue: 0 },
+    } }, defaultWidgets);
+
+    expect(formSpecInitialValues(fields, {
+      printedTerms: { due_date: "2026-09-01" },
+      count: "one",
+    })).toEqual({ printedTerms: "Due 2026-09-01", count: 0 });
+  });
 });
 
 

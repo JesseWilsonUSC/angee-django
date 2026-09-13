@@ -72,11 +72,6 @@ describe("useStorageUpload", () => {
       },
     });
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200 })));
-    vi.stubGlobal("crypto", {
-      subtle: {
-        digest: vi.fn(async () => new Uint8Array([1, 2, 3]).buffer),
-      },
-    });
   });
 
   afterEach(() => {
@@ -101,7 +96,7 @@ describe("useStorageUpload", () => {
         drive: null,
         drive_slug: "",
         folder: null,
-        content_hash: "010203",
+        content_hash: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
       },
     });
     expect(fetch).toHaveBeenCalledWith("/upload", {
@@ -112,7 +107,7 @@ describe("useStorageUpload", () => {
     expect(uploadMocks.finalize).toHaveBeenCalledWith({
       input: {
         file: "fil_draft",
-        content_hash: "010203",
+        content_hash: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
         size_bytes: 5,
       },
     });

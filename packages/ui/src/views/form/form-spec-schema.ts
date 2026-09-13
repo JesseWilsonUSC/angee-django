@@ -30,6 +30,10 @@ const FilterSchema: v.GenericSchema<unknown, CrudFilter> = v.lazy(() => v.varian
 ], (issue) => `unknown Refine CRUD operator "${String(issue.input)}".`));
 const RelationSchema = v.object({
   resource: NonEmptyString,
+  permission: v.optional(v.pipe(
+    NonEmptyString,
+    v.regex(/^[a-z][a-z0-9_]*$/, "relation permission must be a policy identifier"),
+  )),
   labelField: v.optional(NonEmptyString),
   filters: v.optional(v.array(FilterSchema)),
   create: v.optional(v.object({
