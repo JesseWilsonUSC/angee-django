@@ -15,7 +15,7 @@ from rebac import system_context, to_subject_ref
 
 from angee.workflows import engine
 from angee.workflows import models as workflow_models
-from angee.workflows.attempts import JsonPresence, RecoveryMode
+from angee.workflows.attempts import ArtifactSpec, AttemptResult, AttemptResultKind, JsonPresence, RecoveryMode
 from angee.workflows_parties.autoconfig import SETTINGS as WORKFLOWS_PARTIES_SETTINGS
 from angee.workflows_parties.steps import DedupeExecuteStepImpl, IdentityApplyStepImpl, IdentityReviewStepImpl
 from tests.test_messaging import (
@@ -24,10 +24,13 @@ from tests.test_messaging import (
     Handle,
     MergeVeto,
     Party,
+    PartyHandle,
 )
 from tests.workflows import (
     WORKFLOW_RUNTIME_MODELS,
     Decision,
+    StepAttempt,
+    StepRun,
     advance_once,
     execute_started,
     run_to_terminal,
@@ -93,6 +96,70 @@ def _identity_workflow() -> Any:
         ),
         edges=(("review", "apply", "completed"), ("review", "apply", "unchanged")),
     )
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("disposition", ("confirm", "dismiss"))
+def test_party_handle_review_delivers_exact_nonterminal_artifact_runs(
+    workflows_parties_tables: None,
+    no_workflow_queue: None,
+    monkeypatch: pytest.MonkeyPatch,
+    disposition: str,
+) -> None:
+    """One identity disposition wakes every live hold retaining the exact link."""
+
+    del workflows_parties_tables, no_workflow_queue
+    operator = User.objects.create_user(username="handle-reviewer")
+    with system_context(reason="test handle review fixtures"):
+        party = Party._base_manager.create(display_name="Claimed supplier", created_by=operator)
+        handle = Handle._base_manager.create(platform="email", value="billing@example.test", created_by=operator)
+        link = PartyHandle._base_manager.create(
+            party=party, handle=handle, confidence=0.4, source="email_match", created_by=operator,
+        )
+    workflow = workflow_with_steps(
+        name="Wait for handle review",
+        steps=({"key": "hold", "step_class": "parties_dedupe_scan", "config": {"limit": 50}},),
+        edges=(),
+    )
+
+    def retain(target: Any, *, terminal: bool = False) -> Any:
+        run = engine.start(workflow, party, operator)
+        advance_once(run)
+        with system_context(reason="test retain handle artifact"):
+            step_run = StepRun.objects.get(run=run)
+            attempt = step_run.current_attempt
+        StepAttempt.objects.admit_invocation(
+            attempt.pk, lease_token=attempt.lease_token, at=timezone.now(),
+        )
+        StepAttempt.objects.finalize(
+            attempt.pk,
+            lease_token=attempt.lease_token,
+            result=AttemptResult(
+                AttemptResultKind.DONE if terminal else AttemptResultKind.WAIT,
+                artifacts_present=True,
+                artifacts=(ArtifactSpec(target, "Identity evidence"),),
+                requested_until=None if terminal else timezone.now(),
+            ),
+            recorded_at=timezone.now(),
+        )
+        if terminal:
+            engine.advance(run.pk)
+        run.refresh_from_db()
+        return run
+
+    first = retain(link)
+    second = retain(link)
+    terminal = retain(link, terminal=True)
+    unrelated = retain(workflow)
+    delivered: list[int] = []
+    monkeypatch.setattr(engine, "deliver", lambda run_id: delivered.append(run_id))
+
+    with system_context(reason="review retained handle"):
+        getattr(link, disposition)()
+
+    assert delivered == [first.pk, second.pk]
+    assert terminal.pk not in delivered
+    assert unrelated.pk not in delivered
 
 
 @pytest.mark.django_db(transaction=True)

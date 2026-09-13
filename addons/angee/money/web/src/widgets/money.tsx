@@ -68,7 +68,7 @@ function toAmount(value: MoneyWidgetValue | undefined): number | null {
  * decimal. Display coerces the Decimal string to a number for `Intl`; the exact
  * string is preserved by the edit control, which is where precision matters.
  */
-function formatMoney(value: MoneyWidgetValue | undefined, code: string | undefined): string {
+export function formatMoney(value: MoneyWidgetValue | undefined, code: string | undefined): string {
   const amount = toAmount(value);
   if (amount === null) return "";
   if (code) {

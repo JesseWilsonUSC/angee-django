@@ -23,6 +23,7 @@ is a typed, directed party↔party edge whose vocabulary
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 from django.apps import apps
@@ -562,6 +563,22 @@ class Handle(SqidMixin, AuditMixin, AngeeModel):
         return None
 
 
+@dataclass(frozen=True, slots=True)
+class PartyHandleEvidence:
+    """One actor-readable native record supporting a handle claim."""
+
+    model: str
+    id: str
+
+
+@dataclass(frozen=True, slots=True)
+class PartyHandleEvidencePage:
+    """Bounded actor-scoped projection of retained handle evidence."""
+
+    items: tuple[PartyHandleEvidence, ...]
+    truncated: bool
+
+
 class PartyHandle(ScoredLinkMixin, SqidMixin, AuditMixin, AngeeModel):
     """A confidence-bearing link between a party and one of its handles.
 
@@ -607,6 +624,33 @@ class PartyHandle(ScoredLinkMixin, SqidMixin, AuditMixin, AngeeModel):
         """Return a readable link description for Django displays."""
 
         return f"{self.party_id}↔{self.handle_id} ({self.confidence})"
+
+    def evidence_page(self, actor: Any, *, limit: int = 20) -> PartyHandleEvidencePage:
+        """Return a hard-bounded actor-readable projection of retained evidence."""
+
+        if actor is None:
+            return PartyHandleEvidencePage((), False)
+        bounded = max(1, min(int(limit), 20))
+        from angee.base.identity import instance_from_public_id
+        from angee.base.scoping import read_scoped_queryset
+
+        raw = (self.metadata or {}).get("evidence", ())
+        refs = list(raw) if isinstance(raw, (list, tuple)) else []
+        visible: list[PartyHandleEvidence] = []
+        for ref in refs[: bounded + 1]:
+            if not isinstance(ref, Mapping):
+                continue
+            try:
+                model = apps.get_model(str(ref.get("model") or ""))
+            except (LookupError, ValueError):
+                continue
+            public_id = str(ref.get("id") or "")
+            queryset = read_scoped_queryset(model, actor)
+            if public_id and queryset is not None and instance_from_public_id(
+                model, public_id, queryset=queryset
+            ) is not None:
+                visible.append(PartyHandleEvidence(model=model._meta.label, id=public_id))
+        return PartyHandleEvidencePage(tuple(visible[:bounded]), len(refs) > bounded)
 
     def confirm(self) -> None:
         """Human-confirm this link, then re-resolve the handle's owner.

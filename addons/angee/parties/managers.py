@@ -29,8 +29,10 @@ from django.db.models.functions import Coalesce, NullIf
 from phonenumbers import PhoneNumberMatcher
 from rebac import PermissionDenied, actor_context, current_actor, system_context
 
+from angee.base.identity import public_id_for
 from angee.base.mixins import HierarchyQuerySet
 from angee.base.models import AngeeManager, AngeeQuerySet
+from angee.base.refs import canonical_record_target
 from angee.parties.domains import GENERIC_EMAIL_DOMAINS
 from angee.parties.mixins import LinkSource
 
@@ -309,6 +311,55 @@ class HandleManager(AngeeManager.from_queryset(HandleQuerySet)):  # type: ignore
 
 class PartyHandleManager(AngeeManager):
     """Owns the confidence link between a party and a handle, and the resolution."""
+
+    def propose_claimed_handle(
+        self,
+        party: Any,
+        handle: Any,
+        *,
+        evidence: Any,
+        actor: Any,
+        confidence: float = 0.4,
+    ) -> Any:
+        """Retain an unconfirmed address claim for human identity review.
+
+        The evidence record may be a Message, document, or another readable native
+        record. This owner deliberately records only that the source claimed the
+        handle. Transport authentication remains unknown, independently of any
+        later human confirmation of Party ownership.
+        """
+
+        party.with_actor(actor)._require_record_access("write")
+        handle.with_actor(actor)._require_record_access("read")
+        evidence.with_actor(actor)._require_record_access("read")
+        if not 0 < confidence < 0.5:
+            raise ValidationError({"confidence": "Claimed-handle proposals require confidence below 0.5."})
+        evidence_target = canonical_record_target(evidence)
+        evidence_model = evidence_target.content_type.model_class()
+        if evidence_model is None:
+            raise ValidationError({"evidence": "The evidence record has no canonical model."})
+        evidence_ref = {
+            "model": evidence_model._meta.label,
+            "id": public_id_for(evidence_model, evidence_target.object_id),
+        }
+        with system_context(reason="parties.party_handle.propose_claimed_handle"), transaction.atomic():
+            locked_handle = type(handle)._base_manager.select_for_update().get(pk=handle.pk)
+            existing = self.select_for_update().filter(party=party, handle=locked_handle).first()
+            refs = list((existing.metadata or {}).get("evidence", ())) if existing is not None else []
+            if evidence_ref not in refs:
+                refs.append(evidence_ref)
+            return self.link(
+                party,
+                locked_handle,
+                confidence=confidence,
+                source=cast(LinkSource, LinkSource.EMAIL_MATCH),
+                is_confirmed=False,
+                metadata={
+                    "claim": "source_sender",
+                    "evidence": refs,
+                },
+                created_by_id=getattr(actor, "pk", None),
+            )
 
     def link(
         self,

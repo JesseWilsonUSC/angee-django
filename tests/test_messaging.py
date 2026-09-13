@@ -74,6 +74,7 @@ from angee.parties.models import PartyHandle as AbstractPartyHandle
 from angee.parties.models import Person as AbstractPerson
 from angee.parties.models import Relationship as AbstractRelationship
 from angee.parties.models import RelationshipKind as AbstractRelationshipKind
+from angee.workflows_parties.models import PartyHandle as WorkflowPartyHandleContribution
 from tests.chatterdemo.models import ChatterDoc, TrackedRecordChild, TrackedRecordParent
 from tests.conftest import (
     IAM_CONNECTION_TEST_MODELS,
@@ -154,7 +155,7 @@ class Address(AbstractAddress):
         rebac_id_attr = "sqid"
 
 
-class PartyHandle(AbstractPartyHandle):
+class PartyHandle(WorkflowPartyHandleContribution, AbstractPartyHandle):
     """Concrete identity link used when messaging attributes a user-owned handle."""
 
     class Meta(_PartyHandleMeta):
@@ -1979,6 +1980,58 @@ def test_ingest_leaves_unknown_first_contact_sender_unresolved(channel: Any) -> 
 
     assert sender.party_id is None
     assert not PartyHandle._base_manager.filter(handle=sender).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_claimed_sender_proposal_accumulates_evidence_without_demoting_confirmation(channel: Any) -> None:
+    """Repeated source claims retain evidence while human identity state remains authoritative."""
+
+    with system_context(reason="test claimed sender proposal fixtures"):
+        owner = channel.owner
+        party = Party._base_manager.create(display_name="Invoice sender", created_by=owner)
+        handle = Handle._base_manager.create(
+            platform=Handle.Platform.EMAIL, value="billing@example.test", created_by=owner,
+        )
+        messages = [
+            Message._base_manager.create(
+                channel=channel, external_id=f"sender-evidence-{index}", direction="inbound",
+                status="synced", message_type="email", sender=handle, created_by=owner,
+            )
+            for index in range(1, 22)
+        ]
+        link = PartyHandle.objects.link(
+            party, handle, confidence=1.0, source=LinkSource.MANUAL,
+            is_confirmed=True, created_by_id=owner.pk,
+        )
+        foreign_owner = get_user_model().objects.create_user(
+            username="foreign-sender-evidence", email="foreign-sender-evidence@example.test",
+        )
+        foreign_party = Party._base_manager.create(display_name="Private evidence", created_by=foreign_owner)
+        link.metadata = {"evidence": [{"model": "messaging.Party", "id": str(foreign_party.sqid)}]}
+        link.save(update_fields=("metadata", "updated_at"))
+
+    for message in messages:
+        PartyHandle.objects.propose_claimed_handle(
+            party, handle, evidence=message, actor=owner,
+        )
+
+    link.refresh_from_db()
+    assert link.is_confirmed
+    assert not link.is_dismissed
+    assert link.confidence == 1.0
+    assert link.source == LinkSource.MANUAL
+    assert link.metadata["evidence"] == [
+        {"model": "messaging.Party", "id": str(foreign_party.sqid)},
+        *({"model": "messaging.Message", "id": str(message.sqid)} for message in messages),
+    ]
+    page = link.evidence_page(owner, limit=100)
+    assert len(page.items) == 20
+    assert page.truncated
+    assert [(item.model, item.id) for item in page.items] == [
+        ("messaging.Message", str(message.sqid)) for message in messages[:20]
+    ]
+    assert all(item.id != str(foreign_party.sqid) for item in page.items)
+    assert link.evidence_page(None).items == ()
 
 
 @pytest.mark.django_db(transaction=True)
