@@ -214,6 +214,8 @@ describe("KnowledgePage explorer wiring", () => {
     expect(rootPickerValue()).toBe("vault-b");
     expect(treeAttribute("data-row-ids")).toBe("page-b");
     expect(treeAttribute("data-selected")).toBe("page-b");
+    expect(screen.getByRole("heading", { name: "Page B" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.getByTestId("page-editor").getAttribute("data-page-id")).toBe(
       "page-b",
     );
