@@ -388,6 +388,14 @@ describe("BoardView", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     fireEvent.click(link);
     expect(dndMocks.navigate).toHaveBeenCalledWith({ to: "/records/1" });
+
+    // A drag cancelled with Escape still ends in pointerup and a click.
+    act(() => {
+      dndMocks.contextProps?.onDragCancel?.({ active: { id: "1", data: { current: undefined } }, over: null });
+    });
+    const afterCancel = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    link.dispatchEvent(afterCancel);
+    expect(afterCancel.defaultPrevented).toBe(true);
   });
 
   test("wires a card drag handle as the keyboard activator", () => {

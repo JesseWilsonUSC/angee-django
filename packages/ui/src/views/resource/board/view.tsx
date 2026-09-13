@@ -256,6 +256,7 @@ function BoardRows<TRow extends Row>({
       sensors={sensors}
       collisionDetection={boardCollisionDetection}
       onDragEnd={handleDragEnd}
+      onDragCancel={cancelTrailingClick}
     >
       {board}
     </DndContext>
