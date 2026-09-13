@@ -31,6 +31,7 @@ from django.core.exceptions import (
     ValidationError,
 )
 from django.db import DEFAULT_DB_ALIAS, OperationalError, ProgrammingError, connections, models, router, transaction
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rebac import system_context
 
@@ -1517,6 +1518,28 @@ class WorkflowRun(AuditMixin, RecordRefMixin, AngeeDataModel):
                 .order_by("wait_until", "pk")
                 .values("wait_until")[:1],
                 output_field=models.DateTimeField(),
+            ),
+        }
+
+    @classmethod
+    def active_step_projection_annotation(cls) -> dict[str, Any]:
+        """Return the oldest active journal step label without loading the run journal."""
+
+        step_run = cls._meta.apps.get_model("workflows", "StepRun")
+        active = step_run.objects.filter(
+            run_id=models.OuterRef("pk"),
+            status__in=(StepRunStatus.STARTED, StepRunStatus.WAITING),
+        ).order_by("created_at", "pk")
+        return {
+            "_workflow_active_step": models.Subquery(
+                active.annotate(
+                    display=Coalesce(
+                        "step__name",
+                        "system_kind",
+                        output_field=models.CharField(),
+                    ),
+                ).values("display")[:1],
+                output_field=models.CharField(),
             ),
         }
 

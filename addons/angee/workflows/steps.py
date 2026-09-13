@@ -188,12 +188,20 @@ class StepResult:
         until: datetime | None = None,
         resume_state: dict[str, Any] | None = None,
         waiting_kind: Literal["scheduled", "approval", "external"] = "scheduled",
+        artifacts: tuple[ArtifactSpec, ...] | list[ArtifactSpec] | None = None,
     ) -> Self:
         """Return a durable wait result."""
 
         if until is None:
             raise ValueError("StepResult.wait requires until.")
-        return cls(kind="wait", until=until, resume_state=resume_state, waiting_kind=waiting_kind)
+        return cls(
+            kind="wait",
+            until=until,
+            resume_state=resume_state,
+            waiting_kind=waiting_kind,
+            artifacts_present=artifacts is not None,
+            artifacts=tuple(artifacts or ()),
+        )
 
     @classmethod
     def suspend(

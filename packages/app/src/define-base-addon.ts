@@ -34,6 +34,11 @@ export interface BaseAddonRoute extends AddonRoute {
   icon?: string;
   /** Dashboard definition registered with this routed page. */
   dashboard?: DashboardDefinition;
+  /**
+   * Model displayed by this route when another route owns the resource
+   * registration. Record chrome uses this for subject-aware contributions.
+   */
+  recordModel?: string;
 }
 
 export interface ResourcePageRoutesOptions {
@@ -49,6 +54,8 @@ export interface ResourcePageRoutesOptions {
   detailMenu?: string;
   /** Optional detail component when the child route renders its own page. */
   detailComponent?: RouteComponent;
+  /** Model displayed when this route deliberately does not own a resource. */
+  recordModel?: string;
 }
 
 export function resourcePageRoutes(
@@ -67,6 +74,7 @@ export function resourcePageRoutes(
       layout,
       component,
       ...(resource ? { resource } : {}),
+      ...(options.recordModel ? { recordModel: options.recordModel } : {}),
       ...(options.menu ? { menu: options.menu } : {}),
     },
     {

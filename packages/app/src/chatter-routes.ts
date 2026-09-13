@@ -27,7 +27,7 @@ export function chatterRouteIndex(
     const parent = route.parent ? routesByName.get(route.parent) : undefined;
     const path = fullRoutePath(route, parent);
     const recordParam = trailingRouteParamName(path);
-    const modelLabel = inheritedRouteResource(route, routesByName);
+    const modelLabel = inheritedRouteRecordModel(route, routesByName);
     const canonicalLabel = modelLabel
       ? resourceFactsByModel[modelLabel]?.canonicalLabel
       : undefined;
@@ -53,7 +53,7 @@ function routeChatterViewType(
   childrenByParentName: ReadonlyMap<string, readonly BaseAddonRoute[]>,
   resourceFactsByModel: Readonly<Record<string, ResourceFacts>>,
 ): string {
-  const resource = inheritedRouteResource(route, routesByName);
+  const resource = inheritedRouteRecordModel(route, routesByName);
   if (resource) {
     const facts = resourceFactsByModel[resource];
     if (!facts) {
@@ -72,14 +72,15 @@ function routeChatterViewType(
   return routeNameViewType(route.name);
 }
 
-function inheritedRouteResource(
+function inheritedRouteRecordModel(
   route: BaseAddonRoute,
   routesByName: ReadonlyMap<string, BaseAddonRoute>,
 ): string | undefined {
+  if (route.recordModel) return route.recordModel;
   if (route.resource) return route.resource;
   if (!route.parent) return undefined;
   const parent = routesByName.get(route.parent);
-  return parent ? inheritedRouteResource(parent, routesByName) : undefined;
+  return parent ? inheritedRouteRecordModel(parent, routesByName) : undefined;
 }
 
 function resourceFactsByModelLabel(

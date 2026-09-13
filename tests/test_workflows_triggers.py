@@ -407,14 +407,18 @@ def test_manual_event_fire_is_idempotent_and_reprocesses_with_lineage(
     assert first.trigger_id == trigger.pk
     assert first.subject == subject
     workflows_schema = importlib.import_module("angee.workflows.schema")
-    runs, pending_decisions = workflows_schema._workflow_subject_history(
-        workflows_schema.WorkflowObjectRefInput(
-            subject_declaration=subject._meta.label, id=str(subject.sqid),
-        ),
-        actor=admin,
+    runs, pending_decisions, truncated, decisions_truncated = (
+        workflows_schema._workflow_subject_history(
+            workflows_schema.WorkflowObjectRefInput(
+                subject_declaration=subject._meta.label, id=str(subject.sqid),
+            ),
+            actor=admin,
+        )
     )
     assert list(runs) == [first]
     assert list(pending_decisions) == []
+    assert truncated is False
+    assert decisions_truncated is False
     run_to_terminal(first)
     reprocessed = WorkflowRun.objects.reprocess(first, actor=admin, request_key="reprocess-1")
     assert reprocessed.reprocessed_from_id == first.pk

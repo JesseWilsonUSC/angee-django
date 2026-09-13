@@ -4163,6 +4163,18 @@ class StepAttemptSystemManager(StepAttemptManager):
 class StepArtifactQuerySet(AngeeQuerySet[Any]):
     """Read-only collection of explicit retained result artifacts."""
 
+    def for_runs(self, runs: models.QuerySet[Any]) -> Self:
+        """Return retained outputs emitted by a bounded workflow-run selection."""
+
+        return cast(
+            Self,
+            self.filter(
+                attempt__step_run__run_id__in=models.Subquery(
+                    runs.order_by().values("pk"),
+                ),
+            ).select_related("attempt__step_run__run").order_by("created_at", "pk"),
+        )
+
     def update(self, **kwargs: Any) -> int:
         raise TypeError("Workflow artifacts are immutable retained result evidence.")
 

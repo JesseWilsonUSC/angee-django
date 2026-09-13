@@ -151,6 +151,12 @@ def test_step_result_retains_explicit_ordered_artifact_associations() -> None:
         ArtifactSpec(target=first, label="First"),
         ArtifactSpec(target=second, label="Second"),
     )
+    waiting = StepResult.wait(
+        until=timezone.now() + timedelta(minutes=1),
+        artifacts=(ArtifactSpec(target=first, label="Pending owner record"),),
+    ).to_attempt_result()
+    assert waiting.artifacts_present
+    assert waiting.artifacts == (ArtifactSpec(target=first, label="Pending owner record"),)
 
 
 def test_default_recovery_only_permits_explicit_fresh_replay() -> None:

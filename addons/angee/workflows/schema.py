@@ -43,7 +43,7 @@ from angee.graphql.subscriptions import changes
 from angee.iam.permissions import ADMIN_PERMISSION_CLASSES as _ADMIN_PERMISSION_CLASSES
 from angee.iam.permissions import request_from_info, session_user
 from angee.workflows import engine
-from angee.workflows.attempts import JsonPresence
+from angee.workflows.attempts import JsonPresence, deserialize_decision_specs
 from angee.workflows.data_contracts import DataContract, FlatDataContractEdge, FlatDataContractNode
 from angee.workflows.definitions import (
     DefinitionEdit,
@@ -112,13 +112,19 @@ def _read_resource_queryset(model: type[models.Model]) -> Any:
     return get_queryset
 
 
-def _artifact_queryset(info: strawberry.Info) -> models.QuerySet[Any]:
-    """Scope artifact summaries through their independently readable attempts."""
+def _artifact_queryset_for_actor(actor: Any) -> models.QuerySet[Any]:
+    """Scope artifact summaries through the actor's readable attempts."""
 
-    attempts = read_scoped_queryset(StepAttempt, session_user(info), action="read")
+    attempts = read_scoped_queryset(StepAttempt, actor, action="read")
     if attempts is None:
         return StepArtifact.objects.none()
     return StepArtifact.objects.filter(attempt__in=attempts)
+
+
+def _artifact_queryset(info: strawberry.Info) -> models.QuerySet[Any]:
+    """Scope artifact summaries through their independently readable attempts."""
+
+    return _artifact_queryset_for_actor(session_user(info))
 
 
 def _decision_schema(root: Any) -> JSON | None:
@@ -914,6 +920,12 @@ class WorkflowRunType(AngeeNode):
 
         return cast(Any, self)._workflow_next_wake_at
 
+    @strawberry_django.field(annotate=cast(Any, WorkflowRun).active_step_projection_annotation())
+    def active_step(self) -> str | None:
+        """Return the oldest active journal step's human-readable owner label."""
+
+        return cast(str | None, cast(Any, self)._workflow_active_step)
+
 
 @strawberry_django.type(StepRun)
 class StepRunType(AngeeNode):
@@ -1094,6 +1106,18 @@ class DecisionType(DecisionTargetFields, AngeeNode):
     updated_at: auto
 
     decision_schema: JSON | None = _decision_schema_field()
+
+    @strawberry_django.field(only=["declaration_index", "suspension_attempt__result_decisions"])
+    def assignees(self) -> list[str]:
+        """Return the frozen recipient subjects declared for this retained Decision."""
+
+        decision = cast(Any, self)
+        if decision.declaration_index is None or decision.suspension_attempt_id is None:
+            return []
+        declarations = deserialize_decision_specs(decision.suspension_attempt.result_decisions)
+        if decision.declaration_index >= len(declarations):
+            return []
+        return list(declarations[decision.declaration_index].assignees)
 
     @strawberry_django.field(only=["step_run_id"])
     def step_run(self, info: strawberry.Info) -> StepRunType | None:
@@ -1808,19 +1832,53 @@ class WorkflowSubjectDeclarationQuery:
     ) -> list[WorkflowRunType]:
         """Return actor-readable native run history for one readable record."""
 
-        runs, _decisions = _workflow_subject_history(subject, actor=session_user(info))
+        runs, _decisions, _truncated, _decisions_truncated = _workflow_subject_history(
+            subject, actor=session_user(info),
+        )
         return cast(list[WorkflowRunType], runs)
 
     @strawberry.field
     def workflow_subject_history(
         self, info: strawberry.Info, subject: WorkflowObjectRefInput,
     ) -> "WorkflowSubjectHistory":
-        """Return runs and pending targeted decisions for one readable record."""
+        """Return runs, retained outputs, lineage, and pending decisions for one readable record."""
 
-        runs, decisions = _workflow_subject_history(subject, actor=session_user(info))
+        runs, decisions, truncated, decisions_truncated = _workflow_subject_history(
+            subject, actor=session_user(info),
+        )
+        children = read_scoped_queryset(WorkflowRun, session_user(info), action="read")
+        child_candidates = [] if children is None else list(
+            children.filter(parent_step_run__run_id__in=models.Subquery(runs.order_by().values("pk")))
+            .select_related("workflow", "parent_step_run__run").order_by("created_at", "pk")[:201]
+        )
+        child_rows = child_candidates[:200]
+        failure_scope = read_scoped_queryset(StepRun, session_user(info), action="read")
+        failure_candidates = [] if failure_scope is None else list(
+            failure_scope.filter(
+                run_id__in=models.Subquery(runs.order_by().values("pk")),
+                status="failed",
+            ).select_related("run", "step", "current_attempt").order_by("-updated_at", "-pk")[:201]
+        )
+        failures = failure_candidates[:200]
+        artifact_scope = _artifact_queryset(info).for_runs(runs)
+        artifact_ids = list(artifact_scope.values_list("pk", flat=True)[:201])
+        artifacts = artifact_scope.filter(pk__in=artifact_ids[:200])
         return WorkflowSubjectHistory(
             runs=cast(list[WorkflowRunType], runs),
             pending_decisions=cast(list[DecisionType], decisions),
+            failures=cast(list[StepRunType], failures),
+            artifacts=cast(list[StepArtifactType], artifacts),
+            child_runs=[WorkflowChildRun(
+                parent_run_id=cast(strawberry.ID, to_public_id(WorkflowRun, row.parent_step_run.run_id)),
+                run=cast(WorkflowRunType, row),
+            ) for row in child_rows],
+            truncated=(
+                truncated
+                or decisions_truncated
+                or len(child_candidates) > 200
+                or len(failure_candidates) > 200
+                or len(artifact_ids) > 200
+            ),
         )
 
 
@@ -1830,11 +1888,23 @@ class WorkflowSubjectHistory:
 
     runs: list[WorkflowRunType]
     pending_decisions: list[DecisionType]
+    failures: list[StepRunType]
+    artifacts: list[StepArtifactType]
+    child_runs: list["WorkflowChildRun"]
+    truncated: bool
+
+
+@strawberry.type
+class WorkflowChildRun:
+    """One actor-readable run spawned by a step of a history run."""
+
+    parent_run_id: strawberry.ID
+    run: WorkflowRunType
 
 
 def _workflow_subject_history(
     subject: WorkflowObjectRefInput, *, actor: Any,
-) -> tuple[models.QuerySet[Any], models.QuerySet[Any]]:
+) -> tuple[models.QuerySet[Any], models.QuerySet[Any], bool, bool]:
     """Resolve shared subject/artifact run scope and its pending target actions."""
 
     empty_runs = WorkflowRun.objects.none()
@@ -1842,35 +1912,40 @@ def _workflow_subject_history(
     try:
         model = cast(type[models.Model], apps.get_model(subject.subject_declaration))
     except (LookupError, ValueError):
-        return empty_runs, empty_decisions
+        return empty_runs, empty_decisions, False, False
     target_scope = read_scoped_queryset(model, actor)
     if target_scope is None:
-        return empty_runs, empty_decisions
+        return empty_runs, empty_decisions, False, False
     target = instance_for_id(model, subject.id, queryset=target_scope)
     if target is None:
-        return empty_runs, empty_decisions
+        return empty_runs, empty_decisions, False, False
     content_type = ContentType.objects.get_for_model(target, for_concrete_model=False)
     readable_runs = read_scoped_queryset(cast(type[models.Model], WorkflowRun), actor)
     readable_decisions = read_scoped_queryset(cast(type[models.Model], Decision), actor)
     if readable_runs is None:
-        return empty_runs, empty_decisions
+        return empty_runs, empty_decisions, False, False
     artifact_content_type, artifact_object_id = canonical_record_target(target)
-    artifact_runs = apps.get_model("workflows", "StepArtifact")._base_manager.filter(
+    artifact_runs = _artifact_queryset_for_actor(actor).filter(
         target_content_type=artifact_content_type, target_object_id=artifact_object_id,
     ).values("attempt__step_run__run_id")
-    runs = readable_runs.filter(
+    candidates = readable_runs.filter(
         models.Q(subject_content_type=content_type, subject_object_id=target.pk)
         | models.Q(pk__in=models.Subquery(artifact_runs)),
-    ).select_related("workflow").distinct().order_by("-created_at", "-pk")
+    ).distinct().order_by("-created_at", "-pk")
+    run_ids = list(candidates.values_list("pk", flat=True)[:101])
+    truncated = len(run_ids) > 100
+    runs = readable_runs.filter(pk__in=run_ids[:100]).select_related("workflow").order_by("-created_at", "-pk")
     if readable_decisions is None:
-        return runs, empty_decisions
-    decisions = readable_decisions.filter(
+        return runs, empty_decisions, truncated, False
+    decision_scope = readable_decisions.filter(
         step_run__run_id__in=models.Subquery(runs.order_by().values("pk")),
         verdict="pending",
-    ).exclude(target_model="").exclude(target_id="").select_related(
-        "step_run__run",
+    ).select_related(
+        "step_run__run", "suspension_attempt",
     ).order_by("priority", "created_at", "pk")
-    return runs, decisions
+    decision_ids = list(decision_scope.values_list("pk", flat=True)[:201])
+    decisions = decision_scope.filter(pk__in=decision_ids[:200])
+    return runs, decisions, truncated, len(decision_ids) > 200
 
 
 @strawberry.type
