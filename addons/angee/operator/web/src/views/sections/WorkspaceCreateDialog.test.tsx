@@ -116,7 +116,7 @@ describe("WorkspaceCreateDialog", () => {
         template: "workspaces/dev",
         resolvedTemplate: "workspaces/dev",
         effectiveInputs: [],
-        missingRequired: ["topic"],
+        missingRequired: [],
         invalidInputs: [{ field: "count", reason: "not an integer: abc" }],
       },
     });
@@ -128,10 +128,18 @@ describe("WorkspaceCreateDialog", () => {
     expect(screen.getByLabelText("count")).toBeTruthy();
     expect(screen.queryByLabelText("internal_name")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    const submit = screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("topic"), {
+      target: { value: "provided" },
+    });
+    fireEvent.change(screen.getByLabelText("count"), {
+      target: { value: "abc" },
+    });
+    await waitFor(() => expect(submit.disabled).toBe(false));
+    fireEvent.click(submit);
 
-    expect(await screen.findByText("This input is required.")).toBeTruthy();
-    expect(screen.getByText("not an integer: abc")).toBeTruthy();
+    expect(await screen.findByText("not an integer: abc")).toBeTruthy();
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
@@ -158,7 +166,9 @@ describe("WorkspaceCreateDialog", () => {
     fireEvent.change(screen.getByLabelText("topic"), {
       target: { value: "slice-5" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    const submit = screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement;
+    await waitFor(() => expect(submit.disabled).toBe(false));
+    fireEvent.click(submit);
 
     await waitFor(() =>
       expect(mocks.preflight).toHaveBeenCalledWith({
@@ -198,6 +208,7 @@ async function chooseTemplate(name: string): Promise<void> {
   );
   const option = await screen.findByRole("option", { name });
   expect(screen.queryByRole("option", { name: "claude-code" })).toBeNull();
+  fireEvent.pointerDown(option, { pointerType: "mouse" });
   fireEvent.click(option);
   await waitFor(() =>
     expect(

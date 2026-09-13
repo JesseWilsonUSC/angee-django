@@ -31,7 +31,7 @@ describe("operator addon manifest", () => {
     const detailRoutes = routes.filter((route) => route.path.includes("$"));
     expect(sectionRoutes.map((route) => route.path)).toEqual(SECTION_PATHS);
     for (const route of routes) {
-      expect(route.component).toBeTypeOf("function");
+      expect(route.component ?? route.indexComponent).toBeTypeOf("function");
     }
     const sectionNames = new Set(sectionRoutes.map((route) => route.name));
     for (const route of detailRoutes) {
