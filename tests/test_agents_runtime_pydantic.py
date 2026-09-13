@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -27,11 +28,8 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.toolsets.function import FunctionToolset
 
-from angee.agents.runtimes import ANTHROPIC_OAUTH_CLIENT_HEADERS
-from angee.agents_integrate_anthropic.backend import (
-    AnthropicInferenceBackend,
-    _OAuthMessagesTransport,
-)
+from angee.agents.runtimes import ANTHROPIC_OAUTH_CLIENT_HEADERS, ANTHROPIC_OAUTH_SYSTEM_PREAMBLE
+from angee.agents_integrate_anthropic.backend import AnthropicInferenceBackend
 from angee.agents_integrate_ollama.backend import OllamaInferenceBackend
 from angee.agents_integrate_openai.backend import OpenAIInferenceBackend
 from angee.agents_runtime_pydantic.acp import updates_for_event
@@ -78,11 +76,23 @@ def test_anthropic_model_keeps_override_and_oauth_beta_header(monkeypatch: Any) 
     async def inspect_model():
         async with binding as model:
             assert isinstance(model, AnthropicModel)
+            http_client = captured[0]["http_client"]
+            request = http_client.build_request(
+                "POST", "https://anthropic.example/v1/messages",
+                json={"system": "Follow the user's instructions.", "messages": []},
+            )
+            for hook in http_client.event_hooks["request"]:
+                await hook(request)
+            content = b"".join([chunk async for chunk in request.stream])
+            assert json.loads(content)["system"] == [
+                {"type": "text", "text": ANTHROPIC_OAUTH_SYSTEM_PREAMBLE},
+                {"type": "text", "text": "Follow the user's instructions."},
+            ]
+            assert request.headers["content-length"] == str(len(content))
 
     async_to_sync(inspect_model)()
     assert len(captured) == 1
     http_client = captured[0].pop("http_client")
-    assert isinstance(http_client._transport, _OAuthMessagesTransport)
     assert http_client.is_closed
     assert clients[0].is_closed()
     assert captured == [

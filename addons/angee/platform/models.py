@@ -484,12 +484,6 @@ class Addon(AngeeModel):
 
         return self.name
 
-    @classmethod
-    def legacy_rebac_id_lookup(cls, value: str) -> dict[str, Any]:
-        """Resolve the retired addon-name authorization identity."""
-
-        return {"name": value}
-
     @property
     def disable_block_reason(self) -> str:
         """Return why this addon cannot be disabled, or ``""`` when it may be.

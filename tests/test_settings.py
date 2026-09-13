@@ -201,7 +201,6 @@ def test_iam_auth_throttling_comes_from_axes(tmp_path: Path) -> None:
     assert "axes.middleware.AxesMiddleware" in settings["MIDDLEWARE"]
     assert SETTINGS["AUTHENTICATION_BACKENDS:append"] == [
         "axes.backends.AxesStandaloneBackend",
-        "rebac.backends.auth.RebacBackend",
         "angee.iam.auth.ModelBackend",
     ]
     assert settings["AUTHENTICATION_BACKENDS"][0] == "axes.backends.AxesStandaloneBackend"
@@ -338,7 +337,6 @@ def test_auth_user_model_comes_from_iam_autoconfig(
     assert SETTINGS["AUTH_USER_MODEL"] == "iam.User"
     assert SETTINGS["AUTHENTICATION_BACKENDS:append"] == [
         "axes.backends.AxesStandaloneBackend",
-        "rebac.backends.auth.RebacBackend",
         "angee.iam.auth.ModelBackend",
     ]
     assert settings["AUTH_USER_MODEL"] == "iam.User"

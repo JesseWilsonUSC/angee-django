@@ -17,12 +17,10 @@ module = "runtime_migrations.vcs_models_cutover"
 name = "live_tool_backing"
 app_label = "agents"
 module = "runtime_migrations.live_tool_backing"
-compatible_source_sha256 = ["b061c4d07be484f5e1bda84d90a4b9ef5f536bcc3338b28ec7bf5f3654d43117"]
-
-[[migrations]]
-name = "role_subject_relations"
-app_label = "agents"
-module = "runtime_migrations.role_subject_relations"
+compatible_source_sha256 = [
+  "b061c4d07be484f5e1bda84d90a4b9ef5f536bcc3338b28ec7bf5f3654d43117",
+  "b4365938ed4a196de9da6dc117551e8002c82eab6c9dbb779f59a579172c3bc9",
+]
 
 [resources]
 demo = [

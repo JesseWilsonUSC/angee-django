@@ -235,14 +235,26 @@ describe("resource-view model", () => {
     expect(result.current.state.rowSelection["note-1"]).toBe(false);
   });
 
-  test("registers the calendar kind with its applicability", () => {
-    expect(RESOURCE_VIEW_KINDS).toEqual(["list", "board", "calendar"]);
+  test("registers source-backed view kinds with their applicability", () => {
+    expect(RESOURCE_VIEW_KINDS).toEqual([
+      "list",
+      "board",
+      "calendar",
+      "dashboard",
+    ]);
     // The calendar takes only window args in v1: no group-by/pager/columns/filter.
     expect(RESOURCE_VIEW_KIND_CAPABILITIES.calendar).toEqual({
       grouping: false,
       pagination: false,
       columns: false,
       filter: false,
+      requiresSources: true,
+    });
+    expect(RESOURCE_VIEW_KIND_CAPABILITIES.dashboard).toEqual({
+      grouping: false,
+      pagination: false,
+      columns: false,
+      filter: true,
       requiresSources: true,
     });
     // list/board applicability is unchanged (both keep filter + pager + group-by).
@@ -266,6 +278,11 @@ describe("resource-view model", () => {
       "list",
       "board",
       "calendar",
+    ]);
+    expect(availableResourceViewKinds({ dashboard: true })).toEqual([
+      "list",
+      "board",
+      "dashboard",
     ]);
   });
 

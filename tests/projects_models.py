@@ -3,17 +3,25 @@
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
-from angee.base.mixins import SqidMixin
+from angee.base.mixins import AuditMixin, SqidMixin
 from angee.projects.models import Project as AbstractProject
 from angee.projects.models import ProjectBinding as AbstractProjectBinding
+from angee.work.models import TaskWork
 
 
-class Task(SqidMixin, models.Model):
-    """Minimal concrete target required by Project.converted_from."""
+class Task(TaskWork, AuditMixin, SqidMixin, models.Model):
+    """Concrete task carrying the production chatter-wake owner."""
 
     sqid_prefix = "tpt_"
 
+    # This source-model graph exercises chatter wake behavior without composing
+    # work's queue lifecycle and its additional model graph.
+    queue = None
+    stage = None
+    cycle = None
+
     class Meta:
+        abstract = False
         app_label = "projects"
         db_table = "test_projects_task"
 

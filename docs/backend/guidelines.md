@@ -426,34 +426,23 @@ data through REBAC, never a queryset bypass.
   never name a permission such as `#effective_member` in a relation's allowed
   subject types. Usersets backed by relations, such as `auth/group#member`,
   remain valid stored subjects.
-- **Migrate permission-subject grants before syncing the replacement schema.**
-  Upgrades from the permission-userset schemas must materialize and apply the
-  addon-owned `role_subject_relations` migrations before `rebac sync` or tool
-  catalogue reconciliation. IAM owns role hierarchy edges; agents owns tool
-  bundles; money, sequence and UOM own their stored manager grants. These
-  transitions preserve IDs and grant conditions in both relationship stores.
-  A collision with different conditions requires an explicit resolution;
-  do not discard either grant or flatten effective membership into direct members.
-  See the [IAM transition](../../addons/angee/iam/runtime_migrations/role_subject_relations.py)
-  and [agent transition](../../addons/angee/agents/runtime_migrations/role_subject_relations.py).
-- **Migrate stored identities before resuming authorization traffic.** Stop
-  application writers before applying the addon migrations, then run the stack
-  host's `manage.py migrate_rebac_ids` to preview the one-time sqid-to-PK
-  transition, then `manage.py migrate_rebac_ids --apply`, before `rebac sync`
-  and catalogue reconciliation. The
-  [migration owner](../../angee/base/identity_migration.py) checks both physical
-  stores, validates model and registry evidence, and applies one transaction.
-  It preserves conditions and the newest transaction stamp when identical
-  grants converge; ambiguous IDs or conflicting conditions stop the upgrade.
-  The plan holds all stored relationships in memory and resolves distinct
-  references against their owning models, so budget the maintenance window
-  from the preview on the actual database. Historical audit records keep their
-  original representation. Downgrading application code alone does not reverse
-  this data transition.
-  Before `migrate`, inspect already-materialized migration copies: accepted
-  historical source digests preserve applied history, but do not repair an old
-  copied body that has not run. Handle verified unapplied copies under the
-  [migration policy](#migrations-and-runtime); never rewrite applied copies.
+- **Reset stored grants for the primary-key identity and relation-schema cutover.**
+  This upgrade deliberately does not preserve existing REBAC grants. Stop
+  application traffic and take a recoverable database backup. Before applying
+  the remaining Django migrations, run `manage.py reset_rebac_grants` to preview
+  the rows in both local relationship stores and their resource registry, then
+  run `manage.py reset_rebac_grants --apply`. The reset command deliberately
+  runs without system checks so stale grants cannot block this maintenance step.
+  Apply the schema-bearing Django migrations, repeat
+  `manage.py reset_rebac_grants --apply`, then run `manage.py rebac sync` and
+  `manage.py resources load` before resuming traffic.
+  The reset is atomic and leaves application rows, schema rows, and permission
+  audit history intact. It removes record shares, group memberships, role
+  assignments, and every other stored grant; declarative resource grants are
+  recreated by the final resource load. Include `--include-demo` only when that
+  deployment normally loads demo resources. This procedure applies to the local
+  REBAC stores; a deployment using a remote backend must reset that backend
+  through its native administration procedure.
 - **Membership has one store and one writer.** Use `rebac.memberships` for
   direct memberships in groups and role containers. IAM's model and hub own
   authorization and subject-existence policy; the library owns tuple
@@ -476,19 +465,14 @@ data through REBAC, never a queryset bypass.
   command. Human-only workflow completion and proposal evaluation intersect
   authority with `iam/kind:person#active_member`, including admin authority;
   ordinary read/share grants and service requesters remain valid.
-- **Upgrade the stored evidence with the schema.** When upgrading from agents
-  schema revision 4 or installing project container inheritance, compose and
-  apply the generated migrations first, then sync the new REBAC schema. Run
-  `uv run manage.py resync_tool_grants` to migrate retired agent memberships
-  and `uv run manage.py resync_project_access` to reconcile existing project
-  bindings. Run these through the stack host described in
-  [Checks](../checks.md#composition-and-schema); each command delegates to its
-  addon owner and is idempotent.
-  The live-backing migrations remove uncaveated tuples evidenced by the old
-  roster and selection mirrors while preserving unrelated grants. Identical
-  manual grants cannot be distinguished from those mirrors and are removed.
-  The admin migration stops on grants not explained by superuser fields, so
-  unexpected legacy authority must be resolved before cutover.
+- **Rebuild derived grants after the reset.** After the primary-key reset and
+  schema sync above, run `uv run manage.py resync_tool_grants` to reconcile the
+  current built-in tool catalogue and its seeded grants, then
+  `uv run manage.py resync_project_access` to recreate project-container
+  bindings from their application-owned rows. Run these through the stack host
+  described in [Checks](../checks.md#composition-and-schema); each command
+  delegates to its addon owner and is idempotent. No legacy tuple evidence is
+  preserved or interpreted during this upgrade.
 - **Visibility and access are REBAC-native, always.** Put relations and
   permission arms on the model's zed and let the store scope reads; never stand
   authorization up with a Python provider, `visible_to` projection, or queryset

@@ -692,12 +692,6 @@ class AngeeModel(TimestampMixin, RebacMixin):
         return {cls._meta.pk.name: value}
 
     @classmethod
-    def legacy_rebac_id_lookup(cls, value: str) -> dict[str, Any]:
-        """Return the upgrade-only lookup for this model's former public REBAC id."""
-
-        return cls.public_id_lookup(value)
-
-    @classmethod
     def public_id_from_pk(cls, value: Any) -> str:
         """Return the public id encoded from this model's primary-key value."""
 
