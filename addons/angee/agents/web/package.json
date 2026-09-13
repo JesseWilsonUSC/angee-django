@@ -17,6 +17,7 @@
     "@agentclientprotocol/sdk": "1.0.0",
     "@angee/app": "workspace:*",
     "@angee/integrate": "workspace:*",
+    "@angee/iam": "workspace:*",
     "@angee/operator": "workspace:*",
     "@angee/refine": "workspace:*",
     "@angee/metadata": "workspace:*",

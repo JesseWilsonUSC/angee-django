@@ -2,7 +2,8 @@ import * as React from "react";
 import { Column, ResourceList, Field, Form, List, type RecordTabDescriptor } from "@angee/ui";
 
 import { useIamT } from "../i18n";
-import { GroupBindingsTab, GroupMembersTab } from "./GroupAccessTabs";
+import { usePrincipalAccessRecordTab } from "../PrincipalAccess";
+import { GroupMembersTab } from "./GroupAccessTabs";
 
 const MODEL = "iam.Group";
 
@@ -22,12 +23,19 @@ const groupForm = (
 
 export function GroupsPage(): React.ReactElement {
   const t = useIamT();
+  const accessTab = usePrincipalAccessRecordTab();
   const tabs = React.useMemo<readonly RecordTabDescriptor[]>(() => [
     { id: "members", label: t("group.members"), render: (context) => <GroupMembersTab {...context} /> },
-    { id: "bindings", label: t("group.bindings"), render: (context) => <GroupBindingsTab {...context} /> },
-  ], [t]);
+    ...(accessTab ? [accessTab] : []),
+  ], [accessTab, t]);
   return (
-    <ResourceList resource={MODEL} placement="inline" routed recordTabs={tabs}>
+    <ResourceList
+      resource={MODEL}
+      placement="inline"
+      routed
+      returning={["assignment_subject"]}
+      recordTabs={tabs}
+    >
       {groupList}
       {groupForm}
     </ResourceList>

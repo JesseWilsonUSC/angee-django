@@ -150,6 +150,48 @@ export const IamGroupAccess = graphql(`
   }
 `);
 
+export const IamPrincipalAccess = graphql(`
+  query IamPrincipalAccess($subject: String!) {
+    iam_principal_access(subject: $subject) {
+      subject
+      roles {
+        id
+        role
+        role_name
+        namespace
+        source
+        source_label
+        direct
+      }
+      grants {
+        id
+        resource
+        resource_type
+        resource_id
+        relation
+        source
+        source_label
+        direct
+        caveat_name
+        target_model
+        target_id
+      }
+      permissions {
+        id
+        resource
+        resource_type
+        resource_id
+        permission
+        source
+        direct
+        caveat_name
+        target_model
+        target_id
+      }
+    }
+  }
+`);
+
 export const IamAddGroupMember = graphql(`
   mutation IamAddGroupMember($group_id: ID!, $subject: String!, $caveat_name: String! = "") {
     add_group_member(group_id: $group_id, subject: $subject, caveat_name: $caveat_name)
@@ -165,6 +207,10 @@ export const IamRemoveGroupMember = graphql(`
 export const IAM_GROUP_MUTATION_INVALIDATES = ["iam.Group", "iam.Grant", "iam.Relationship", "iam.User"] as const;
 export type IAMGroupMember = NonNullable<DocumentType<typeof IamGroupAccess>["groups_by_pk"]>["members"][number];
 export type IAMGroupBinding = NonNullable<DocumentType<typeof IamGroupAccess>["groups_by_pk"]>["bindings"][number];
+export type IAMPrincipalAccess = DocumentType<typeof IamPrincipalAccess>["iam_principal_access"];
+export type IAMPrincipalRole = IAMPrincipalAccess["roles"][number];
+export type IAMPrincipalGrant = IAMPrincipalAccess["grants"][number];
+export type IAMPrincipalPermission = IAMPrincipalAccess["permissions"][number];
 
 export type IAMOverviewVariables = DocumentVariables<typeof IamOverview>;
 export type IAMRole = DocumentType<typeof IamOverview>["iam_roles"][number];

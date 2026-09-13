@@ -30,6 +30,7 @@ from angee.agents.autoconfig import SETTINGS as _AGENTS_SETTINGS
 from angee.agents.context import render_view_context
 from angee.agents.models import RuntimeStatus, SessionStatus
 from angee.base.actors import actor_user_id
+from angee.base.identity import public_subject_ref
 from angee.graphql.actions import ActionResult, action_target, resolve_action_target
 from angee.graphql.data import AngeeHasuraWriteBackend, hasura_model_resource, public_pk_decoder
 from angee.graphql.ids import PublicID
@@ -169,6 +170,13 @@ class AgentType(AngeeNode):
     """Admin projection of an agent (or, when ``is_template``, an agent template)."""
 
     owner: UserType
+
+    @strawberry.field
+    def assignment_subject(self) -> str:
+        """Return the public service-user subject that acts for this agent."""
+
+        return str(public_subject_ref(cast(Any, self).principal_subject()))
+
     name: auto
     description: auto
     is_template: auto

@@ -2,6 +2,7 @@ import * as React from "react";
 import { Action, Column, ResourceList, Field, Form, Group, List } from "@angee/ui";
 
 import { useIamT } from "../i18n";
+import { usePrincipalAccessRecordTab } from "../PrincipalAccess";
 
 const MODEL = "iam.User";
 
@@ -17,6 +18,7 @@ const userList = (
 /** Users (full CRUD; password is write-only and hashed server-side). */
 export function UsersPage(): React.ReactElement {
   const t = useIamT();
+  const accessTab = usePrincipalAccessRecordTab();
   const userForm = (
     <Form resource={MODEL}>
       <Field name="username" title />
@@ -63,7 +65,13 @@ export function UsersPage(): React.ReactElement {
     </Form>
   );
   return (
-    <ResourceList resource={MODEL} placement="inline" routed>
+    <ResourceList
+      resource={MODEL}
+      placement="inline"
+      routed
+      returning={["assignment_subject"]}
+      recordTabs={accessTab ? [accessTab] : undefined}
+    >
       {userList}
       {userForm}
     </ResourceList>
