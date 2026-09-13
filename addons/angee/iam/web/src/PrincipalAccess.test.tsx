@@ -134,4 +134,11 @@ describe("principal access tab", () => {
     expect(mocks.queryOptions?.enabled).toBe(false);
     expect(rendered.getByText("This record has no authorization principal.")).toBeTruthy();
   });
+
+  test("shows loading while the enclosing record is unresolved", () => {
+    mocks.record = null;
+    const rendered = render(<PrincipalAccessTab />);
+    expect(mocks.queryOptions?.enabled).toBe(false);
+    expect(rendered.getByText("Loading access…")).toBeTruthy();
+  });
 });

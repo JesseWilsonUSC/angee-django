@@ -160,6 +160,7 @@ export function PrincipalAccessTab(): React.ReactElement {
     { field: "caveat_name", header: t("principalAccess.condition") },
   ], [t]);
 
+  if (!chrome.record) return <InlineEmpty label={t("principalAccess.loading")} />;
   if (!subject) return <InlineEmpty label={t("principalAccess.missingSubject")} />;
 
   return (
