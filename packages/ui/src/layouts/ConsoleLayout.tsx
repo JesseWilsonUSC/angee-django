@@ -135,9 +135,8 @@ export function ConsoleLayout({
                     showChatterToggle={showChatter}
                     showUserMenu
                   />
-                  <div className="area-control min-w-0">
+                  <div ref={setControlHost} className="area-control min-w-0">
                     <SlotOutlet entries={notices} />
-                    <div ref={setControlHost} />
                   </div>
                   <ConsoleWorkbench
                     showChatter={showChatter}

@@ -330,7 +330,7 @@ function parseOperatorConnection(value: unknown): OperatorConnectionInfo | null 
   if (typeof endpoint !== "string" || typeof token !== "string") {
     throw new Error("operatorConnection is missing endpoint or token.");
   }
-  const restartJob = value.restartJob;
+  const restartJob = value.restart_job;
   if (restartJob != null && typeof restartJob !== "string") {
     throw new Error("operatorConnection returned an invalid restart job.");
   }

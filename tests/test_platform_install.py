@@ -83,6 +83,7 @@ def project_settings_yaml(tmp_path: Path, settings: Any) -> Path:
     path = tmp_path / "settings.yaml"
     path.write_text(_SETTINGS_YAML, encoding="utf-8")
     settings.BASE_DIR = tmp_path
+    settings.ANGEE_PROJECT_YAML_SETTINGS = frozenset({"INSTALLED_APPS"})
     return path
 
 
