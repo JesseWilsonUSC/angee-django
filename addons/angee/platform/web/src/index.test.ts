@@ -20,7 +20,7 @@ describe("platform addon manifest", () => {
       "/platform/addons/$id",
     ]);
     for (const route of routes) {
-      expect(route.component).toBeTypeOf("function");
+      expect(route.component ?? route.indexComponent).toBeTypeOf("function");
     }
   });
 
