@@ -28,7 +28,7 @@ function Statusbar({
     );
   }
   return (
-    <div className="inline-flex items-stretch" role="list">
+    <div className="isolate inline-flex items-stretch" role="list">
       {steps.map((step, index) => {
         const currentStep = index === current;
         const completed = current >= 0 && index < current;

@@ -32,5 +32,6 @@ describe("statusbar widget", () => {
     expect(active.className).toContain("text-on-brand");
     expect(active.closest("button")?.className).toContain("-ml-2.5");
     expect(active.closest("button")?.className).toContain("p-px");
+    expect(active.closest("[role='list']")?.className).toContain("isolate");
   });
 });

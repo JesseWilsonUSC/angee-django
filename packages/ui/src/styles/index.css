@@ -262,17 +262,17 @@
    *    - modal is one tick above its own backdrop so the backdrop click
    *      handler still resolves before the popup paints.
    * ---------------------------------------------------------------- */
-  --z-sticky-cell:     5;     /* ListView sticky header */
-  --z-sticky-col:      10;    /* sticky first column */
-  --z-bulk-bar:        15;    /* ListView sticky bulk-action bar (above sticky-col) */
-  --z-topbar:          30;    /* Top menu bar */
-  --z-rail:            32;    /* Left app rail (slightly above topbar) */
-  --z-drawer:          40;    /* Non-modal edge drawers + their stripe-tabs (above chrome, below popovers/modals) */
-  --z-popover:         60;    /* Combobox, date picker, menus, fields chooser */
-  --z-toast:           80;    /* Transient toast / banner layer (above popovers) */
-  --z-tooltip:         100;   /* AppRail hover tooltip */
-  --z-modal-backdrop:  100;   /* Modal dim layer */
-  --z-modal:           101;   /* Modal popup */
+  --z-index-sticky-cell:     5;     /* ListView sticky header */
+  --z-index-sticky-col:      10;    /* sticky first column */
+  --z-index-bulk-bar:        15;    /* ListView sticky bulk-action bar (above sticky-col) */
+  --z-index-topbar:          30;    /* Top menu bar */
+  --z-index-rail:            32;    /* Left app rail (slightly above topbar) */
+  --z-index-drawer:          40;    /* Non-modal edge drawers + their stripe-tabs (above chrome, below popovers/modals) */
+  --z-index-popover:         60;    /* Combobox, date picker, menus, fields chooser */
+  --z-index-toast:           80;    /* Transient toast / banner layer (above popovers) */
+  --z-index-tooltip:         100;   /* AppRail hover tooltip */
+  --z-index-modal-backdrop:  100;   /* Modal dim layer */
+  --z-index-modal:           101;   /* Modal popup */
 
   /* ----------------------------------------------------------------
    *  RADII — emit `rounded-2`, `rounded-4`, etc.
