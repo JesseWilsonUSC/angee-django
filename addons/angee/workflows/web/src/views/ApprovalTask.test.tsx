@@ -37,16 +37,20 @@ const approval = {
   priority: 10,
   payload: { subject: "A note" },
   verdict: "PENDING",
+  resolution: {},
   attempts: 0,
   max_attempts: 3,
   expires_at: null,
   escalate_at: null,
   decision_schema: null,
+  source_run_id: null,
+  source_execution_id: null,
+  source_attempt_id: null,
   workflow_name: "Publish note",
   step_name: "Review publication",
   created_at: "2026-09-08T08:00:00Z",
   updated_at: "2026-09-08T08:00:00Z",
-} as PendingWorkflowDecision;
+} satisfies PendingWorkflowDecision;
 
 afterEach(() => {
   cleanup();

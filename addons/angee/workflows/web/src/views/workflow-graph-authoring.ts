@@ -1,4 +1,4 @@
-import type { GraphViewGeometry, GraphViewPosition } from "@angee/ui";
+import type { GraphViewGeometry, GraphViewPosition, JsonValue } from "@angee/ui";
 
 import { workflowNodeKind, type WorkflowGraphNodeKind } from "./graph-data";
 import type { DefinitionEdge, DefinitionNode } from "./workflow-definition-state";
@@ -30,7 +30,7 @@ export function graphWithDuplicate(node: DefinitionNode, sourceIdentity: string,
     x: sourceBounds.x + sourceBounds.width + layout.nodesep,
     y: sourceBounds.y,
   }, "horizontal", new Set([sourceIdentity]));
-  return { ...stableNodes, [identity]: { ...node, position } };
+  return { ...stableNodes, [identity]: { ...node, position: storedPosition(position) } };
 }
 
 function newEdge(source: string, target: string, condition = ""): Record<string, DefinitionEdge> {
@@ -47,7 +47,7 @@ function placedOperationNode(node: DefinitionNode, placement: WorkflowOperationP
   const position = placement.kind === "after"
     ? geometry.firstFreePosition(workflowNodeKind(node.step_class), preferred, "horizontal", new Set([sourceIdentity!]))
     : preferred;
-  return { ...node, position };
+  return { ...node, position: storedPosition(position) };
 }
 
 function makeInsertionRoom(identity: string, replaced: DefinitionEdge, nodes: Record<string, DefinitionNode>, edges: Record<string, DefinitionEdge>, geometry?: GraphViewGeometry<WorkflowGraphNodeKind> | null): Record<string, DefinitionNode> {
@@ -82,7 +82,7 @@ function makeInsertionRoom(identity: string, replaced: DefinitionEdge, nodes: Re
 function withSafeLane(identity: string, source: string, inserted: DefinitionNode, nodes: Record<string, DefinitionNode>, geometry: GraphViewGeometry<WorkflowGraphNodeKind>): Record<string, DefinitionNode> {
   const preferred = positionFrom(inserted.position) ?? { x: 0, y: 0 };
   const position = geometry.firstFreePosition(workflowNodeKind(inserted.step_class), preferred, "horizontal", new Set([source]));
-  return { ...nodes, [identity]: { ...inserted, position } };
+  return { ...nodes, [identity]: { ...inserted, position: storedPosition(position) } };
 }
 
 function downstreamNodes(start: string, edges: Record<string, DefinitionEdge>): Set<string> {
@@ -112,6 +112,16 @@ export function positionFrom(value: unknown): GraphViewPosition | undefined {
   return typeof position.x === "number" && typeof position.y === "number" ? { x: position.x, y: position.y } : undefined;
 }
 
+function storedPosition(position: GraphViewPosition): JsonValue {
+  return { x: position.x, y: position.y };
+}
+
+function jsonObject(value: JsonValue): Readonly<Record<string, JsonValue>> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
+}
+
 export function graphWithMapBody(
   body: DefinitionNode,
   ownerIdentity: string,
@@ -129,7 +139,10 @@ export function graphWithMapBody(
       ...placed.nodes,
       [ownerIdentity]: {
         ...owner,
-        config: { ...(owner.config ?? {}), target_step: placed.nodes[identity]?.key ?? body.key },
+        config: {
+          ...jsonObject(owner.config),
+          target_step: placed.nodes[identity]?.key ?? body.key,
+        },
       },
     },
     edges,

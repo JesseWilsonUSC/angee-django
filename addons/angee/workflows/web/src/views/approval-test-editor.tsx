@@ -11,7 +11,7 @@ export function ApprovalTestJsonEditor({
 }: WidgetRenderProps): React.ReactElement {
   return (
     <textarea
-      aria-label={field?.label ?? "JSON"}
+      aria-label={typeof field?.label === "string" ? field.label : "JSON"}
       readOnly={readOnly}
       value={value === undefined ? "" : JSON.stringify(value, null, 2)}
       onChange={(event) => {
