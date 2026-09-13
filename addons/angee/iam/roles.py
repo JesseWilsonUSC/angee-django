@@ -569,15 +569,15 @@ def group_bindings(group: Any) -> list[IAMGroupBindingRow]:
 def principal_access(subject: SubjectRef) -> PrincipalAccessInfo:
     """Return roles, explicit grants, and permission paths for ``subject``.
 
-    The relationship store owns explicit evidence, while the REBAC evaluator
-    owns effective role membership. Permission rows are schema reachability
-    paths, not context-free authorization verdicts: caveats and intersections
-    remain visible through their source grant rather than being guessed here.
+    The relationship store owns explicit and role-hierarchy evidence. Permission
+    rows are schema reachability paths, not context-free authorization verdicts:
+    caveats and intersections remain visible through their source grant rather
+    than being guessed here.
     """
 
     schema = rebac_backend().schema()
     evidence = _principal_binding_evidence(subject)
-    roles = _principal_roles(subject, evidence, schema=schema)
+    roles = _principal_roles(evidence, schema=schema)
     grants = _principal_grants(evidence)
     permissions = _principal_permissions(grants, roles, schema=schema)
     return PrincipalAccessInfo(
@@ -620,7 +620,6 @@ def _principal_binding_evidence(subject: SubjectRef) -> list[_BindingEvidence]:
 
 
 def _principal_roles(
-    subject: SubjectRef,
     evidence: list[_BindingEvidence],
     *,
     schema: Schema,
@@ -636,7 +635,6 @@ def _principal_roles(
                 [],
             ).append(item)
 
-    del subject
     declared = declared_role_refs(schema)
     effective = set(role_evidence)
     implied_by: dict[ObjectRef, ObjectRef] = {}
