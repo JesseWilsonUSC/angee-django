@@ -115,6 +115,7 @@ function queryResult(
 function explorerResult(): PlatformExplorerResult {
   return {
     platform_explorer: {
+      pending_addon_changes: false,
       addons,
       models,
       edges,

@@ -14,7 +14,7 @@ export function applicationHealth(
   const unhealthy = services.find(
     (service) => service.health && !["healthy", "ok"].includes(service.health.toLowerCase()),
   );
-  if (unhealthy) return { status: "failed", service: unhealthy.name, detail: unhealthy.health, readinessUnavailable: false };
+  if (unhealthy) return { status: "failed", service: unhealthy.name, detail: unhealthy.health ?? null, readinessUnavailable: false };
 
   const stopped = services.find((service) => service.status.toLowerCase() !== "running");
   if (stopped) return { status: "unavailable", service: stopped.name, detail: stopped.status, readinessUnavailable: false };
