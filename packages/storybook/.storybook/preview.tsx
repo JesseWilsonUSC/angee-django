@@ -42,14 +42,14 @@ import "../src/storybook.css";
 import "@angee/theme-aurora/styles";
 
 const previewThemes = [
-  stockThemes[0],
-  angeeThemes[0],
-  fyltrThemes[0],
-  carbonThemes[0],
-  auroraThemes[0],
-  midnightThemes[0],
-  warmRedThemes[0],
-].map((definition) => defineThemeContribution({ definition }));
+  defineThemeContribution({ definition: stockThemes[0] }),
+  defineThemeContribution({ definition: angeeThemes[0] }),
+  defineThemeContribution({ definition: fyltrThemes[0] }),
+  defineThemeContribution({ definition: carbonThemes[0] }),
+  defineThemeContribution({ definition: auroraThemes[0] }),
+  defineThemeContribution({ definition: midnightThemes[0] }),
+  defineThemeContribution({ definition: warmRedThemes[0] }),
+];
 
 // Stories read auth from the runtime (the ui-owned seam); no app-level auth
 // provider is mounted in the preview.
