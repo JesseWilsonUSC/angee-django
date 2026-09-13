@@ -22,6 +22,12 @@ vi.mock("@angee/refine", async (importOriginal) => ({
   useAuthoredMutation: () => [mocks.decide, mocks.mutationState],
 }));
 
+vi.mock("@angee/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@angee/ui")>();
+  const { ApprovalTestJsonEditor } = await import("./approval-test-editor");
+  return { ...actual, JsonEditor: ApprovalTestJsonEditor };
+});
+
 import type { PendingWorkflowDecision } from "../documents.public";
 import { ApprovalTask } from "./ApprovalTask";
 
@@ -168,7 +174,7 @@ describe("ApprovalTask", () => {
     fireEvent.click(screen.getByRole("button", { name: /Complete/ }));
 
     expect(await screen.findByText("The approval response could not confirm this decision.")).toBeTruthy();
-    expect((resolution as HTMLTextAreaElement).value).toBe('{"approved":true}');
+    expect(JSON.parse((resolution as HTMLTextAreaElement).value)).toEqual({ approved: true });
     expect(onResolved).not.toHaveBeenCalled();
   });
 
@@ -215,7 +221,7 @@ describe("ApprovalTask", () => {
     fireEvent.click(screen.getByRole("button", { name: /Complete/ }));
 
     expect(await screen.findByText("This approval is unavailable or you no longer have access.")).toBeTruthy();
-    expect((resolution as HTMLTextAreaElement).value).toBe('{"approved":true}');
+    expect(JSON.parse((resolution as HTMLTextAreaElement).value)).toEqual({ approved: true });
     expect(mocks.decide).toHaveBeenCalledOnce();
     expect(onResolved).not.toHaveBeenCalled();
   });
@@ -253,10 +259,10 @@ describe("ApprovalTask", () => {
     fireEvent.change(resolution, { target: { value: '{"decision":"A"}' } });
 
     rerender(<ApprovalTask approval={{ ...approval, updated_at: "2026-09-08T08:02:00Z" }} onResolved={() => undefined} />);
-    expect((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value).toBe('{"decision":"A"}');
+    expect(JSON.parse((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value)).toEqual({ decision: "A" });
 
     rerender(<ApprovalTask approval={{ ...approval, id: "decision-2" }} onResolved={() => undefined} />);
-    expect((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value).toBe("{}");
+    expect(JSON.parse((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value)).toEqual({});
   });
 
   test("keeps entered values read-only when refreshed to a terminal decision", () => {
@@ -266,7 +272,7 @@ describe("ApprovalTask", () => {
     rerender(<ApprovalTask approval={{ ...approval, verdict: "EXPIRED", resolution: { confirmed: true } }} onResolved={() => undefined} />);
 
     expect(screen.getByText("This approval is no longer pending.")).toBeTruthy();
-    expect((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value).toBe('{\n  "confirmed": true\n}');
+    expect(JSON.parse((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value)).toEqual({ confirmed: true });
     expect((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).readOnly).toBe(true);
     expect(screen.queryByRole("button", { name: /Complete/ })).toBeNull();
   });
@@ -278,7 +284,7 @@ describe("ApprovalTask", () => {
     rerender(<ApprovalTask approval={approval} available={false} onResolved={() => undefined} />);
 
     expect(screen.getByText("This approval is unavailable or you no longer have access.")).toBeTruthy();
-    expect((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value).toBe('{"note":"retain"}');
+    expect(JSON.parse((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value)).toEqual({ note: "retain" });
     expect((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).readOnly).toBe(true);
     expect(screen.queryByRole("button", { name: /Complete/ })).toBeNull();
   });
