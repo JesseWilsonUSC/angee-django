@@ -148,7 +148,7 @@ describe("integrate addon manifest", () => {
 
   test("registers its glyphs", () => {
     for (const name of [
-      "integrate",
+      "connect",
       "integration",
       "vendor",
       "webhook",
