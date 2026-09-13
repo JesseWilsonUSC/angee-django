@@ -157,3 +157,58 @@ describe("angeePrebundleForcePlugin", () => {
     );
   });
 });
+
+// A source-linked @angee/ui imports CodeMirror directly. If the optimizer
+// prebundled part of that family, the prebundle would carry its own copy of
+// @codemirror/state beside the raw one and the editors would not mount.
+describe("defineAngeeWebViteConfig CodeMirror family", () => {
+  let webRoot: string;
+
+  beforeEach(() => {
+    webRoot = mkdtempSync(join(tmpdir(), "angee-codemirror-"));
+    writeFileSync(
+      join(webRoot, "package.json"),
+      JSON.stringify({ dependencies: { "@angee/ui": "workspace:*" } }),
+    );
+    const ui = join(webRoot, "node_modules", "@angee", "ui");
+    mkdirSync(join(ui, "src"), { recursive: true });
+    writeFileSync(join(ui, "src", "index.ts"), "export const x = 1;\n");
+    writeFileSync(
+      join(ui, "package.json"),
+      JSON.stringify({
+        name: "@angee/ui",
+        exports: { ".": "./src/index.ts" },
+        dependencies: {
+          "@codemirror/lang-markdown": "^6.0.0",
+          "@codemirror/state": "^6.7.0",
+          codemirror: "^6.0.0",
+          react: "^19.0.0",
+        },
+        peerDependencies: { "@lezer/common": "^1.0.0" },
+      }),
+    );
+  });
+
+  afterEach(() => {
+    rmSync(webRoot, { recursive: true, force: true });
+  });
+
+  test.each([true, false])(
+    "keeps a source package's CodeMirror dependencies out of the optimizer (prebundle %s)",
+    async (prebundleAngeePackages) => {
+      const config = await defineAngeeWebViteConfig({
+        prebundleAngeePackages,
+        gqlRuntimeDir: join(webRoot, "runtime", "gql") + "/",
+        webRoot,
+      });
+
+      expect(config.optimizeDeps?.exclude).toEqual([
+        "@angee/ui",
+        "@codemirror/lang-markdown",
+        "@codemirror/state",
+        "@lezer/common",
+        "codemirror",
+      ]);
+    },
+  );
+});
