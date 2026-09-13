@@ -19,6 +19,7 @@ import {
   List,
   LoadingPanel,
   ResourceList,
+  routeSearchParam,
   TextLink,
   TopMenuTabs,
   Workbench,
@@ -46,6 +47,7 @@ import {
   WorkflowStepRunCandidateDocument,
 } from "../documents.console";
 import { useWorkflowsT } from "../i18n";
+import { DECISION_SEARCH_KEY, decisionSearch } from "../decision-navigation";
 import { WorkflowApprovals } from "./WorkflowApprovals";
 import {
   workflowGraphEdges,
@@ -90,6 +92,7 @@ export function RunsPage(): React.ReactElement {
   const navigate = useNavigate();
   const recordHref = useResourceRecordHrefLookup();
   const search = useRouteSearch();
+  const decisionId = routeSearchParam(search, DECISION_SEARCH_KEY) ?? null;
   const collection = search.tab === "sessions" ? "sessions" : "automations";
   const waitOptions = React.useMemo(
     () => [
@@ -155,11 +158,24 @@ export function RunsPage(): React.ReactElement {
         id: "approvals",
         label: t("inbox.title"),
         icon: "workflow-inbox",
-        render: ({ recordId }) => <WorkflowApprovals runId={recordId} />,
+        render: ({ recordId }) => (
+          <WorkflowApprovals
+            runId={recordId}
+            decisionId={decisionId}
+            selectedTaskOnly={Boolean(decisionId)}
+            onDecisionChange={(decision) => {
+              void navigate({
+                to: ".",
+                replace: true,
+                search: (previous: Record<string, unknown>) => decisionSearch(previous, decision),
+              });
+            }}
+          />
+        ),
         keepMounted: true,
       },
     ],
-    [reprocessById, t],
+    [decisionId, navigate, reprocessById, t],
   );
 
   return (

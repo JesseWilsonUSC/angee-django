@@ -87,9 +87,34 @@ export function WorkflowApprovals({ runId, executionId, attemptId, target, inclu
         ? <ScopedDecisionTask key={context.recordId} {...context} runId={scope.runId} onDirtyChange={setTaskDirty} />
         : <GlobalDecisionTask key={context.recordId} {...context} onDirtyChange={setTaskDirty} />,
   }], [scope.runId, scope.target?.id, scope.target?.model, scope.target?.tab, t]);
-  if (selectedTaskOnly && selectedId && scope.target) {
+  if (selectedTaskOnly && selectedId) {
+    const task = scope.target
+      ? <TargetedDecisionTask
+        key={`${scope.target.model}:${scope.target.id}:${scope.target.tab ?? ""}:${selectedId}`}
+        recordId={selectedId}
+        reload={() => undefined}
+        target={scope.target}
+        onDirtyChange={setTaskDirty}
+        onBack={() => selectDecision(null)}
+      />
+      : scope.runId
+        ? <ScopedDecisionTask
+          key={`${scope.runId}:${selectedId}`}
+          recordId={selectedId}
+          reload={() => undefined}
+          runId={scope.runId}
+          onDirtyChange={setTaskDirty}
+          onBack={() => selectDecision(null)}
+        />
+        : <GlobalDecisionTask
+          key={selectedId}
+          recordId={selectedId}
+          reload={() => undefined}
+          onDirtyChange={setTaskDirty}
+          onBack={() => selectDecision(null)}
+        />;
     return <section aria-label={t("inbox.title")} className="h-full min-h-0">
-      <TargetedDecisionTask key={`${scope.target.model}:${scope.target.id}:${scope.target.tab ?? ""}:${selectedId}`} recordId={selectedId} reload={() => undefined} target={scope.target} onDirtyChange={setTaskDirty} />
+      {task}
     </section>;
   }
   return (
@@ -132,19 +157,20 @@ export function WorkflowApprovals({ runId, executionId, attemptId, target, inclu
   );
 }
 
-function TargetedDecisionTask({ recordId, reload, target, onDirtyChange }: {
+function TargetedDecisionTask({ recordId, reload, target, onDirtyChange, onBack }: {
   recordId: string;
   reload: () => void;
   target: { model: string; id: string; tab?: string };
   onDirtyChange: (dirty: boolean) => void;
+  onBack?: () => void;
 }): React.ReactElement {
   return target.tab
-    ? <TargetedTabDecisionTask recordId={recordId} reload={reload} target={{ ...target, tab: target.tab }} onDirtyChange={onDirtyChange} />
-    : <TargetedRecordDecisionTask recordId={recordId} reload={reload} target={target} onDirtyChange={onDirtyChange} />;
+    ? <TargetedTabDecisionTask recordId={recordId} reload={reload} target={{ ...target, tab: target.tab }} onDirtyChange={onDirtyChange} onBack={onBack} />
+    : <TargetedRecordDecisionTask recordId={recordId} reload={reload} target={target} onDirtyChange={onDirtyChange} onBack={onBack} />;
 }
 
-function TargetedRecordDecisionTask({ recordId, reload, target, onDirtyChange }: {
-  recordId: string; reload: () => void; target: { model: string; id: string }; onDirtyChange: (dirty: boolean) => void;
+function TargetedRecordDecisionTask({ recordId, reload, target, onDirtyChange, onBack }: {
+  recordId: string; reload: () => void; target: { model: string; id: string }; onDirtyChange: (dirty: boolean) => void; onBack?: () => void;
 }): React.ReactElement {
   const decision = useAuthoredQuery(
     TargetedWorkflowDecisionDocument,
@@ -152,11 +178,11 @@ function TargetedRecordDecisionTask({ recordId, reload, target, onDirtyChange }:
     { dataProviderName: "public", models: [DECISION_MODEL], records: [{ model: DECISION_MODEL, id: recordId }] },
   );
   return <DecisionTaskResult context={{ recordId, reload }} approval={decision.data?.workflow_decisions[0]} onDirtyChange={onDirtyChange}
-    fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} />;
+    fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} onBack={onBack} />;
 }
 
-function TargetedTabDecisionTask({ recordId, reload, target, onDirtyChange }: {
-  recordId: string; reload: () => void; target: { model: string; id: string; tab: string }; onDirtyChange: (dirty: boolean) => void;
+function TargetedTabDecisionTask({ recordId, reload, target, onDirtyChange, onBack }: {
+  recordId: string; reload: () => void; target: { model: string; id: string; tab: string }; onDirtyChange: (dirty: boolean) => void; onBack?: () => void;
 }): React.ReactElement {
   const decision = useAuthoredQuery(
     TargetedTabWorkflowDecisionDocument,
@@ -164,36 +190,37 @@ function TargetedTabDecisionTask({ recordId, reload, target, onDirtyChange }: {
     { dataProviderName: "public", models: [DECISION_MODEL], records: [{ model: DECISION_MODEL, id: recordId }] },
   );
   return <DecisionTaskResult context={{ recordId, reload }} approval={decision.data?.workflow_decisions[0]} onDirtyChange={onDirtyChange}
-    fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} />;
+    fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} onBack={onBack} />;
 }
 
-function GlobalDecisionTask(context: RecordPanelContext & { onDirtyChange: (dirty: boolean) => void }): React.ReactElement {
+function GlobalDecisionTask(context: Pick<RecordPanelContext, "recordId" | "reload"> & { onDirtyChange: (dirty: boolean) => void; onBack?: () => void }): React.ReactElement {
   const decision = useAuthoredQuery(
     WorkflowDecisionDocument,
     { id: context.recordId },
     { dataProviderName: "public", models: [DECISION_MODEL], records: [{ model: DECISION_MODEL, id: context.recordId }] },
   );
   return <DecisionTaskResult context={context} approval={decision.data?.workflow_decisions[0]} onDirtyChange={context.onDirtyChange}
-    fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} />;
+    fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} onBack={context.onBack} />;
 }
 
-function ScopedDecisionTask({ recordId, reload, runId, onDirtyChange }: RecordPanelContext & { runId: string; onDirtyChange: (dirty: boolean) => void }): React.ReactElement {
+function ScopedDecisionTask({ recordId, reload, runId, onDirtyChange, onBack }: Pick<RecordPanelContext, "recordId" | "reload"> & { runId: string; onDirtyChange: (dirty: boolean) => void; onBack?: () => void }): React.ReactElement {
   const decision = useAuthoredQuery(
     ScopedWorkflowDecisionDocument,
     { id: recordId, run: runId },
     { dataProviderName: "public", models: [DECISION_MODEL], records: [{ model: DECISION_MODEL, id: recordId }] },
   );
   return <DecisionTaskResult context={{ recordId, reload }} approval={decision.data?.workflow_decisions[0]} onDirtyChange={onDirtyChange}
-    fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} />;
+    fetching={decision.isFetching} error={decision.error} refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null} onBack={onBack} />;
 }
 
-function DecisionTaskResult({ context, approval, fetching, error, refetch, onDirtyChange }: {
+function DecisionTaskResult({ context, approval, fetching, error, refetch, onDirtyChange, onBack }: {
   context: Pick<RecordPanelContext, "recordId" | "reload">;
   approval?: PendingWorkflowDecision;
   fetching: boolean;
   error: unknown;
   refetch: () => Promise<PendingWorkflowDecision | null>;
   onDirtyChange: (dirty: boolean) => void;
+  onBack?: () => void;
 }): React.ReactElement {
   const t = useWorkflowsT();
   const [retained, setRetained] = React.useState(approval);
@@ -208,6 +235,7 @@ function DecisionTaskResult({ context, approval, fetching, error, refetch, onDir
   return (
     <ApprovalTask
       approval={retained}
+      onBack={onBack}
       onDirtyChange={onDirtyChange}
       available={!error && Boolean(approval)}
       onResolved={() => {
