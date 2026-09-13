@@ -19,12 +19,14 @@ const dndMocks = vi.hoisted(() => {
       sensors?: unknown;
       collisionDetection?: (args: unknown) => unknown;
       onDragEnd?: (event: unknown) => void;
+      onDragCancel?: (event: unknown) => void;
     } | null,
     pointerWithin: vi.fn((): unknown[] => []),
     rectIntersection: vi.fn((): unknown[] => []),
     setActivatorNodeRef: vi.fn(),
     onDragPointerDown: vi.fn(),
     onDragKeyDown: vi.fn(),
+    navigate: vi.fn(),
     useSensor: vi.fn((sensor: unknown, options?: unknown) => ({ sensor, options })),
     useSensors: vi.fn((...sensors: unknown[]) => sensors),
     useDraggable: vi.fn(() => ({
@@ -57,7 +59,7 @@ const dndMocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => dndMocks.navigate }));
 vi.mock("../../i18n", () => ({ useUiT: () => (key: string) => key }));
 vi.mock("@dnd-kit/core", () => ({
   DndContext: (props: {
@@ -65,6 +67,7 @@ vi.mock("@dnd-kit/core", () => ({
     sensors?: unknown;
     collisionDetection?: (args: unknown) => unknown;
     onDragEnd?: (event: unknown) => void;
+    onDragCancel?: (event: unknown) => void;
   }) => {
     dndMocks.contextProps = props;
     return props.children;
@@ -98,6 +101,7 @@ beforeEach(() => {
   dndMocks.pointerWithin.mockReturnValue([]);
   dndMocks.rectIntersection.mockReturnValue([]);
   dndMocks.setActivatorNodeRef.mockClear();
+  dndMocks.navigate.mockClear();
   dndMocks.onDragPointerDown.mockClear();
   dndMocks.onDragKeyDown.mockClear();
 });
@@ -357,6 +361,33 @@ describe("BoardView", () => {
     expect(card?.getAttribute("data-sortable")).toBe(null);
     expect(document.querySelectorAll("[data-sortable='true']").length).toBe(1);
     expect(card?.querySelector("a")?.getAttribute("draggable")).toBe("false");
+  });
+
+  test("the click a drop leaves behind does not follow the card link", async () => {
+    renderBoard({
+      groups: [lane([{ id: "1", label: "First", sort_order: 1024 }])],
+      dragEnabled: true,
+      rankField: "sort_order",
+      onCardMove: vi.fn(),
+      rowHref: () => "/records/1",
+    });
+    const link = screen.getByRole("link");
+
+    // dnd-kit stops an activated drag's trailing click from propagating, so no
+    // React handler sees it; only its default action is left, and on a card link
+    // that default would follow the href and reload into the record.
+    act(() => {
+      dndMocks.contextProps?.onDragEnd?.({ active: { id: "1", data: { current: undefined } }, over: null });
+    });
+    const trailing = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    link.dispatchEvent(trailing);
+    expect(trailing.defaultPrevented).toBe(true);
+    expect(dndMocks.navigate).not.toHaveBeenCalled();
+
+    // The guard lasts one turn: a later click opens the record.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.click(link);
+    expect(dndMocks.navigate).toHaveBeenCalledWith({ to: "/records/1" });
   });
 
   test("wires a card drag handle as the keyboard activator", () => {
