@@ -31,13 +31,6 @@ export function ShareRecordChrome(): React.ReactElement {
 
 export function ShareListChrome(): React.ReactElement {
   const list = useResourceViewUtilityContext();
-  if (list.record) {
-    return <ShareAccess
-      resource={list.record.resource}
-      targetIds={[list.record.recordId]}
-      record={list.record.record}
-    />;
-  }
   return <ShareAccess
     resource={list.resource}
     targetIds={[...(list.selectedIds ?? [])].sort()}
