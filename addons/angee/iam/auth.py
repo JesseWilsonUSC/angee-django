@@ -12,7 +12,7 @@ from django.contrib.auth.backends import ModelBackend as DjangoModelBackend
 def can_authenticate_user(user: Any) -> bool:
     """Return whether ``user`` is a login-capable human principal."""
 
-    return bool(user.is_active and user.is_person)
+    return bool(getattr(user, "is_active", False) and getattr(user, "is_person", False))
 
 
 class ModelBackend(BaseBackend):

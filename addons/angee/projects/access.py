@@ -118,24 +118,25 @@ def _reconcile(
 ) -> None:
     """Write or remove the tuple after checking every projects-owned evidence row."""
 
-    project_model = apps.get_model("projects", "Project")
-    binding_model = apps.get_model("projects", "ProjectBinding")
-    project_exists = project_model._base_manager.using(using).filter(pk=project_pk).exists()
-    direct_folder = (
-        target.content_type.app_label == "storage"
-        and target.content_type.model == "folder"
-        and project_model._base_manager.using(using).filter(pk=project_pk, folder_id=target.object_id).exists()
-    )
-    explicit_binding = binding_model._base_manager.using(using).filter(
-        project_id=project_pk,
-        content_type_id=target.content_type.pk,
-        object_id=target.object_id,
-    ).exists()
-    relationship = _relationship(project_ref, target)
-    if project_exists and (direct_folder or explicit_binding):
-        write_relationships([relationship])
-    else:
-        delete_relationship(relationship)
+    with system_context(reason="projects.access.reconcile"):
+        project_model = apps.get_model("projects", "Project")
+        binding_model = apps.get_model("projects", "ProjectBinding")
+        project_exists = project_model._base_manager.using(using).filter(pk=project_pk).exists()
+        direct_folder = (
+            target.content_type.app_label == "storage"
+            and target.content_type.model == "folder"
+            and project_model._base_manager.using(using).filter(pk=project_pk, folder_id=target.object_id).exists()
+        )
+        explicit_binding = binding_model._base_manager.using(using).filter(
+            project_id=project_pk,
+            content_type_id=target.content_type.pk,
+            object_id=target.object_id,
+        ).exists()
+        relationship = _relationship(project_ref, target)
+        if project_exists and (direct_folder or explicit_binding):
+            write_relationships([relationship])
+        else:
+            delete_relationship(relationship)
 
 
 def resync_project_access() -> int:

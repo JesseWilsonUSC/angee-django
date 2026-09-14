@@ -1,24 +1,48 @@
 // Authorization schema for sealed proposal rounds.
 // @rebac_package: proposals
 // @rebac_package_version: 0.1.0
-// @rebac_schema_revision: 2
+// @rebac_schema_revision: 4
+
+// Global proposal visibility is ordinary role membership. The IAM Permissions
+// Hub writes `proposals/role:proposal_viewer#member@<subject>`; scoped grants
+// use the proposal_viewer relations on Round, Project, or Task below.
+definition proposals/role {
+    relation member:   auth/user | auth/group#member | angee/role:admin#member
+    relation includes: proposals/role
+    relation admin:    angee/role // rebac:const=admin
+
+    permission effective_member = member + includes->effective_member + admin->member
+}
 
 definition proposals/round {
-    relation task:        projects/task    // rebac:field=task
-    relation project:     projects/project // rebac:field=project
-    relation facilitator: auth/user        // rebac:field=facilitator
-    relation reader:      auth/user
-    relation evaluator:   auth/user
-    relation requester:   auth/user
-    relation person:      iam/kind // rebac:const=person
+    relation task:             projects/task    // rebac:field=task
+    relation project:          projects/project // rebac:field=project
+    relation task_project:     projects/project // rebac:field={"path":"task__project"}
+    relation facilitator:      auth/user        // rebac:field=facilitator
+    relation responder:        auth/user | auth/group#member
+    relation reader:           auth/user | auth/group#member
+    relation evaluator:        auth/user | auth/group#member
+    relation requester:        auth/user | auth/group#member
+    relation proposal_viewer:  auth/user | auth/group#member
+    relation global_viewer:    proposals/role // rebac:const=proposal_viewer
+    relation person:           iam/kind       // rebac:const=person
+    relation admin:            angee/role     // rebac:const=admin
 
     permission facilitate = facilitator & person->active_member
     permission evaluate = evaluator & person->active_member
-    permission create = task->write + project->write
-    permission read   = facilitate + reader + evaluate + requester
-    permission write  = facilitate
-    permission share  = facilitate
-    permission delete = facilitate
+    permission manage = facilitate + admin->member
+    permission respond = responder
+    permission view_proposals = proposal_viewer
+                              + project->proposal_viewer
+                              + task->proposal_viewer
+                              + task_project->proposal_viewer
+                              + global_viewer->effective_member
+                              + admin->member
+    permission create = task->write + project->write + admin->member
+    permission read   = manage + respond + reader + evaluate + requester + view_proposals
+    permission write  = manage
+    permission share  = manage
+    permission delete = manage
 }
 
 definition proposals/topic {
@@ -34,24 +58,28 @@ definition proposals/proposal {
     relation responder: auth/user       // rebac:field=responder
     relation round:     proposals/round // rebac:field=round
     relation editor:    auth/user
-    relation reader:    auth/user
+    relation reader:    auth/user | auth/group#member
 
-    permission create   = round->facilitate
-    permission read     = responder + reader + round->facilitate + round->evaluate + round->requester
-    permission write    = editor + round->facilitate
-    permission evaluate = round->evaluate + round->facilitate
-    permission publish  = responder + round->facilitate
-    permission withdraw = responder + round->facilitate
-    permission delete   = editor + round->facilitate
+    permission create   = (responder & round->respond) + round->manage
+    permission read     = responder + reader + round->manage + round->evaluate
+                        + round->requester + round->view_proposals
+    permission write    = editor + round->manage
+    permission share    = round->share
+    permission evaluate = round->evaluate + round->manage
+    permission publish  = responder + round->manage
+    permission withdraw = responder + round->manage
+    permission delete   = editor + round->manage
 
-    permission read__cost            = responder + round->facilitate + round->evaluate + round->requester
-    permission read__currency        = responder + round->facilitate + round->evaluate + round->requester
-    permission read__staffing        = responder + round->facilitate + round->evaluate + round->requester
-    permission read__confidence      = responder + round->facilitate + round->evaluate + round->requester
-    permission read__timeframe_start = responder + round->facilitate + round->evaluate + round->requester
-    permission read__timeframe_end   = responder + round->facilitate + round->evaluate + round->requester
-    permission read__valid_until     = responder + round->facilitate + round->evaluate + round->requester
-    permission read__source_message  = responder + round->facilitate + round->evaluate + round->requester
+    // A proposal_viewer can discover and read the proposal document, while the
+    // sealed commercial fields remain limited to the participants below.
+    permission read__cost            = responder + round->manage + round->evaluate + round->requester
+    permission read__currency        = responder + round->manage + round->evaluate + round->requester
+    permission read__staffing        = responder + round->manage + round->evaluate + round->requester
+    permission read__confidence      = responder + round->manage + round->evaluate + round->requester
+    permission read__timeframe_start = responder + round->manage + round->evaluate + round->requester
+    permission read__timeframe_end   = responder + round->manage + round->evaluate + round->requester
+    permission read__valid_until     = responder + round->manage + round->evaluate + round->requester
+    permission read__source_message  = responder + round->manage + round->evaluate + round->requester
 }
 
 definition proposals/answer {

@@ -2,9 +2,9 @@
 
 Round and Proposal are supporting coordination/document objects, not planning
 hierarchies. A Round owns disclosure and decision; a Proposal owns its response
-lifecycle. Direct relationship tuples are the seal: responder/editor tuples are
-verb-managed, while only Round audience roles are exposed through the declared
-record-share surface.
+lifecycle. Declared grants invite responders and expose proposal documents at a
+Round or planning ancestor; proposal field permissions preserve the commercial
+seal. The Proposal editor tuple remains owned by its lifecycle verbs.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from rebac.types import RelationshipFilter, SubjectRef
 from angee.base.actors import actor_user_id
 from angee.base.fields import FractionalRankField, StateField
 from angee.base.mixins import AuditMixin
-from angee.base.models import AngeeDataModel, AngeeManager
+from angee.base.models import AngeeDataModel, AngeeManager, role_anchor
 from angee.base.scoping import bind_actor
 from angee.base.transitions import StateTransitions, save_state, transition
 from angee.messaging.models import ThreadedModelMixin
@@ -181,9 +181,11 @@ class Round(ImmutableFieldsMixin, AuditMixin, ThreadedModelMixin, AngeeDataModel
     runtime = True
     sqid_prefix = "rnd_"
     rebac_grantable = {
+        "responder": "share",
         "reader": "share",
         "evaluator": "share",
         "requester": "share",
+        "proposal_viewer": "share",
     }
     immutable_fields = (
         "task_id",
@@ -1028,6 +1030,7 @@ class Proposal(ImmutableFieldsMixin, AuditMixin, AngeeDataModel):
 
     runtime = True
     sqid_prefix = "prp_"
+    rebac_grantable = {"reader": "share"}
     immutable_fields = (
         "round_id",
         "responder_id",
@@ -1195,7 +1198,7 @@ class Proposal(ImmutableFieldsMixin, AuditMixin, AngeeDataModel):
         self._validate_lifecycle_receipts()
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        """Create shells only while collecting and reconcile verb-managed tuples."""
+        """Create shells only while collecting and reconcile lifecycle tuples."""
 
         if not self._state.adding:
             super().save(*args, **kwargs)
@@ -1508,8 +1511,6 @@ class Proposal(ImmutableFieldsMixin, AuditMixin, AngeeDataModel):
         if self.pk is None or self.responder_id is None:
             return
         responder = _user(self.responder_id)
-        round = apps.get_model("proposals", "Round")._base_manager.get(pk=self.round_id)
-        write_relationships([_relationship(round, "reader", responder)])
         editor = _relationship(self, "editor", responder)
         if self.state == ProposalState.DRAFT:
             write_relationships([editor])
@@ -1622,11 +1623,25 @@ class Proposal(ImmutableFieldsMixin, AuditMixin, AngeeDataModel):
             raise ValidationError("A submitted proposal cannot carry a decision receipt.")
 
 
-class TaskProposalContainment(models.Model):
-    """Same-row save participant keeping unpublished proposal work private."""
+class ProjectProposalAccess(models.Model):
+    """Grant proposal visibility from one Project without owning its policy."""
+
+    extends = "projects.Project"
+    runtime = False
+    rebac_grantable = {"proposal_viewer": "share"}
+
+    class Meta:
+        """Abstract zero-column donor folded into the composed Project model."""
+
+        abstract = True
+
+
+class TaskProposalAccess(models.Model):
+    """Grant proposal visibility and keep unpublished proposal work private."""
 
     extends = "projects.Task"
     runtime = False
+    rebac_grantable = {"proposal_viewer": "share"}
 
     class Meta:
         """Abstract zero-column donor folded into the composed Task model."""
@@ -1686,6 +1701,10 @@ class TaskProposalContainment(models.Model):
                         }
                     )
         super().save(*args, **kwargs)
+
+
+ProposalsRole = role_anchor("proposals/role")
+"""Table-less REBAC anchor for global proposal-viewer membership."""
 
 
 class Answer(ImmutableFieldsMixin, AuditMixin, AngeeDataModel):

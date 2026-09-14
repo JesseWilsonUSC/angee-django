@@ -534,6 +534,9 @@ STORAGE_TEST_MODELS = (Backend, Drive, Folder, MimeType, File, FileAttachment)
 # Register the projects concretes only after their storage FK targets above.
 from tests.projects_models import PROJECT_TEST_MODELS  # noqa: E402, F401
 
+# Proposal concretes depend on the project graph and register their role anchor.
+from tests.proposals_models import PROPOSAL_TEST_MODELS  # noqa: E402, F401
+
 
 def make_mount(
     slug: str,

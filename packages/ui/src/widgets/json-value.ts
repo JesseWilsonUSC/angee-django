@@ -35,9 +35,9 @@ export const JsonValueSchema: v.GenericSchema<unknown, JsonValue> = v.lazy(() =>
 
 /** Validate an optional untyped form value at the shared JSON boundary. */
 export function jsonValueFromUnknown(value: unknown): JsonValue | undefined {
-  return value === undefined
-    ? undefined
-    : v.parse(JsonValueSchema, omitUndefinedObjectProperties(value));
+  if (value === undefined) return undefined;
+  const result = v.safeParse(JsonValueSchema, omitUndefinedObjectProperties(value));
+  return result.success ? result.output : undefined;
 }
 
 /** Validate an untyped value and retain it only when its JSON root is an object. */

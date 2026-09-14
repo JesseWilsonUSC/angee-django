@@ -13,7 +13,7 @@ rows:
     fields:
       username: diego
       email: diego@example.com
-      password: "!"
+      password: pbkdf2_sha256$1200000$angeeDemoDiegoSalt2026AA$fnXAxXFKrTS9Wg7mN3eGN/71rP0iZ+k4fBxfgGYgZa8=
       is_staff: false
       is_superuser: false
       is_active: true

@@ -439,6 +439,19 @@ afterEach(() => {
 });
 
 describe("StoragePage explorer wiring", () => {
+  test("renders a directly shared file when no drive is visible", () => {
+    routerMocks.params = { id: "file-a" };
+    storageData = { ...storageData, drives: [] };
+
+    render(pageTree());
+
+    expect(screen.queryByTestId("empty-state")).toBeNull();
+    expect(screen.getByTestId("file-detail").getAttribute("data-file-id")).toBe(
+      "file-a",
+    );
+    expect(screen.getByTestId("preview-pane").textContent).toBe("alpha.txt");
+  });
+
   test("uses the open file drive for a direct link", () => {
     routerMocks.params = { id: "file-b" };
 

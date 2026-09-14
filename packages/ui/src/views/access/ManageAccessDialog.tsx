@@ -188,5 +188,5 @@ function AccessContents({
 }
 
 function subjectTypeKey(subjectType: DataResourceSubjectType): string {
-  return `${subjectType.type}#${subjectType.relation ?? ""}`;
+  return `${subjectType.resource ?? ""}:${subjectType.type}#${subjectType.relation ?? ""}`;
 }

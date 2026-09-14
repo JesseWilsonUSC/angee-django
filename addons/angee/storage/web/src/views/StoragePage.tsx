@@ -495,6 +495,7 @@ export function StoragePage(): ReactElement {
       onRootChange={handleRootChange}
       renderTree={renderTree}
       renderNavigatorFooter={renderNavigatorFooter}
+      renderContentWithoutRoots={openFileId !== null}
       loading={drivesQuery.isFetching && drives.length === 0}
       loadingContent={<LoadingPanel message={t("loading")} />}
       emptyContent={

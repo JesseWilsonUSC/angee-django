@@ -13,14 +13,3 @@ rows:
       submission_deadline: 2026-09-14 16:00:00+00:00
       created_by: iam.user_admin
       updated_by: iam.user_admin
-  - xref: valencia_flat_hunt
-    fields:
-      project: proposals.flat_hunt
-      name: Valencia flat offer comparison
-      facilitator: iam.user_alice
-      opening_policy: facilitator_only
-      status: collecting
-      last_call_at: 2026-09-20 16:00:00+00:00
-      submission_deadline: 2026-09-22 16:00:00+00:00
-      created_by: iam.user_alice
-      updated_by: iam.user_alice

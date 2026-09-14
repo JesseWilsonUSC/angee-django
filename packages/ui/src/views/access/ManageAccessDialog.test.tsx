@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type * as React from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -13,7 +13,9 @@ vi.mock("../../fragments/DialogForm", () => ({
 }));
 
 vi.mock("./SubjectPicker", () => ({
-  SubjectPicker: () => <div>Recipient picker</div>,
+  SubjectPicker: ({ resource }: { resource: string }) => (
+    <div>Recipient picker: {resource}</div>
+  ),
 }));
 
 vi.mock("../resource/RowsListView", () => ({
@@ -98,4 +100,37 @@ test("explains a relation without selectable subject types while keeping relatio
   const relationSelect = screen.getByRole("combobox", { name: "Access" }) as HTMLButtonElement;
   expect(relationSelect.disabled).toBe(false);
   expect((screen.getByRole("button", { name: "Add access" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test("keeps recipient resources distinct when they share a REBAC subject type", async () => {
+  render(<ManageAccessDialog
+    open
+    onOpenChange={vi.fn()}
+    trigger={<button type="button">Share</button>}
+    label="record"
+    targetIds={["1"]}
+    grantable={[{
+      relation: "viewer",
+      permission: "view",
+      subjects: [
+        { type: "auth/user", relation: null, resource: "iam.User" },
+        { type: "auth/user", relation: null, resource: "agents.Agent" },
+      ],
+    }]}
+    entries={[]}
+    fetching={false}
+    error={null}
+    onRetry={vi.fn()}
+    onGrant={vi.fn()}
+    onRevoke={vi.fn()}
+  />);
+
+  expect(screen.getByText("Recipient picker: iam.User")).toBeTruthy();
+  fireEvent.click(screen.getByRole("combobox", { name: "Recipient type" }));
+  const agent = screen.getByRole("option", { name: "Agent" });
+  fireEvent.pointerDown(agent, { pointerType: "mouse" });
+  fireEvent.click(agent);
+  await waitFor(() => {
+    expect(screen.getByText("Recipient picker: agents.Agent")).toBeTruthy();
+  });
 });

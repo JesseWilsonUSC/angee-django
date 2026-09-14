@@ -46,11 +46,16 @@ export function ResourceViewUtilities({
 }: {
   value: ResourceViewUtilityContext;
 }): React.ReactElement | null {
-  const entries = useResourceViewUtilities(value.resource);
+  const { resource, filter, fields, refresh, selectedIds } = value;
+  const entries = useResourceViewUtilities(resource);
   const record = useRecordChromeContextMaybe();
+  const context = React.useMemo(
+    () => ({ resource, filter, fields, refresh, selectedIds, record }),
+    [resource, filter, fields, refresh, selectedIds, record],
+  );
   if (entries.length === 0) return null;
   return (
-    <ResourceViewUtilityContextBinding.Provider value={{ ...value, record }}>
+    <ResourceViewUtilityContextBinding.Provider value={context}>
       <SlotOutlet entries={entries} />
     </ResourceViewUtilityContextBinding.Provider>
   );

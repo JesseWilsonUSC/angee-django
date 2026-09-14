@@ -4,12 +4,13 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
 from angee.base.mixins import AuditMixin, SqidMixin
+from angee.base.models import AngeeDataModel
 from angee.projects.models import Project as AbstractProject
 from angee.projects.models import ProjectBinding as AbstractProjectBinding
 from angee.work.models import TaskWork
 
 
-class Task(TaskWork, AuditMixin, SqidMixin, models.Model):
+class Task(TaskWork, AuditMixin, AngeeDataModel):
     """Concrete task carrying the production chatter-wake owner."""
 
     sqid_prefix = "tpt_"
@@ -19,11 +20,19 @@ class Task(TaskWork, AuditMixin, SqidMixin, models.Model):
     queue = None
     stage = None
     cycle = None
+    project = models.ForeignKey(
+        "projects.Project",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="tasks",
+    )
 
     class Meta:
         abstract = False
         app_label = "projects"
         db_table = "test_projects_task"
+        rebac_resource_type = "projects/task"
 
 
 class Link(SqidMixin, models.Model):
@@ -42,7 +51,10 @@ class Link(SqidMixin, models.Model):
 class Project(AbstractProject):
     """Concrete project carrying the production folder lifecycle owner."""
 
-    rebac_grantable = AbstractProject.rebac_grantable
+    rebac_grantable = {
+        **AbstractProject.rebac_grantable,
+        "proposal_viewer": "share",
+    }
 
     class Meta(AbstractProject.Meta):
         abstract = False

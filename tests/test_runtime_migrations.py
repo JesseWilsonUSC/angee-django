@@ -16,10 +16,6 @@ from django.db import connection, migrations, models
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.state import ModelState, ProjectState
 
-from angee.agents.runtime_migrations.live_tool_backing import (
-    Migration as LiveToolMigration,
-)
-from angee.agents.runtime_migrations.live_tool_backing import applies as live_tool_applies
 from angee.base.fields import StateField
 from angee.base.impl import ImplClassField
 from angee.compose.migrations import RuntimeMigrations
@@ -39,62 +35,6 @@ from tests.conftest import make_addon, write_addon_manifest
 def _write_module(path: Path, text: str = "") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
-
-
-def test_live_tool_backing_targets_only_complete_historical_state() -> None:
-    """The tool cutover applies once and rejects a partially-added identity."""
-
-    current = ProjectState()
-    current.add_model(
-        ModelState(
-            "agents",
-            "Agent",
-            [
-                ("id", models.AutoField(primary_key=True)),
-                ("user", models.IntegerField()),
-                ("mcp_tools", models.IntegerField()),
-                ("mcp_servers", models.IntegerField()),
-            ],
-        )
-    )
-    current.add_model(
-        ModelState(
-            "agents",
-            "MCPServer",
-            [
-                ("id", models.AutoField(primary_key=True)),
-            ],
-        )
-    )
-    current.add_model(
-        ModelState(
-            "agents",
-            "MCPTool",
-            [
-                ("id", models.AutoField(primary_key=True)),
-                ("server", models.IntegerField()),
-                ("name", models.CharField(max_length=255)),
-                ("grant_id", models.CharField(editable=False, max_length=260, unique=True)),
-            ],
-        )
-    )
-    assert live_tool_applies(current) is False
-
-    historical = current.clone()
-    historical.models[("agents", "mcptool")].fields.pop("grant_id")
-    assert live_tool_applies(historical) is True
-    migrated = LiveToolMigration("probe", "agents").mutate_state(historical.clone())
-    grant_id = migrated.models[("agents", "mcptool")].fields["grant_id"]
-    assert grant_id.unique and not grant_id.null
-    assert live_tool_applies(migrated) is False
-
-    partial = current.clone()
-    partial.models[("agents", "mcptool")].fields["grant_id"] = models.CharField(
-        max_length=260,
-        null=True,
-    )
-    with pytest.raises(ImproperlyConfigured, match="partial MCPTool"):
-        live_tool_applies(partial)
 
 
 def test_live_spaces_backing_waits_for_thread_groups_and_applies_once() -> None:

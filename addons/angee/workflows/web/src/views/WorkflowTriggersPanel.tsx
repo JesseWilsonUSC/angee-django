@@ -3,7 +3,7 @@ import { useAuthoredQuery } from "@angee/refine";
 import type { ActionFieldName } from "@angee/gql/console/actions";
 import {
   Badge, Button, Collapsible, Column, EmptyState, ErrorBanner, errorMessage, Field, Form, Group, List,
-  JsonValueView, LoadingPanel, ResourceList, REFINE_CREATE_ID, SegmentedControl, formatDateTime, jsonValueFromUnknown, registerForm, slotContents,
+  JsonValueView, LoadingPanel, ResourceList, REFINE_CREATE_ID, SegmentedControl, formatDateTime, jsonObjectFromUnknown, jsonValueFromUnknown, registerForm, slotContents,
   TextLink, useImplConfigFields, useFormViewValues,
   useRouteHref, useSlot, useActionOutcomeMutation, useActionResultRun,
   type RecordToolbarContext, type RegisteredFormProps,
@@ -245,7 +245,7 @@ function ScheduleModeControl({ context }: { context: RecordToolbarContext }): Re
   const t = useWorkflowsT();
   const values = useFormViewValues(context.form) as TriggerRecord;
   if (String(values.kind ?? "").toLowerCase() !== "schedule") return null;
-  const config = isJsonObject(values.config) ? values.config : {};
+  const config = jsonObjectFromUnknown(values.config) ?? {};
   const hasCron = Object.hasOwn(config, "cron");
   const hasInterval = Object.hasOwn(config, "interval_seconds");
   const mode = scheduleMode(config);
@@ -390,12 +390,8 @@ function WorkflowTriggerReadOnlyForm(props: RegisteredFormProps): React.ReactEle
 
 export const workflowTriggerReadOnlyForm = registerForm(TRIGGER_MODEL, WorkflowTriggerReadOnlyForm);
 
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 function scheduleMode(value: unknown): ScheduleMode | undefined {
-  const config = isJsonObject(value) ? value : {};
+  const config = jsonObjectFromUnknown(value) ?? {};
   const hasCron = Object.hasOwn(config, "cron");
   const hasInterval = Object.hasOwn(config, "interval_seconds");
   return hasCron === hasInterval ? undefined : hasCron ? "cron" : "interval";

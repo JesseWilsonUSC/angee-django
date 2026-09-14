@@ -10,7 +10,6 @@ from typing import Any, cast
 
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet, Subquery
-from django.http import HttpRequest
 from pydantic import BaseModel
 from rebac import (
     ObjectRef,
@@ -101,13 +100,10 @@ class IAMGrantRow(BaseModel):
     def from_relationships(
         cls,
         rows: QuerySet[Any],
-        *,
-        request: HttpRequest | None = None,
     ) -> list[IAMGrantRow]:
         """Project direct user and group-set role grants with batched labels."""
 
         materialized = list(rows)
-        del request
         subjects = [
             SubjectRef.of(
                 str(row.subject_type),
@@ -261,8 +257,6 @@ class OverviewInfo:
     def build(
         cls,
         peek_limit: int,
-        *,
-        request: HttpRequest | None = None,
     ) -> OverviewInfo:
         """Return IAM dashboard facts independent of paginated list rows."""
 
@@ -284,7 +278,7 @@ class OverviewInfo:
                 privileged_grant_count=privileged_rows.count(),
                 unassigned_user_count=unassigned_queryset.count(),
                 namespaces=overview_namespaces(role_rows, grant_rows),
-                privileged_grants=IAMGrantRow.from_relationships(privileged_rows[:peek_limit], request=request),
+                privileged_grants=IAMGrantRow.from_relationships(privileged_rows[:peek_limit]),
                 unassigned_users=list(unassigned_queryset[:peek_limit]),
             )
 
@@ -448,12 +442,11 @@ def permission_hub_role_rows(limit: int | None = PERMISSION_HUB_LIST_CAP) -> Que
 
 def permission_hub_grants(
     *,
-    request: HttpRequest | None = None,
     limit: int | None = PERMISSION_HUB_LIST_CAP,
 ) -> list[IAMGrantRow]:
     """Return direct user and group-set role grants with labels batched."""
 
-    return IAMGrantRow.from_relationships(permission_hub_grant_rows(limit=limit), request=request)
+    return IAMGrantRow.from_relationships(permission_hub_grant_rows(limit=limit))
 
 
 def permission_hub_grant_rows(limit: int | None = PERMISSION_HUB_LIST_CAP) -> QuerySet[Any]:
@@ -479,18 +472,22 @@ def permission_hub_grant_rows(limit: int | None = PERMISSION_HUB_LIST_CAP) -> Qu
     return cast(QuerySet[Any], rows)
 
 
-def group_member_rows(group: Any) -> QuerySet[Any]:
+def group_member_rows(
+    group: Any,
+    *,
+    limit: int | None = PERMISSION_HUB_LIST_CAP,
+) -> QuerySet[Any]:
     """Return direct membership tuples for ``group``."""
 
     group_ref = to_object_ref(group)
-    return cast(
-        QuerySet[Any],
-        active_relationship_model().objects.filter(
-            resource_type=group_ref.resource_type,
-            resource_id=group_ref.resource_id,
-            relation=ROLE_RELATION,
-        ).order_by_subject(),
-    )
+    rows = active_relationship_model().objects.filter(
+        resource_type=group_ref.resource_type,
+        resource_id=group_ref.resource_id,
+        relation=ROLE_RELATION,
+    ).order_by_subject()
+    if limit is not None:
+        rows = rows[:limit]
+    return cast(QuerySet[Any], rows)
 
 
 def group_members(group: Any) -> list[IAMGroupMemberRow]:
@@ -534,7 +531,7 @@ def group_bindings(group: Any) -> list[IAMGroupBindingRow]:
             subject_type=subject.subject_type,
             subject_id=subject.subject_id,
             optional_subject_relation=subject.optional_relation,
-        ).order_by_resource()
+        ).order_by_resource()[:PERMISSION_HUB_LIST_CAP]
     )
     targets = _binding_targets(rows)
     result: list[IAMGroupBindingRow] = []
@@ -597,7 +594,7 @@ def _principal_binding_evidence(subject: SubjectRef) -> list[_BindingEvidence]:
             subject_type=subject.subject_type,
             subject_id=subject.subject_id,
             optional_subject_relation=subject.optional_relation,
-        ).order_by_resource()
+        ).order_by_resource()[:PERMISSION_HUB_LIST_CAP]
     )
     evidence = [_BindingEvidence(row=row, direct=True) for row in direct_rows]
     if subject.subject_type != "auth/user" or subject.optional_relation:
@@ -610,11 +607,14 @@ def _principal_binding_evidence(subject: SubjectRef) -> list[_BindingEvidence]:
     })
     if not group_ids:
         return evidence
+    remaining = PERMISSION_HUB_LIST_CAP - len(direct_rows)
+    if remaining <= 0:
+        return evidence
     inherited_rows = manager.filter(
         subject_type="auth/group",
         subject_id__in=group_ids,
         optional_subject_relation=ROLE_RELATION,
-    ).order_by_resource()
+    ).order_by_resource()[:remaining]
     evidence.extend(_BindingEvidence(row=row, direct=False) for row in inherited_rows)
     return evidence
 
@@ -884,12 +884,10 @@ def permission_schema() -> tuple[Schema, list[Definition]]:
 
 def iam_overview(
     peek_limit: int,
-    *,
-    request: HttpRequest | None = None,
 ) -> OverviewInfo:
     """Return IAM dashboard facts independent of paginated list rows."""
 
-    return OverviewInfo.build(peek_limit, request=request)
+    return OverviewInfo.build(peek_limit)
 
 
 def clamped_peek_limit(value: int) -> int:

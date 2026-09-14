@@ -61,10 +61,10 @@ describe("json widget", () => {
       key: "value",
     });
     expect(jsonObjectFromUnknown(["value"])).toBeUndefined();
-    expect(() => jsonValueFromUnknown(Number.POSITIVE_INFINITY)).toThrow();
+    expect(jsonValueFromUnknown(Number.POSITIVE_INFINITY)).toBeUndefined();
     expect(jsonValueFromUnknown(undefined)).toBeUndefined();
-    expect(() => jsonValueFromUnknown([undefined])).toThrow();
-    expect(() => jsonValueFromUnknown(new Date())).toThrow();
-    expect(() => jsonValueFromUnknown(new Map())).toThrow();
+    expect(jsonValueFromUnknown([undefined])).toBeUndefined();
+    expect(jsonValueFromUnknown(new Date())).toBeUndefined();
+    expect(jsonValueFromUnknown(new Map())).toBeUndefined();
   });
 });

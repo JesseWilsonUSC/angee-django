@@ -145,9 +145,16 @@ export interface AgentChatView extends Record<string, unknown> {
 
 /** Normalize the view envelope once where an authored JSON variable consumes it. */
 export function agentChatViewInput(view: AgentChatView): JsonObject {
-  const input = jsonObjectFromUnknown(view);
-  if (input === undefined) throw new TypeError("Agent chat view must be a JSON object.");
-  return input;
+  const params = jsonObjectFromUnknown(view.params);
+  return {
+    kind: view.kind,
+    type: view.type,
+    ...(typeof view.sqid === "string" ? { sqid: view.sqid } : {}),
+    ...(Array.isArray(view.sqids) && view.sqids.every((value) => typeof value === "string")
+      ? { sqids: view.sqids }
+      : {}),
+    ...(params === undefined ? {} : { params }),
+  };
 }
 
 // Resolve which agent serves the user's current view (the side chatter). Returns the

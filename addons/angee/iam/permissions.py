@@ -50,9 +50,7 @@ def is_platform_admin(user: Any) -> bool:
     if not is_authenticated(user):
         return False
     role = _platform_admin_role()
-    if role is None:
-        return bool(getattr(user, "is_superuser", False))
-    return current_actor_has_role(role)
+    return role is not None and current_actor_has_role(role)
 
 
 def current_actor_has_role(role: ObjectRef) -> bool:

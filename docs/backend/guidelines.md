@@ -434,8 +434,11 @@ data through REBAC, never a queryset bypass.
   run `manage.py reset_rebac_grants --apply`. The reset command deliberately
   runs without system checks so stale grants cannot block this maintenance step.
   Apply the schema-bearing Django migrations, repeat
-  `manage.py reset_rebac_grants --apply`, then run `manage.py rebac sync` and
-  `manage.py resources load` before resuming traffic.
+  `manage.py reset_rebac_grants --apply`, then run `manage.py rebac sync`,
+  `manage.py bootstrap_admin`, and `manage.py resources load` before resuming
+  traffic. `bootstrap_admin` idempotently restores the configured user's
+  `angee/role:admin#member` grant; changing `User.is_superuser` never writes
+  authorization tuples.
   The reset is atomic and leaves application rows, schema rows, and permission
   audit history intact. It removes record shares, group memberships, role
   assignments, and every other stored grant; declarative resource grants are

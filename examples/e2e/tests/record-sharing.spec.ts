@@ -1,6 +1,33 @@
-import { expect, roleStatePath, test } from "@angee/e2e";
+import { expect, GraphQLClient, roleStatePath, test } from "@angee/e2e";
 
 import { NotesPage } from "../pages/notes-page";
+
+const CREATE_PERSONAL_DASHBOARD = `
+  mutation CreateRecordSharingDashboard(
+    $name: String!
+    $description: String!
+    $clientCreationKey: String!
+  ) {
+    create_personal_dashboard(
+      name: $name
+      description: $description
+      client_creation_key: $clientCreationKey
+    ) { status id revision message }
+  }
+`;
+
+const ARCHIVE_PERSONAL_DASHBOARD = `
+  mutation ArchiveRecordSharingDashboard(
+    $id: ID!
+    $expectedRevision: Int!
+  ) {
+    set_personal_dashboard_archived(
+      id: $id
+      expected_revision: $expectedRevision
+      archived: true
+    ) { status message }
+  }
+`;
 
 test.describe("shared record access", () => {
   test.use({ storageState: roleStatePath("admin") });
@@ -52,8 +79,9 @@ test.describe("shared record access", () => {
     await expect(share).toBeVisible({ timeout: 20_000 });
     await expect(share).toBeDisabled();
 
-    const firstTask = page.getByRole("checkbox", { name: "Select row" }).first();
-    const firstGroup = page.locator("tbody tr button[aria-expanded]").first();
+    const taskTable = page.getByRole("table");
+    const firstTask = taskTable.getByRole("checkbox", { name: "Select row" }).first();
+    const firstGroup = taskTable.locator("tbody tr button[aria-expanded]").first();
     await expect(firstGroup).toBeVisible({ timeout: 20_000 });
     if ((await firstGroup.getAttribute("aria-expanded")) === "false") {
       await firstGroup.click();
@@ -113,6 +141,13 @@ test.describe("shared record access", () => {
       name: "Recipient: Demo Agent",
       exact: true,
     })).toBeVisible();
+    const addAccess = dialog.getByRole("button", {
+      name: "Add access",
+      exact: true,
+    });
+    await expect(addAccess).toBeEnabled();
+    await addAccess.click();
+    await expect(dialog.getByText("Demo Agent", { exact: true })).toBeVisible();
 
     const visibleFields = dialog.getByRole("button", {
       name: "Visible fields",
@@ -126,6 +161,11 @@ test.describe("shared record access", () => {
       name: "Sort Access (not sorted)",
       exact: true,
     })).toHaveCount(0);
+    await dialog.getByRole("button", {
+      name: "Remove access",
+      exact: true,
+    }).click();
+    await expect(dialog.getByText("Demo Agent", { exact: true })).toHaveCount(0);
   });
 
   test("agent and custom dashboard records inherit the same Share action", async ({
@@ -157,14 +197,37 @@ test.describe("shared record access", () => {
     ).toBeEnabled({ timeout: 20_000 });
     await agentDialog.getByRole("button", { name: "Close" }).click();
 
-    await page.goto("/dashboards");
-    const dashboard = page.getByText("Dashboard E2E Verified", { exact: true });
-    await expect(dashboard).toBeVisible({ timeout: 20_000 });
-    await dashboard.click();
-    await expect(page).toHaveURL(/\/dashboards\/[^/?]+/);
-    await expect(
-      page.getByRole("button", { name: "Share", exact: true }),
-    ).toHaveCount(1);
+    const consoleApi = new GraphQLClient(page.request, "/graphql/console/");
+    const created = await consoleApi.query<{
+      create_personal_dashboard: {
+        status: string;
+        id: string | null;
+        revision: number | null;
+        message: string | null;
+      };
+    }>(CREATE_PERSONAL_DASHBOARD, {
+      name: "Dashboard E2E Verified",
+      description: "Self-contained record sharing coverage",
+      clientCreationKey: `record-sharing-${Date.now()}`,
+    });
+    expect(created.errors).toBeUndefined();
+    const dashboard = created.data?.create_personal_dashboard;
+    expect(dashboard?.status, dashboard?.message ?? undefined).toBe("ready");
+    expect(dashboard?.id).toBeTruthy();
+    expect(dashboard?.revision).not.toBeNull();
+    try {
+      await page.goto(`/dashboards/${dashboard!.id}`);
+      await expect(page).toHaveURL(/\/dashboards\/[^/?]+/);
+      await expect(
+        page.getByRole("button", { name: "Share", exact: true }),
+      ).toHaveCount(1);
+    } finally {
+      const archived = await consoleApi.query(ARCHIVE_PERSONAL_DASHBOARD, {
+        id: dashboard!.id,
+        expectedRevision: dashboard!.revision,
+      });
+      expect(archived.errors).toBeUndefined();
+    }
   });
 
   test("agents, users, and groups share one principal Access surface", async ({

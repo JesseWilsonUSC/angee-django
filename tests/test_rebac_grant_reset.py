@@ -62,6 +62,7 @@ def test_reset_rebac_grants_previews_then_clears_both_stores() -> None:
     applied = StringIO()
     call_command("reset_rebac_grants", apply=True, database="default", stdout=applied)
     assert "discarded: 1 denormalized relationships, 1 registry relationships" in applied.getvalue()
+    assert "run 'bootstrap_admin' before resuming traffic" in applied.getvalue()
     assert not Relationship._base_manager.exists()
     assert not RelationshipRegistry._base_manager.exists()
     assert not RebacResource._base_manager.exists()

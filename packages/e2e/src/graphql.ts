@@ -14,6 +14,14 @@ export interface GraphQLResult<T = unknown> {
   errors?: GraphQLError[];
 }
 
+/** Return successful GraphQL data or fail with the response's useful error. */
+export function requireGraphQLData<T>(result: GraphQLResult<T>): T {
+  const error = result.errors?.map((item) => item.message).join("; ");
+  if (error) throw new Error(error);
+  if (result.data === undefined) throw new Error("GraphQL response contained no data.");
+  return result.data;
+}
+
 /**
  * A GraphQL caller bound to a Playwright request context. It carries the session
  * cookie already in the context and adds the Django CSRF header, mirroring the
@@ -49,6 +57,18 @@ export class GraphQLClient {
       headers: token ? { "x-csrftoken": token } : {},
       data: { query, variables },
     });
-    return (await response.json()) as GraphQLResult<T>;
+    const body = await response.text();
+    try {
+      return JSON.parse(body) as GraphQLResult<T>;
+    } catch {
+      const detail = body.trim() || response.statusText();
+      return {
+        errors: [
+          {
+            message: `GraphQL request failed (${response.status()}): ${detail}`,
+          },
+        ],
+      };
+    }
   }
 }

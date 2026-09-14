@@ -349,8 +349,8 @@ def test_server_qualified_grants_do_not_collide(agent_tooling_tables: None) -> N
 
 
 @pytest.mark.django_db(transaction=True)
-def test_tool_grant_identity_is_canonical_and_immutable(agent_tooling_tables: None) -> None:
-    """The catalogue row PK owns authorization while its public key stays immutable."""
+def test_tool_grant_identity_is_the_catalogue_primary_key(agent_tooling_tables: None) -> None:
+    """Renaming catalogue metadata preserves the PK-backed authorization identity."""
 
     del agent_tooling_tables
     with system_context(reason="test tool identity"):
@@ -358,23 +358,12 @@ def test_tool_grant_identity_is_canonical_and_immutable(agent_tooling_tables: No
         tool = MCPTool.objects.create(server=server, name="search")
         assert tool_grant_ref(str(server.sqid), "search").resource_id == str(tool.pk)
         tool.name = "renamed"
-        with pytest.raises(ValueError, match="immutable"):
-            tool.save(update_fields=("name",))
-        with pytest.raises(ValueError, match="immutable"):
-            MCPTool.objects.filter(pk=tool.pk).update(name="renamed")
-        with pytest.raises(ValueError, match="immutable"):
-            MCPTool.objects.filter(pk=tool.pk).update(grant_id="other.search")
+        tool.save(update_fields=("name",))
+        assert tool_grant_ref(str(server.sqid), "renamed").resource_id == str(tool.pk)
 
         bulk_tool = MCPTool(server=server, name="bulk-search")
         MCPTool.objects.bulk_create((bulk_tool,))
         assert tool_grant_ref(str(server.sqid), "bulk-search").resource_id == str(bulk_tool.pk)
-        with pytest.raises(ValueError, match="immutable"):
-            MCPTool.objects.bulk_create(
-                (MCPTool(server=server, name="bulk-search"),),
-                update_conflicts=True,
-                update_fields=("name",),
-                unique_fields=("server", "name"),
-            )
 
 
 @pytest.mark.django_db(transaction=True)

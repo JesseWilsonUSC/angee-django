@@ -68,3 +68,7 @@ class Command(BaseCommand):
             f"{counts.registry_relationships} registry relationships, "
             f"{counts.resources} registered resources"
         )
+        if options["apply"]:
+            self.stdout.write(
+                "After migrations and 'rebac sync', run 'bootstrap_admin' before resuming traffic."
+            )

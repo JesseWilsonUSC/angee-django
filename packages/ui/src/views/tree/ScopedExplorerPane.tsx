@@ -34,6 +34,8 @@ export interface ScopedExplorerPaneProps<
   loading?: boolean;
   loadingContent?: React.ReactNode;
   emptyContent?: React.ReactNode;
+  /** Render the owned content even when the caller has no visible roots. */
+  renderContentWithoutRoots?: boolean;
   navigatorLabel: string;
   rootPicker: ScopedExplorerRootPicker;
   onRootChange?: (
@@ -64,6 +66,7 @@ export function ScopedExplorerPane<
   loading = false,
   loadingContent,
   emptyContent,
+  renderContentWithoutRoots = false,
   navigatorLabel,
   rootPicker,
   onRootChange,
@@ -122,7 +125,7 @@ export function ScopedExplorerPane<
       ? <ExplorerNavigatorSkeleton label={loadingLabel} />
       : null;
 
-  if (loading && !hasRoots) {
+  if (loading && !hasRoots && !renderContentWithoutRoots) {
     return (
       <>
         <PrimaryPanePublisher node={primaryPane} />
@@ -130,7 +133,7 @@ export function ScopedExplorerPane<
       </>
     );
   }
-  if (!hasRoots) {
+  if (!hasRoots && !renderContentWithoutRoots) {
     return (
       <>
         <PrimaryPanePublisher node={primaryPane} />

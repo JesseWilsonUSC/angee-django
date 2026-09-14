@@ -1,6 +1,8 @@
 import type { ComponentType, ReactNode } from "react";
 import * as v from "valibot";
 
+import { JsonValueSchema } from "../widgets/json-value";
+
 export const DASHBOARD_SCHEMA_VERSION = 1 as const;
 export const DASHBOARD_COLUMNS = 12;
 export const DASHBOARD_STORE_SLOT = "dashboard.store";
@@ -16,17 +18,6 @@ export const DASHBOARD_LIMITS = {
   seriesBuckets: 500,
   displayTopN: { min: 1, max: 20 },
 } as const;
-
-const JsonValueSchema: v.GenericSchema<unknown, unknown> = v.lazy(() =>
-  v.union([
-    v.null(),
-    v.string(),
-    v.number(),
-    v.boolean(),
-    v.array(JsonValueSchema),
-    v.record(v.string(), JsonValueSchema),
-  ]),
-);
 
 const PositiveInteger = v.pipe(v.number(), v.integer(), v.minValue(1));
 const NonNegativeInteger = v.pipe(v.number(), v.integer(), v.minValue(0));

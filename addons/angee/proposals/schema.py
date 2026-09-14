@@ -120,8 +120,8 @@ class ProposalType(AuthoredRefMixin, AngeeNode):
 
     state: auto
     cost: auto
-    # The database keeps this comparison cell as a non-null string, but B8's
-    # field gate redacts it to GraphQL null for round readers.
+    # The database keeps this comparison cell as a non-null string, while the
+    # field permission redacts it for proposal viewers outside the sealed group.
     staffing: str | None
     timeframe_start: auto
     timeframe_end: auto

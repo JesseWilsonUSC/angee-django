@@ -35,7 +35,7 @@ from angee.agents.skills import parse_skill_meta
 from angee.base.fields import StateField
 from angee.base.impl import ImplClassField, ImplDefaultsMixin
 from angee.base.mixins import AuditMixin, SqidMixin
-from angee.base.models import AngeeManager, AngeeModel, AngeeQuerySet, role_anchor
+from angee.base.models import AngeeManager, AngeeModel, role_anchor
 from angee.base.transitions import StateTransitions, save_state, transition
 
 
@@ -546,43 +546,6 @@ class MCPServer(SqidMixin, AuditMixin, AngeeModel):
         return sqid, digest
 
 
-class MCPToolQuerySet(AngeeQuerySet):
-    """QuerySet preserving the immutable server-qualified tool identity."""
-
-    def update(self, **kwargs: Any) -> int:
-        """Reject bulk edits that bypass the canonical grant-id owner."""
-
-        if {"server", "server_id", "name", "grant_id"} & kwargs.keys():
-            raise ValueError("MCP tool server and name are immutable; replace the tool instead.")
-        return super().update(**kwargs)
-
-    def bulk_update(
-        self,
-        objs: Any,
-        fields: Any,
-        batch_size: int | None = None,
-    ) -> int:
-        """Reject bulk identity edits and delegate all other updates."""
-
-        if {"server", "server_id", "name", "grant_id"} & set(fields):
-            raise ValueError("MCP tool server and name are immutable; replace the tool instead.")
-        return super().bulk_update(objs, fields, batch_size=batch_size)
-
-
-class MCPToolManager(AngeeManager.from_queryset(MCPToolQuerySet)):  # type: ignore[misc]
-    """Manager carrying MCP tool identity invariants through bulk APIs."""
-
-    def bulk_create(self, objs: Any, **kwargs: Any) -> Any:
-        """Populate canonical ids for Django's save-bypassing bulk insert."""
-
-        if {"server", "server_id", "name", "grant_id"} & set(kwargs.get("update_fields") or ()):
-            raise ValueError("MCP tool server and name are immutable; replace the tool instead.")
-        objs = list(objs)
-        for tool in objs:
-            tool.grant_id = tool.make_grant_id(str(tool.server.sqid), tool.name)
-        return super().bulk_create(objs, **kwargs)
-
-
 class MCPTool(SqidMixin, AuditMixin, AngeeModel):
     """One tool an MCP server exposes; agents select the tools they may call."""
 
@@ -591,15 +554,11 @@ class MCPTool(SqidMixin, AuditMixin, AngeeModel):
     sqid_prefix = "mct_"
     server = models.ForeignKey("agents.MCPServer", on_delete=models.CASCADE, related_name="tools")
     name = models.CharField(max_length=200)
-    grant_id = models.CharField(max_length=260, unique=True, editable=False)
-    """Stable server-qualified REBAC identity shared with runtime authorization."""
     description = models.TextField(blank=True)
     input_schema = models.JSONField(default=dict, blank=True)
     enabled = models.BooleanField(default=True)
     requires_approval = models.BooleanField(default=False)
     """Whether invoking this tool must suspend for an owner decision."""
-
-    objects = MCPToolManager()
 
     class Meta:
         """Django model options for MCP tools."""
@@ -613,31 +572,6 @@ class MCPTool(SqidMixin, AuditMixin, AngeeModel):
         """Return the tool's name."""
 
         return self.name
-
-    @staticmethod
-    def make_grant_id(server_sqid: str, tool_name: str) -> str:
-        """Return the canonical server-qualified identity for a tool."""
-
-        server = str(server_sqid).strip()
-        name = str(tool_name).strip()
-        if not server or not name:
-            raise ValueError("Tool grant server ids and names must not be empty.")
-        return f"{server}.{name}"
-
-    def save(self, *args: Any, **kwargs: Any) -> None:
-        """Set the grant identity once and prevent identity-changing edits."""
-
-        expected = self.make_grant_id(str(self.server.sqid), self.name)
-        if not self._state.adding:
-            persisted = type(self)._base_manager.only("server_id", "name", "grant_id").get(pk=self.pk)
-            if (persisted.server_id, persisted.name) != (self.server_id, self.name):
-                raise ValueError("MCP tool server and name are immutable; replace the tool instead.")
-        self.grant_id = expected
-        update_fields = kwargs.get("update_fields")
-        if update_fields is not None:
-            kwargs["update_fields"] = tuple(dict.fromkeys((*update_fields, "grant_id")))
-        super().save(*args, **kwargs)
-
 
 class AgentManager(AngeeManager):
     """Manager owning service-user lifecycle for agent principals."""

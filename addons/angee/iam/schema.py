@@ -19,7 +19,6 @@ from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.models import AnonymousUser
 from django.db import transaction
 from django.db.models import QuerySet
-from django.http import HttpRequest
 from rebac import RebacQuerySet, system_context, to_subject_ref
 from rebac.models import active_relationship_model
 from rebac.roles import (
@@ -497,10 +496,10 @@ def _principal_access(subject: str) -> IAMPrincipalAccessType:
     )
 
 
-def _iam_overview(peek_limit: int, *, request: HttpRequest | None = None) -> IAMOverviewType:
+def _iam_overview(peek_limit: int) -> IAMOverviewType:
     """Return IAM dashboard facts independent of paginated list rows."""
 
-    return cast(IAMOverviewType, _iam_overview_owner(peek_limit, request=request))
+    return cast(IAMOverviewType, _iam_overview_owner(peek_limit))
 
 
 def _admin_relationship_queryset(info: strawberry.Info) -> QuerySet[Any]:
@@ -664,7 +663,7 @@ def _grant_rows_for(info: strawberry.Info) -> list[IAMGrantRow]:
     if not _admin_actor(info):
         return []
     with system_context(reason="iam.graphql.grants"):
-        return _permission_hub_grants_owner(request=_request(info))
+        return _permission_hub_grants_owner()
 
 
 _ROLE_RESOURCE = hasura_pydantic_resource(
@@ -819,7 +818,7 @@ class IAMConsoleQuery:
     ) -> IAMOverviewType:
         """Return IAM dashboard aggregates and peek rows."""
 
-        return _iam_overview(peek_limit, request=_request(info))
+        return _iam_overview(peek_limit)
 
 
 @strawberry.type

@@ -27,10 +27,14 @@ def test_private_path_ci_guard_matches_tracked_content(tmp_path: Path, kind: str
     assert result.returncode == (0 if kind == "public" else 1), result.stdout + result.stderr
 
 
-def test_legacy_private_checkout_paths_remain_ignored() -> None:
+def test_legacy_private_checkout_paths_remain_ignored(tmp_path: Path) -> None:
+    """Check the ignore contract without traversing a materialized work-state link."""
+
+    subprocess.run(["git", "init", "--quiet", str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / ".gitignore").write_text((ROOT / ".gitignore").read_text())
     result = subprocess.run(
         ["git", "check-ignore", "--no-index", "--stdin"],
-        cwd=ROOT,
+        cwd=tmp_path,
         input=".work\n.work/notes/private.md\ndocs/guidelines.md\n",
         capture_output=True,
         text=True,

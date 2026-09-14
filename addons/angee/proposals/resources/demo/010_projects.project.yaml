@@ -13,15 +13,3 @@ rows:
       target_date_resolution: day
       created_by: iam.user_admin
       updated_by: iam.user_admin
-  - xref: flat_hunt
-    fields:
-      title: Find a long-term flat in Valencia
-      body: Compare direct landlord offers against one consistent set of requirements.
-      status: open
-      lead: iam.user_alice
-      start_date: 2026-09-01
-      start_date_resolution: day
-      target_date: 2026-10-01
-      target_date_resolution: day
-      created_by: iam.user_alice
-      updated_by: iam.user_alice

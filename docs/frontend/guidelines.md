@@ -426,7 +426,7 @@ history uses native Query pages with domain-owned
 - **Share is shared record chrome.** IAM contributes the generic
   [ManageAccessDialog](../../packages/ui/src/views/access/ManageAccessDialog.tsx)
   through `FORM_VIEW_RECORD_CHROME_SLOT` and the existing
-  `RESOURCE_VIEW_ACTIONS_SLOT`. Models declare `rebac_grantable`; pages inherit
+  `RESOURCE_VIEW_UTILITIES_SLOT`. Models declare `rebac_grantable`; pages inherit
   Share from their resource metadata. Saved custom record surfaces compose
   `RecordChrome`, as forms do. List actions use the enclosing saved record when
   present, otherwise the collection owner's selected ids. Subject pickers read

@@ -8,6 +8,7 @@ from django.test import override_settings
 from rebac import SubjectRef, system_context, to_subject_ref
 
 from angee.iam.auth import ModelBackend, can_authenticate_user
+from angee.iam.permissions import is_platform_admin
 
 
 @pytest.mark.parametrize("kind,is_active,allowed", [
@@ -22,6 +23,12 @@ def test_login_requires_an_active_person(kind: str, is_active: bool, allowed: bo
     assert can_authenticate_user(user) is allowed
 
 
+def test_login_rejects_anonymous_user_shapes() -> None:
+    """Missing IAM user attributes deny login instead of raising."""
+
+    assert can_authenticate_user(object()) is False
+
+
 @override_settings(AUTHENTICATION_BACKENDS=["angee.iam.auth.ModelBackend"])
 def test_login_backend_does_not_grant_django_codenames() -> None:
     """Even a superuser has no codename grants without an authorization backend."""
@@ -33,6 +40,14 @@ def test_login_backend_does_not_grant_django_codenames() -> None:
     assert backend.get_all_permissions(user) == set()
     assert not user.has_perm("iam.change_user")
     assert not user.has_module_perms("iam")
+
+
+@override_settings(REBAC_UNIVERSAL_ADMIN_ROLE=None)
+def test_platform_admin_never_derives_from_django_superuser() -> None:
+    """Django's account flag cannot replace an explicit platform role grant."""
+
+    user = get_user_model()(kind="person", is_active=True, is_superuser=True)
+    assert is_platform_admin(user) is False
 
 
 @pytest.mark.django_db

@@ -1,0 +1,11 @@
+// Proposal visibility contributed to the installed planning hierarchy.
+// @rebac_package: proposals
+// @rebac_schema_revision: 1
+
+definition projects/project {
+    relation proposal_viewer: auth/user | auth/group#member
+}
+
+definition projects/task {
+    relation proposal_viewer: auth/user | auth/group#member
+}
