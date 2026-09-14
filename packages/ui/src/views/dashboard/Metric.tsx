@@ -21,6 +21,10 @@ export interface MetricProps {
   tone?: Tone;
   /** Secondary line under the value (e.g. "3 critical"). */
   detail?: ReactNode;
+  /** Destination for a metric that opens its related detail view. */
+  href?: string;
+  /** Optional client-side navigation handler for `href`. */
+  onNavigate?: (href: string) => void;
 }
 
 /** Render-less marker; `DashboardView` collects these into one prominent metric strip. */
