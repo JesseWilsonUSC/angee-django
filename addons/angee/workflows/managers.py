@@ -3781,17 +3781,19 @@ class StepAttemptManager(AngeeManager.from_queryset(StepAttemptQuerySet)):  # ty
                 .get(pk=source_id)
             )
             if (
-                source.map_expansion_id == map_item.expansion_attempt_id
-                and source.map_item_index == map_item.index
-                and source.map_item_present is map_item.value.present
-                and json_values_equal(source.map_item, map_item.value.value)
-                and source.step_run.step_id == step_run.step_id
+                source.step_run.step_id == step_run.step_id
                 and source.step_run.map_index == step_run.map_index
             ):
-                return
-            raise ValidationError(
-                {"map_item": "Recovery Map item does not match admitted source evidence."}
-            )
+                if (
+                    source.map_expansion_id == map_item.expansion_attempt_id
+                    and source.map_item_index == map_item.index
+                    and source.map_item_present is map_item.value.present
+                    and json_values_equal(source.map_item, map_item.value.value)
+                ):
+                    return
+                raise ValidationError(
+                    {"map_item": "Recovery Map item does not match admitted source evidence."}
+                )
         if (
             step_run.map_index != map_item.index
             or step_run.current_map_expansion_id != map_item.expansion_attempt_id

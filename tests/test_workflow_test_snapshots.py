@@ -46,6 +46,7 @@ from tests.workflows import (
     WorkflowRun,
     WorkflowTestFixture,
     advance_once,
+    execute_started,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -348,6 +349,102 @@ def test_fresh_recovery_keeps_new_downstream_child_on_the_recovery_run(
     assert attempt.result_kind == AttemptResultKind.DONE
     assert child.parent_step_run_id == downstream.pk
     assert child.parent_step_run.run.same_execution_lineage(recovery)
+
+
+def test_fresh_recovery_validates_downstream_map_items_against_their_expansion(
+    workflow_engine_tables: None,
+    no_workflow_queue: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Map reached after recovery owns new item evidence within the recovery run."""
+
+    del workflow_engine_tables, no_workflow_queue
+    actor = get_user_model().objects.create_user(username="recovery-map-owner")
+
+    class RecoveredRoot(StepImpl):
+        @classmethod
+        def recovery_capability(cls, *, attempt: object) -> RecoveryCapability:
+            del attempt
+            return RecoveryCapability(RecoveryMode.FRESH)
+
+        def run(self, step_run: object, *, now: object) -> StepResult:
+            del step_run, now
+            raise RuntimeError("source failure")
+
+        def run_recovery(
+            self,
+            step_run: object,
+            *,
+            now: object,
+            source_attempt: object,
+            mode: RecoveryMode,
+        ) -> StepResult:
+            del step_run, now, source_attempt
+            assert mode is RecoveryMode.FRESH
+            return StepResult.done(outcome="done")
+
+    class MappedItem(StepImpl):
+        def run(self, step_run: object, *, now: object) -> StepResult:
+            del now
+            assert step_run.input == {"value": "retained"}
+            return StepResult.done(outcome="done")
+
+    with system_context(reason="downstream recovery map fixture"):
+        workflow = Workflow.objects.create(name="Recovery then Map", created_by=actor)
+        recovered_step = Step.objects.create(
+            workflow=workflow, key="recover", name="Recover", step_class="handler", is_entry=True,
+        )
+        map_step = Step.objects.create(
+            workflow=workflow,
+            key="map",
+            name="Map",
+            step_class="map",
+            config={"target_step": "item", "items": [{"value": "retained"}]},
+        )
+        item_step = Step.objects.create(
+            workflow=workflow, key="item", name="Item", step_class="handler",
+        )
+        Edge.objects.create(
+            workflow=workflow, source=recovered_step, target=map_step, condition="done",
+        )
+        original_resolve = type(recovered_step).resolve_impl
+        monkeypatch.setattr(
+            type(recovered_step),
+            "resolve_impl",
+            lambda self, field: (
+                RecoveredRoot
+                if self.key == "recover"
+                else MappedItem
+                if self.key == "item"
+                else original_resolve(self, field)
+            ),
+        )
+        workflow = workflow.publish()
+        recovered_step = workflow.steps.get(key="recover")
+        map_step = workflow.steps.get(key="map")
+        item_step = workflow.steps.get(key="item")
+    source_run = engine.start(workflow, subject=None, actor=actor)
+    advance_once(source_run)
+    execute_started(source_run)
+    with system_context(reason="downstream recovery map source failure"):
+        source_attempt = StepRun.objects.get(run=source_run, step=recovered_step).current_attempt
+    assert source_attempt.result_kind == AttemptResultKind.ERROR
+
+    recovery, recovered_attempt = _execute_recovery(
+        source_attempt, actor=actor, request_key="recover-before-map",
+    )
+    assert recovered_attempt.result_kind == AttemptResultKind.DONE
+    started = advance_once(recovery)
+    assert [(row.step_id, row.map_index) for row in started] == [(item_step.pk, 0)]
+    with system_context(reason="downstream recovery map evidence"):
+        item_attempt = started[0].current_attempt
+        expansion_attempt = StepRun.objects.get(run=recovery, step=map_step).current_attempt
+    assert item_attempt.map_expansion_id == expansion_attempt.pk
+    assert item_attempt.map_item == {"value": "retained"}
+    execute_started(recovery)
+    engine.advance(recovery.pk)
+    recovery.refresh_from_db()
+    assert recovery.status == "succeeded"
 
 
 def test_retained_child_for_start_requires_parent_and_child_read_access(
