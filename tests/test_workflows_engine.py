@@ -705,6 +705,88 @@ def test_deliver_is_idempotent_and_ignores_terminal_runs(
 
 
 @pytest.mark.django_db(transaction=True)
+def test_deliver_artifact_wakes_all_exact_external_waits_without_approvals(
+    workflow_engine_tables: None,
+    no_workflow_queue: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A resource event leaves an unrelated approval wait parked in the same run."""
+
+    del workflow_engine_tables, no_workflow_queue
+    dependency = User.objects.create_user(username="external-artifact-dependency")
+    unrelated = User.objects.create_user(username="unrelated-artifact-dependency")
+    now = timezone.now()
+
+    def wait_on_dependency(self: HandlerStep, step_run: Any, *, now: Any) -> StepResult:
+        del self
+        if step_run.step.key == "entry":
+            return StepResult.done(outcome="done")
+        return StepResult.wait(
+            until=now + timedelta(days=1),
+            waiting_kind="external",
+            artifacts=(workflow_steps.ArtifactSpec(dependency, "External dependency"),),
+        )
+
+    monkeypatch.setattr(HandlerStep, "run", wait_on_dependency)
+    workflow = workflow_with_steps(
+        name="Exact artifact delivery",
+        steps=(
+            {"key": "entry", "step_class": "handler"},
+            {"key": "external", "step_class": "handler"},
+            {
+                "key": "approval",
+                "step_class": "gate",
+                "config": {
+                    "action": "approve",
+                    "slots": [{"assignee": "auth/user:artifact-reviewer"}],
+                },
+            },
+        ),
+        edges=(("entry", "external", "done"), ("entry", "approval", "done")),
+    )
+    runs = (start_run(workflow), start_run(workflow))
+    for run in runs:
+        advance_once(run, now=now)
+        execute_started(run, now=now)
+        advance_once(run, now=now)
+        advance_once(run, now=now)
+        execute_started(run, now=now)
+        advance_once(run, now=now)
+
+    external_steps = tuple(step_run_for(run, "external") for run in runs)
+    approval_steps = tuple(step_run_for(run, "approval") for run in runs)
+    for external, approval in zip(external_steps, approval_steps, strict=True):
+        assert external.status == workflow_models.StepRunStatus.WAITING
+        assert external.waiting_kind == workflow_models.WaitingKind.EXTERNAL
+        assert approval.status == workflow_models.StepRunStatus.WAITING
+        assert approval.waiting_kind == workflow_models.WaitingKind.APPROVAL
+    with system_context(reason="verify exact artifact delivery Decision"):
+        decision_ids = tuple(Decision.objects.filter(
+            step_run__in=approval_steps,
+        ).order_by("pk").values_list("pk", flat=True))
+
+    assert engine.deliver_artifact(unrelated, now=now) == {"runs": 0, "woken": 0}
+    assert engine.deliver_artifact(dependency, now=now) == {"runs": 2, "woken": 2}
+    for external, approval in zip(external_steps, approval_steps, strict=True):
+        external.refresh_from_db()
+        approval.refresh_from_db()
+        assert external.status == workflow_models.StepRunStatus.WAITING
+        assert external.wait_until is not None and external.wait_until <= now
+        assert approval.status == workflow_models.StepRunStatus.WAITING
+    for run in runs:
+        advance_once(run, now=now)
+    for external, approval in zip(external_steps, approval_steps, strict=True):
+        external.refresh_from_db()
+        approval.refresh_from_db()
+        assert external.status == workflow_models.StepRunStatus.STARTED
+        assert approval.status == workflow_models.StepRunStatus.WAITING
+    with system_context(reason="verify approval wait remained unchanged"):
+        assert tuple(Decision.objects.filter(
+            step_run__in=approval_steps,
+        ).order_by("pk").values_list("pk", flat=True)) == decision_ids
+
+
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.usefixtures("handler_calls")
 def test_cancellation_propagates_to_journal_and_child_runs(
     workflow_engine_tables: None,

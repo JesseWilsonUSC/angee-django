@@ -10,7 +10,7 @@ from collections.abc import Callable, Collection, Iterable, Iterator, Mapping
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from datetime import datetime, timedelta
-from typing import Any, Self, cast
+from typing import Any, Literal, Self, cast
 
 from django.apps import apps
 from django.contrib.auth import get_user_model
@@ -3648,6 +3648,18 @@ class StepAttemptManager(AngeeManager.from_queryset(StepAttemptQuerySet)):  # ty
             _, step_run = self._locked_ancestry(step_run_id, alias)
             if step_run.status != StepRunStatus.WAITING or step_run.current_attempt_id is None:
                 return False
+            attempt = system_queryset(self.model, using=alias, lock=("self",)).get(
+                pk=step_run.current_attempt_id
+            )
+            if (
+                attempt.result_kind == str(AttemptResultKind.SUSPEND)
+                and attempt.applied_at is not None
+                and attempt.lease_revoked_at is None
+            ):
+                decision_model = step_run.decisions.model
+                decision_model.objects.expire_departing_suspension(
+                    step_run.pk, resolved_by="workflows/wake"
+                )
             self._write_step_run(
                 step_run, alias=alias, operation=lambda: step_run.wake(at=at)
             )
@@ -4618,21 +4630,40 @@ class DecisionManager(AngeeManager.from_queryset(DecisionQuerySet)):  # type: ig
                 )
             return decision
 
-    def expire_canceled_suspension(self, step_run_id: int, *, resolved_by: str) -> int:
-        """Expire pending decisions only after their retained suspension was canceled."""
+    def expire_departing_suspension(self, step_run_id: int, *, resolved_by: str) -> int:
+        """Expire the exact current suspension before its step becomes runnable again."""
+
+        return self._expire_exact_suspension(
+            step_run_id, resolved_by=resolved_by, transition="depart"
+        )
+
+    def _expire_exact_suspension(
+        self, step_run_id: int, *, resolved_by: str, transition: Literal["depart", "cancel"]
+    ) -> int:
+        """Expire one applied current suspension under its exact lifecycle transition."""
 
         alias = self.db
         step_run_model = self.model._meta.get_field("step_run").remote_field.model
         attempt_model = self.model._meta.get_field("suspension_attempt").remote_field.model
         run_model = step_run_model._meta.get_field("run").remote_field.model
-        with transaction.atomic(using=alias), system_context(reason="workflows.decision.cancel"):
+        with transaction.atomic(using=alias), system_context(reason=f"workflows.decision.{transition}"):
             run_id = system_queryset(step_run_model, using=alias, lock=None).values_list(
                 "run_id", flat=True
             ).get(pk=step_run_id)
             run = system_queryset(run_model, using=alias, lock=("self",)).get(pk=run_id)
             step_run = system_queryset(step_run_model, using=alias, lock=("self",)).get(pk=step_run_id)
-            if step_run.run_id != run.pk or step_run.status != StepRunStatus.CANCELED:
-                raise ValidationError({"step_run": "Decision cancellation requires a canceled retained slot."})
+            expected_status = (
+                StepRunStatus.WAITING if transition == "depart" else StepRunStatus.CANCELED
+            )
+            transition_label = "departure" if transition == "depart" else "cancellation"
+            if step_run.run_id != run.pk or step_run.status != expected_status:
+                raise ValidationError({
+                    "step_run": f"Decision {transition_label} requires a {expected_status} retained slot."
+                })
+            if transition == "depart" and run.is_terminal:
+                raise ValidationError({
+                    "step_run": "Decision departure requires a current waiting slot."
+                })
             if step_run.current_attempt_id is None:
                 return 0
             attempt = system_queryset(attempt_model, using=alias, lock=("self",)).get(
@@ -4644,13 +4675,12 @@ class DecisionManager(AngeeManager.from_queryset(DecisionQuerySet)):  # type: ig
                 or attempt.applied_at is None
                 or attempt.lease_revoked_at is not None
             ):
-                raise ValidationError({"attempt": "Decision cancellation requires the applied current suspension."})
-            pending = list(
-                system_queryset(self.model, using=alias, lock=("self",)).filter(
-                    suspension_attempt=attempt,
-                    verdict=Verdict.PENDING,
-                ).order_by("pk")
-            )
+                raise ValidationError({
+                    "attempt": f"Decision {transition_label} requires the applied current suspension."
+                })
+            pending = list(system_queryset(self.model, using=alias, lock=("self",)).filter(
+                suspension_attempt=attempt, verdict=Verdict.PENDING,
+            ).order_by("pk"))
             for decision in pending:
                 self._write_retained(
                     decision,
@@ -4659,6 +4689,52 @@ class DecisionManager(AngeeManager.from_queryset(DecisionQuerySet)):  # type: ig
                     ),
                 )
             return len(pending)
+
+    def expire_orphaned_suspensions(self, step_run_id: int, *, resolved_by: str) -> int:
+        """Expire pending retained Decisions that no longer own an active suspension."""
+
+        alias = self.db
+        step_run_model = self.model._meta.get_field("step_run").remote_field.model
+        run_model = step_run_model._meta.get_field("run").remote_field.model
+        with transaction.atomic(using=alias), system_context(reason="workflows.decision.expire_orphans"):
+            run_id = system_queryset(step_run_model, using=alias, lock=None).values_list(
+                "run_id", flat=True
+            ).get(pk=step_run_id)
+            run = system_queryset(run_model, using=alias, lock=("self",)).get(pk=run_id)
+            step_run = system_queryset(step_run_model, using=alias, lock=("self",)).get(pk=step_run_id)
+            pending = list(system_queryset(self.model, using=alias, lock=("self",)).filter(
+                step_run=step_run,
+                suspension_attempt__isnull=False,
+                verdict=Verdict.PENDING,
+            ).select_related("suspension_attempt").order_by("pk"))
+            expired = 0
+            for decision in pending:
+                attempt = decision.suspension_attempt
+                current_active = (
+                    not run.is_terminal
+                    and step_run.status == StepRunStatus.WAITING
+                    and step_run.current_attempt_id == attempt.pk
+                    and attempt.result_kind == str(AttemptResultKind.SUSPEND)
+                    and attempt.applied_at is not None
+                    and attempt.lease_revoked_at is None
+                )
+                if current_active:
+                    continue
+                self._write_retained(
+                    decision,
+                    lambda decision=decision: decision.resolve(
+                        Verdict.EXPIRED, resolution={}, resolved_by=resolved_by
+                    ),
+                )
+                expired += 1
+            return expired
+
+    def expire_canceled_suspension(self, step_run_id: int, *, resolved_by: str) -> int:
+        """Expire pending decisions only after their retained suspension was canceled."""
+
+        return self._expire_exact_suspension(
+            step_run_id, resolved_by=resolved_by, transition="cancel"
+        )
 
     def timer_intents_for(self, *, attempt: Any, using: str) -> tuple[DecisionTimerIntent, ...]:
         """Reconstruct deterministic post-commit work for an applied suspension."""

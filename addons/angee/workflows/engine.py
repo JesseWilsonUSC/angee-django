@@ -34,6 +34,7 @@ from rebac.types import RelationshipTuple
 
 from angee.base.actors import actor_user_id
 from angee.base.identity import canonical_subject_ref, instance_from_public_id
+from angee.base.refs import canonical_record_target
 from angee.base.scoping import read_scoped_queryset
 from angee.jobs.enqueue import enqueue_task
 from angee.workflows.attempts import (
@@ -66,6 +67,7 @@ from angee.workflows.models import (
     RunStatus,
     StepRunStatus,
     Verdict,
+    WaitingKind,
 )
 from angee.workflows.steps import DecisionSpec, MapStep, StepResult, TransientStepError
 from angee.workflows.testing import FixtureRole, WorkflowScope
@@ -179,6 +181,74 @@ def deliver(run_id: int, *, now: datetime | None = None) -> dict[str, int]:
             run.resume()
         transaction.on_commit(lambda run_id=run.pk: enqueue_advance(run_id))
     return {"woken": woken}
+
+
+def deliver_artifact(resource: Any, *, now: datetime | None = None) -> dict[str, int]:
+    """Wake exact external waits whose current attempt retained ``resource``.
+
+    Resource owners use this seam when one durable domain fact changes.  Unlike
+    :func:`deliver`, it does not wake unrelated approval or timer rows that happen
+    to share a workflow run with the external dependency.
+    """
+
+    timestamp = now or timezone.now()
+    target = canonical_record_target(resource)
+    run_model = _model("WorkflowRun")
+    step_run_model = _model("StepRun")
+    artifact_model = _model("StepArtifact")
+    woken = 0
+    delivered_run_ids: list[int] = []
+    with system_context(reason="workflows.engine.deliver_artifact"), transaction.atomic():
+        candidate_step_ids = list(artifact_model.objects.filter(
+            target_content_type_id=target.content_type.pk,
+            target_object_id=target.object_id,
+            attempt__step_run__current_attempt_id=models.F("attempt_id"),
+            attempt__step_run__status=StepRunStatus.WAITING,
+            attempt__step_run__waiting_kind=WaitingKind.EXTERNAL,
+        ).order_by().values_list("attempt__step_run_id", flat=True).distinct())
+        candidate_run_ids = list(step_run_model.objects.filter(
+            pk__in=candidate_step_ids,
+        ).order_by().values_list("run_id", flat=True).distinct())
+        runs = {
+            run.pk: run for run in run_model.objects.lock_if_supported().filter(
+                pk__in=candidate_run_ids,
+            ).order_by("pk")
+        }
+        step_runs = list(step_run_model.objects.lock_if_supported().filter(
+            pk__in=candidate_step_ids,
+            status=StepRunStatus.WAITING,
+            waiting_kind=WaitingKind.EXTERNAL,
+        ).select_related("current_attempt").order_by("run_id", "pk"))
+        touched: set[int] = set()
+        for step_run in step_runs:
+            run = runs.get(step_run.run_id)
+            if run is None or run.status in RunStatus.TERMINAL or step_run.current_attempt_id is None:
+                continue
+            if not artifact_model.objects.filter(
+                attempt_id=step_run.current_attempt_id,
+                target_content_type_id=target.content_type.pk,
+                target_object_id=target.object_id,
+            ).exists():
+                continue
+            if _is_retained_step_run(step_run):
+                _model("StepAttempt").objects.wake_current(step_run.pk, at=timestamp)
+            else:
+                step_run.wake(at=timestamp)
+            touched.add(run.pk)
+            woken += 1
+        for run_id in sorted(touched):
+            run = runs[run_id]
+            run.deliveries += 1
+            run.save(update_fields=["deliveries", "updated_at"])
+            if run.status == RunStatus.WAITING:
+                run.resume()
+            delivered_run_ids.append(run_id)
+        def enqueue_delivered() -> None:
+            for run_id in delivered_run_ids:
+                enqueue_advance(run_id)
+
+        transaction.on_commit(enqueue_delivered)
+    return {"runs": len(delivered_run_ids), "woken": woken}
 
 
 def advance(run_id: int, *, now: datetime | None = None) -> dict[str, int]:
@@ -461,6 +531,26 @@ def expire_pending_decisions(run: Any, *, resolved_by: str) -> int:
         step_runs = step_run_model.objects.lock_if_supported().filter(run=locked_run).order_by("pk")
         for step_run in step_runs:
             expired += _expire_pending_decisions(step_run, resolved_by=resolved_by)
+            expired += _model("Decision").objects.expire_orphaned_suspensions(
+                step_run.pk, resolved_by=resolved_by
+            )
+    return expired
+
+
+def expire_orphaned_decisions(run: Any, *, resolved_by: str) -> int:
+    """Expire only pending retained Decisions whose suspension is no longer active."""
+
+    run_model = _model("WorkflowRun")
+    step_run_model = _model("StepRun")
+    run_id = run.pk if hasattr(run, "pk") else int(run)
+    expired = 0
+    with system_context(reason="workflows.engine.expire_orphaned_decisions"), transaction.atomic():
+        locked_run = run_model.objects.lock_if_supported().get(pk=run_id)
+        step_runs = step_run_model.objects.lock_if_supported().filter(run=locked_run).order_by("pk")
+        for step_run in step_runs:
+            expired += _model("Decision").objects.expire_orphaned_suspensions(
+                step_run.pk, resolved_by=resolved_by
+            )
     return expired
 
 

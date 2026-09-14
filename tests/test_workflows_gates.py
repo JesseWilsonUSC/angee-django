@@ -345,6 +345,89 @@ def test_force_expiry_wakes_retained_decision_continuation(
     assert row.wait_until is not None
 
 
+def test_delivery_expires_departed_suspension_before_failed_rerun(
+    workflow_gate_tables: None,
+    no_workflow_queue: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A broad event cannot leave the prior approval actionable after rerunning its step."""
+
+    del workflow_gate_tables, no_workflow_queue
+    assignee = User.objects.create_user(username="wdc-delivery-retirement")
+
+    def suspend_then_fail(self: HandlerStep, step_run: Any, *, now: Any) -> StepResult:
+        del self, now
+        if step_run.attempt == 1:
+            return StepResult.suspend(
+                decisions=(DecisionSpec(
+                    assignees=(str(to_subject_ref(assignee)),),
+                    action="approve-tool",
+                ),),
+            )
+        raise RuntimeError("rerun failed after delivery")
+
+    monkeypatch.setattr(HandlerStep, "run", suspend_then_fail)
+    workflow = workflow_with_steps(
+        name="Retire delivered suspension",
+        steps=({"key": "handler", "step_class": "handler", "config": {}},),
+        edges=(),
+    )
+    run = start_run(workflow)
+    advance_once(run)
+    execute_started(run)
+    decision = _decision_for(run, "handler")
+
+    assert engine.deliver(run.pk) == {"woken": 1}
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.EXPIRED
+    advance_once(run)
+    execute_started(run)
+    advance_once(run)
+    run.refresh_from_db()
+    assert run.status == workflow_models.RunStatus.FAILED
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.EXPIRED
+
+
+def test_orphan_repair_refuses_current_approval_and_expires_terminal_orphan(
+    workflow_gate_tables: None,
+    no_workflow_queue: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The repair owner leaves an active approval alone and retires it after terminal failure."""
+
+    del workflow_gate_tables, no_workflow_queue
+    assignee = User.objects.create_user(username="wdc-orphan-retirement")
+
+    def suspend(self: HandlerStep, step_run: Any, *, now: Any) -> StepResult:
+        del self, step_run, now
+        return StepResult.suspend(decisions=(DecisionSpec(
+            assignees=(str(to_subject_ref(assignee)),),
+            action="approve-tool",
+        ),))
+
+    monkeypatch.setattr(HandlerStep, "run", suspend)
+    workflow = workflow_with_steps(
+        name="Repair orphaned suspension",
+        steps=({"key": "handler", "step_class": "handler", "config": {}},),
+        edges=(),
+    )
+    run = start_run(workflow)
+    advance_once(run)
+    execute_started(run)
+    decision = _decision_for(run, "handler")
+
+    assert engine.expire_orphaned_decisions(run, resolved_by="test/orphan-repair") == 0
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.PENDING
+    with system_context(reason="test terminal orphan fixture"):
+        run.refresh_from_db()
+        run.mark_failed("Controlled failure after suspension")
+    assert engine.expire_orphaned_decisions(run, resolved_by="test/orphan-repair") == 1
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.EXPIRED
+
+
 def test_resume_after_decisions_scopes_each_single_and_multi_suspension(
     workflow_gate_tables: None,
     no_workflow_queue: None,
