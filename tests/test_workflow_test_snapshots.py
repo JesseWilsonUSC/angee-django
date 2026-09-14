@@ -14,7 +14,8 @@ from django.db import close_old_connections, connection, connections, models, tr
 from django.db.models.signals import post_save
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
-from rebac import system_context, to_subject_ref
+from rebac import RelationshipTuple, system_context, to_subject_ref, write_relationships
+from rebac.resources import to_object_ref
 
 from angee.workflows import engine
 from angee.workflows.attempts import (
@@ -152,6 +153,7 @@ def test_fresh_recovery_reuses_original_child_handoff_across_multiple_failures(
     class FreshChildHandoff(StepImpl):
         failures_remaining = 1
         children: list[int] = []
+        retained_children: list[int] = []
 
         @classmethod
         def recovery_capability(cls, *, attempt: object) -> RecoveryCapability:
@@ -160,6 +162,11 @@ def test_fresh_recovery_reuses_original_child_handoff_across_multiple_failures(
 
         def run(self, step_run: object, *, now: object) -> StepResult:
             del now
+            retained_child = WorkflowRun.objects.retained_child_for_start(
+                step_run, actor=actor, origin=RunOrigin.WORKFLOW,
+            )
+            assert retained_child is not None
+            self.retained_children.append(retained_child.pk)
             retained = engine.start(
                 child_head, subject=None, actor=actor,
                 parent_step_run=step_run, dedup_key="recovery-child:stable",
@@ -186,6 +193,7 @@ def test_fresh_recovery_reuses_original_child_handoff_across_multiple_failures(
     )
     assert second_attempt.result_kind == AttemptResultKind.DONE
     assert FreshChildHandoff.children == [child.pk, child.pk]
+    assert FreshChildHandoff.retained_children == [child.pk, child.pk]
     with system_context(reason="recovery child handoff inspection"):
         retained = list(WorkflowRun.objects.filter(dedup_key="recovery-child:stable"))
         child.refresh_from_db()
@@ -300,11 +308,17 @@ def test_fresh_recovery_keeps_new_downstream_child_on_the_recovery_run(
     class FirstDownstreamHandoff(StepImpl):
         def run(self, step_run: object, *, now: object) -> StepResult:
             del now
+            assert WorkflowRun.objects.retained_child_for_start(
+                step_run, actor=actor, origin=RunOrigin.WORKFLOW,
+            ) is None
             child = engine.start(
                 child_head, subject=None, actor=actor,
                 parent_step_run=step_run, dedup_key="recovery-child:downstream",
                 origin=RunOrigin.WORKFLOW,
             )
+            assert WorkflowRun.objects.retained_child_for_start(
+                step_run, actor=actor, origin=RunOrigin.WORKFLOW,
+            ).pk == child.pk
             return StepResult.done(
                 {"child_id": child.pk}, outcome="done",
                 artifacts=(ArtifactSpec(child, "Downstream child workflow"),),
@@ -334,6 +348,38 @@ def test_fresh_recovery_keeps_new_downstream_child_on_the_recovery_run(
     assert attempt.result_kind == AttemptResultKind.DONE
     assert child.parent_step_run_id == downstream.pk
     assert child.parent_step_run.run.same_execution_lineage(recovery)
+
+
+def test_retained_child_for_start_requires_parent_and_child_read_access(
+    workflow_engine_tables: None,
+    no_workflow_queue: None,
+) -> None:
+    del workflow_engine_tables, no_workflow_queue
+    actor = get_user_model().objects.create_user(username="retained-child-owner")
+    reader = get_user_model().objects.create_user(username="retained-child-reader")
+    source_run, source_step_run, _source_attempt, _child_head, child = _failed_child_handoff(
+        actor=actor, dedup_key="recovery-child:permission",
+    )
+
+    with pytest.raises(PermissionDenied, match="Parent workflow execution is unavailable"):
+        WorkflowRun.objects.retained_child_for_start(
+            source_step_run, actor=reader, origin=RunOrigin.WORKFLOW,
+        )
+    write_relationships([
+        RelationshipTuple(to_object_ref(source_run), "reader", to_subject_ref(reader)),
+    ])
+    with pytest.raises(PermissionDenied, match="Retained child workflow execution is unavailable"):
+        WorkflowRun.objects.retained_child_for_start(
+            source_step_run, actor=reader, origin=RunOrigin.WORKFLOW,
+        )
+
+    write_relationships([
+        RelationshipTuple(to_object_ref(child), "reader", to_subject_ref(reader)),
+    ])
+    retained = WorkflowRun.objects.retained_child_for_start(
+        source_step_run, actor=reader, origin=RunOrigin.WORKFLOW,
+    )
+    assert retained is not None and retained.pk == child.pk
 
 
 def test_repair_test_retains_exact_source_attempt_and_original_input(

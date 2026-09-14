@@ -553,37 +553,10 @@ class WorkflowRunManager(AngeeManager.from_queryset(WorkflowRunQuerySet)):  # ty
         alias = self.db
         workflow_model = self.model._meta.get_field("workflow").remote_field.model
         head_id = workflow.pk if workflow.published_from_id is None else workflow.published_from_id
-        step_run_model = self.model._meta.apps.get_model("workflows", "StepRun")
-        parent_run_id = (
-            None
-            if parent_step_run is None
-            else system_queryset(step_run_model, using=alias, lock=None)
-            .values_list("run_id", flat=True)
-            .get(pk=parent_step_run.pk)
-        )
         with system_context(reason="workflows.runs.start"), transaction.atomic(using=alias):
-            locked_parent = None
-            if parent_run_id is not None:
-                locked_parent_run = system_queryset(
-                    self.model, using=alias, lock=("self",)
-                ).select_related("recovery_source_attempt__step_run").get(pk=parent_run_id)
-                locked_parent = system_queryset(step_run_model, using=alias, lock=("self",)).get(
-                    pk=parent_step_run.pk
-                )
-                if locked_parent.run_id != parent_run_id:
-                    raise OperationalError("Parent workflow step changed while locking.")
-                recovery_source = locked_parent_run.recovery_source_attempt
-                if (
-                    origin == RunOrigin.WORKFLOW
-                    and locked_parent_run.origin == RunOrigin.RECOVERY
-                    and locked_parent_run.recovery_mode == RecoveryMode.FRESH
-                    and recovery_source is not None
-                    and recovery_source.step_run.step_id == locked_parent.step_id
-                    and recovery_source.step_run.map_index == locked_parent.map_index
-                ):
-                    locked_parent = self._fresh_recovery_child_parent(
-                        locked_parent_run, locked_parent, using=alias,
-                    )
+            locked_parent = self._lock_child_parent_for_start(
+                parent_step_run, origin=origin, using=alias,
+            )
             head = system_queryset(workflow_model, using=alias, lock=("self",)).get(pk=head_id)
             locked_trigger = None
             if trigger is not None:
@@ -606,6 +579,76 @@ class WorkflowRunManager(AngeeManager.from_queryset(WorkflowRunQuerySet)):  # ty
                 using=alias,
                 validate_new=validate_new,
             )
+
+    def retained_child_for_start(
+        self, parent_step_run: Any, *, actor: Any, origin: RunOrigin,
+    ) -> Any | None:
+        """Return the readable child retained for one authoritative start slot.
+
+        Recovery normalization is execution provenance only. This lookup grants
+        no authority over the child or its business subject; callers must still
+        validate their immutable domain input before reusing the returned run.
+        """
+
+        alias = self.db
+        step_run_model = self.model._meta.apps.get_model("workflows", "StepRun")
+        parent_run_id = system_queryset(step_run_model, using=alias, lock=None).values_list(
+            "run_id", flat=True,
+        ).get(pk=parent_step_run.pk)
+        readable_runs = read_scoped_queryset(self.model, actor, action="read")
+        if readable_runs is not None:
+            readable_runs = readable_runs.using(alias)
+        if readable_runs is None or not readable_runs.filter(pk=parent_run_id).exists():
+            raise PermissionDenied("Parent workflow execution is unavailable.")
+        with system_context(reason="workflows.runs.retained_child_for_start"), transaction.atomic(using=alias):
+            locked_parent = self._lock_child_parent_for_start(
+                parent_step_run, origin=origin, using=alias,
+            )
+            retained = system_queryset(self.model, using=alias, lock=("self",)).filter(
+                parent_step_run=locked_parent,
+            ).first()
+        if retained is None:
+            return None
+        readable_runs = read_scoped_queryset(self.model, actor, action="read")
+        if readable_runs is not None:
+            readable_runs = readable_runs.using(alias)
+        readable = None if readable_runs is None else readable_runs.filter(pk=retained.pk).first()
+        if readable is None:
+            raise PermissionDenied("Retained child workflow execution is unavailable.")
+        return readable
+
+    def _lock_child_parent_for_start(
+        self, parent_step_run: Any | None, *, origin: RunOrigin | None, using: str,
+    ) -> Any | None:
+        """Lock and normalize the one parent identity accepted by child start."""
+
+        if parent_step_run is None:
+            return None
+        step_run_model = self.model._meta.apps.get_model("workflows", "StepRun")
+        parent_run_id = system_queryset(step_run_model, using=using, lock=None).values_list(
+            "run_id", flat=True,
+        ).get(pk=parent_step_run.pk)
+        locked_parent_run = system_queryset(
+            self.model, using=using, lock=("self",)
+        ).select_related("recovery_source_attempt__step_run").get(pk=parent_run_id)
+        locked_parent = system_queryset(step_run_model, using=using, lock=("self",)).get(
+            pk=parent_step_run.pk,
+        )
+        if locked_parent.run_id != parent_run_id:
+            raise OperationalError("Parent workflow step changed while locking.")
+        recovery_source = locked_parent_run.recovery_source_attempt
+        if (
+            origin == RunOrigin.WORKFLOW
+            and locked_parent_run.origin == RunOrigin.RECOVERY
+            and locked_parent_run.recovery_mode == RecoveryMode.FRESH
+            and recovery_source is not None
+            and recovery_source.step_run.step_id == locked_parent.step_id
+            and recovery_source.step_run.map_index == locked_parent.map_index
+        ):
+            return self._fresh_recovery_child_parent(
+                locked_parent_run, locked_parent, using=using,
+            )
+        return locked_parent
 
     def _fresh_recovery_child_parent(
         self, recovery_run: Any, recovery_step_run: Any, *, using: str,
