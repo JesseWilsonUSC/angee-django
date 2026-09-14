@@ -61,6 +61,13 @@ interface AngeePackageSets {
   source: string[];
 }
 
+// CodeMirror extensions are branded by the @codemirror/state instance that
+// created them. Prebundling a language package while @angee/ui remains linked
+// source creates a second state instance, and EditorState then rejects those
+// extensions. The scoped prefix excludes the complete CodeMirror package graph
+// from optimization without duplicating its transitive package list here.
+const CODEMIRROR_OPTIMIZER_EXCLUDES = ["@codemirror", "codemirror"];
+
 function packageImportEntry(manifest: Record<string, unknown>): string | undefined {
   const exports = manifest.exports;
   const root = typeof exports === "object" && exports !== null
@@ -298,8 +305,11 @@ export async function defineAngeeWebViteConfig({
     // entrypoints are application source: leave them in Vite's transform/HMR
     // pipeline so addon asset imports such as `?url` keep their native meaning.
     optimizeDeps: prebundleAngeePackages
-      ? { include: angeePackages.built, exclude: angeePackages.source }
-      : { exclude: angeePackages.all },
+      ? {
+          include: angeePackages.built,
+          exclude: [...angeePackages.source, ...CODEMIRROR_OPTIMIZER_EXCLUDES],
+        }
+      : { exclude: [...angeePackages.all, ...CODEMIRROR_OPTIMIZER_EXCLUDES] },
     server: {
       host: true,
       ...(uiAllowedHosts ? { allowedHosts: uiAllowedHosts } : {}),
