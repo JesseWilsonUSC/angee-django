@@ -26,7 +26,9 @@ test.describe("shared record access", () => {
     const access = dialog.getByRole("combobox", { name: "Access" });
     await expect(access).toBeEnabled({ timeout: 20_000 });
     await access.click();
-    await expect(page.locator(".z-popover:visible")).toHaveCSS(
+    const accessPositioner = page.locator(".z-popover:visible");
+    await expect(accessPositioner).toHaveCSS("position", "absolute");
+    await expect(accessPositioner).toHaveCSS(
       "z-index",
       "110",
     );
@@ -53,15 +55,32 @@ test.describe("shared record access", () => {
     await notes.shareButton.click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("heading")).toContainText(/^Share /);
-    await dialog
-      .getByRole("button", { name: "Recipient", exact: true })
-      .click();
-    await expect(
-      page.getByRole("option", { name: "Demo Agent", exact: true }),
-    ).toBeVisible({ timeout: 20_000 });
+    const recipient = dialog.getByRole("button", {
+      name: "Recipient",
+      exact: true,
+    });
+    await recipient.click();
+    const demoAgent = page.getByRole("option", {
+      name: "Demo Agent",
+      exact: true,
+    });
+    await expect(demoAgent).toBeVisible({ timeout: 20_000 });
     await expect(
       page.getByRole("option", { name: "Angee Developer", exact: true }),
     ).toBeVisible();
+    await demoAgent.click();
+    await expect(recipient).toContainText("Demo Agent");
+
+    const visibleFields = dialog.getByRole("button", {
+      name: "Visible fields",
+      exact: true,
+    });
+    await visibleFields.click();
+    const menuPositioner = page.locator(".z-popover:visible");
+    await expect(menuPositioner).toHaveCSS("position", "absolute");
+    await expect(menuPositioner).toHaveCSS("z-index", "110");
+    await page.getByRole("menuitemcheckbox", { name: "Access" }).click();
+    await expect(dialog.getByRole("columnheader", { name: "Access" })).toHaveCount(0);
   });
 
   test("agent and custom dashboard records inherit the same Share action", async ({
