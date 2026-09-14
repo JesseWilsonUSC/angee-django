@@ -12,6 +12,7 @@ import type {
   ContextMenuTriggerProps as BaseContextMenuTriggerProps,
 } from "@base-ui/react/context-menu";
 
+import { cn } from "../lib/cn";
 import {
   createMenuRecipe,
   createStyledMenuParts,
@@ -28,6 +29,7 @@ import {
   type MenuShortcutProps,
   type MenuSubmenuTriggerProps,
 } from "./menu-parts";
+import { PORTALED_CONTROL_LAYER } from "./popover";
 
 // ContextMenu adds a styled `trigger` slot; everything else is the shared menu
 // recipe (slots/variants/defaults), owned by `./menu-parts`.
@@ -38,7 +40,12 @@ export const contextMenuVariants = createMenuRecipe({
 export type ContextMenuItemVariant = MenuItemVariant;
 export type ContextMenuRootProps = BaseContextMenuRootProps;
 export type ContextMenuPortalProps = BaseContextMenuPortalProps;
-export type ContextMenuPositionerProps = BaseContextMenuPositionerProps;
+export type ContextMenuPositionerProps = Omit<
+  BaseContextMenuPositionerProps,
+  "className"
+> & {
+  className?: string;
+};
 export type ContextMenuArrowProps = BaseContextMenuArrowProps;
 export type ContextMenuBackdropProps = BaseContextMenuBackdropProps;
 export type ContextMenuGroupProps = BaseContextMenuGroupProps;
@@ -47,12 +54,25 @@ export type ContextMenuSubmenuRootProps = BaseContextMenuSubmenuRootProps;
 
 export const ContextMenuRoot = BaseContextMenu.Root;
 export const ContextMenuPortal = BaseContextMenu.Portal;
-export const ContextMenuPositioner = BaseContextMenu.Positioner;
 export const ContextMenuArrow = BaseContextMenu.Arrow;
 export const ContextMenuBackdrop = BaseContextMenu.Backdrop;
 export const ContextMenuGroup = BaseContextMenu.Group;
 export const ContextMenuRadioGroup = BaseContextMenu.RadioGroup;
 export const ContextMenuSubmenuRoot = BaseContextMenu.SubmenuRoot;
+
+export const ContextMenuPositioner = React.forwardRef<
+  HTMLDivElement,
+  ContextMenuPositionerProps
+>(function ContextMenuPositioner({ className, ...props }, ref) {
+  return (
+    <BaseContextMenu.Positioner
+      ref={ref}
+      className={cn(PORTALED_CONTROL_LAYER, className)}
+      {...props}
+    />
+  );
+});
+ContextMenuPositioner.displayName = "ContextMenuPositioner";
 
 // ContextMenu carries its own styled Trigger slot (Menu/DropdownMenu have none).
 export type ContextMenuTriggerProps = Omit<

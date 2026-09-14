@@ -12,6 +12,7 @@ import type {
   MenuTriggerProps as BaseMenuTriggerProps,
 } from "@base-ui/react/menu";
 
+import { cn } from "../lib/cn";
 import {
   createMenuRecipe,
   createStyledMenuParts,
@@ -28,6 +29,7 @@ import {
   type MenuShortcutProps,
   type MenuSubmenuTriggerProps,
 } from "./menu-parts";
+import { PORTALED_CONTROL_LAYER } from "./popover";
 
 export const dropdownMenuVariants = createMenuRecipe();
 
@@ -37,7 +39,12 @@ export type DropdownMenuRootProps<Payload = unknown> =
 export type DropdownMenuTriggerProps<Payload = unknown> =
   BaseMenuTriggerProps<Payload>;
 export type DropdownMenuPortalProps = BaseMenuPortalProps;
-export type DropdownMenuPositionerProps = BaseMenuPositionerProps;
+export type DropdownMenuPositionerProps = Omit<
+  BaseMenuPositionerProps,
+  "className"
+> & {
+  className?: string;
+};
 export type DropdownMenuArrowProps = BaseMenuArrowProps;
 export type DropdownMenuBackdropProps = BaseMenuBackdropProps;
 export type DropdownMenuGroupProps = BaseMenuGroupProps;
@@ -50,13 +57,26 @@ export type DropdownMenuViewportProps = React.ComponentPropsWithoutRef<
 export const DropdownMenuRoot = BaseMenu.Root;
 export const DropdownMenuTrigger = BaseMenu.Trigger;
 export const DropdownMenuPortal = BaseMenu.Portal;
-export const DropdownMenuPositioner = BaseMenu.Positioner;
 export const DropdownMenuArrow = BaseMenu.Arrow;
 export const DropdownMenuBackdrop = BaseMenu.Backdrop;
 export const DropdownMenuGroup = BaseMenu.Group;
 export const DropdownMenuRadioGroup = BaseMenu.RadioGroup;
 export const DropdownMenuSubmenuRoot = BaseMenu.SubmenuRoot;
 export const DropdownMenuViewport = BaseMenu.Viewport;
+
+export const DropdownMenuPositioner = React.forwardRef<
+  HTMLDivElement,
+  DropdownMenuPositionerProps
+>(function DropdownMenuPositioner({ className, ...props }, ref) {
+  return (
+    <BaseMenu.Positioner
+      ref={ref}
+      className={cn(PORTALED_CONTROL_LAYER, className)}
+      {...props}
+    />
+  );
+});
+DropdownMenuPositioner.displayName = "DropdownMenuPositioner";
 
 // The styled parts shared with ContextMenu, built over the dropdown recipe.
 const parts = createStyledMenuParts(dropdownMenuVariants, "DropdownMenu");
