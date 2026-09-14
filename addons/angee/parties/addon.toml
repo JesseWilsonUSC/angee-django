@@ -9,6 +9,7 @@ depends_on = ["angee.graphql", "angee.iam", "angee.integrate", "angee.storage"]
 dependencies = [
   "django-countries>=9,<10",
   "phonenumbers>=9.0",
+  "pycountry>=26,<27",
 ]
 
 [[migrations]]

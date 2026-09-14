@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pycountry
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.encoding import force_str
@@ -30,6 +31,11 @@ def normalize_country_code(value: Any) -> str:
         return ""
     code = countries.alpha2(candidate) or countries.by_name(candidate)
     if not isinstance(code, str) or not code:
+        try:
+            code = pycountry.countries.lookup(candidate).alpha_2
+        except LookupError:
+            code = ""
+    if not code:
         raise ValidationError(
             "%(value)s is not a recognized country code or name.",
             code="invalid_country",
