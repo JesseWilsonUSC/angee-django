@@ -29,7 +29,8 @@ vi.mock("@angee/ui", async (importOriginal) => {
 });
 
 import type { PendingWorkflowDecision } from "../documents.public";
-import { ApprovalTask } from "./ApprovalTask";
+import { WORKFLOW_DECISION_CONTENT_SLOT } from "../slots";
+import { ApprovalTask, type WorkflowDecisionContentProps } from "./ApprovalTask";
 
 const approval = {
   id: "decision-1",
@@ -164,6 +165,40 @@ describe("ApprovalTask", () => {
     fireEvent.click(screen.getByRole("button", { name: /Complete/ }));
     await waitFor(() => expect(mocks.decide).toHaveBeenCalledWith({
       decision: "decision-1", verdict: "COMPLETE", payload: { action: "reject" },
+    }));
+  });
+
+  test("lets one action specialization use shared values and resolver without generic actions", async () => {
+    function Specialized({ contextValues, values, resolve }: WorkflowDecisionContentProps) {
+      return <div>
+        <span>{String(contextValues.source)}</span>
+        <button type="button" onClick={() => void resolve("COMPLETE", { ...values, action: "use-existing" })}>
+          Use existing supplier
+        </button>
+      </div>;
+    }
+    render(<AppRuntimeProvider runtime={{
+      widgets: defaultWidgets,
+      slots: [{
+        slot: WORKFLOW_DECISION_CONTENT_SLOT,
+        model: "workflows.Decision",
+        impl: "review",
+        id: "test.specialized-review",
+        content: Specialized,
+      }],
+    }}><ApprovalTask approval={{
+      ...approval,
+      payload: { source: "Frozen invoice A", action: "approve" },
+      decision_schema: { type: "object", properties: {
+        source: { type: "string", label: "Source", layout: "context" },
+        action: { type: "string", label: "Action", layout: "input" },
+      } },
+    }} onResolved={() => undefined} /></AppRuntimeProvider>);
+
+    expect(screen.queryByRole("button", { name: "Complete" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Use existing supplier" }));
+    await waitFor(() => expect(mocks.decide).toHaveBeenCalledWith({
+      decision: "decision-1", verdict: "COMPLETE", payload: { action: "use-existing" },
     }));
   });
 
@@ -313,7 +348,7 @@ describe("ApprovalTask", () => {
     rerender(<ApprovalTask approval={{ ...approval, verdict: "EXPIRED", resolution: { confirmed: true } }} onResolved={() => undefined} />);
 
     expect(screen.getByText("This approval is no longer pending.")).toBeTruthy();
-    expect(JSON.parse((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value)).toEqual({ confirmed: true });
+    expect((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value).toBe('{\n  "note": "mine"\n}');
     expect((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).readOnly).toBe(true);
     expect(screen.queryByRole("button", { name: /Complete/ })).toBeNull();
   });

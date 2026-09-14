@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -16,14 +16,29 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 /** Inline PDF viewer: one page at a time from `file.url`, with paging when the
  * document has more than one. react-pdf owns the fetch and its own
  * loading/error surfaces. */
-export default function PdfPreview({ file }: PreviewProviderProps): ReactElement {
+export default function PdfPreview({ file, page: sourcePage }: PreviewProviderProps): ReactElement {
   const t = useStorageT();
   const [pageCount, setPageCount] = useState(0);
-  const [page, setPage] = useState(1);
+  const requestedPage = typeof sourcePage === "number" && Number.isInteger(sourcePage) && sourcePage > 0 ? sourcePage : 1;
+  const [page, setPage] = useState(requestedPage);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState<number>();
+  useEffect(() => {
+    setPage(pageCount ? Math.min(requestedPage, pageCount) : requestedPage);
+  }, [requestedPage, pageCount]);
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setWidth(Math.max(1, entry.contentRect.width));
+    });
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div className="flex h-full flex-col bg-inset">
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div ref={viewportRef} className="min-h-0 flex-1 overflow-auto p-4">
         <Document
           file={file.url}
           onLoadSuccess={({ numPages }) => {
@@ -40,7 +55,7 @@ export default function PdfPreview({ file }: PreviewProviderProps): ReactElement
           }
           className="grid place-content-center"
         >
-          <Page pageNumber={page} className="shadow-sm" />
+          <Page pageNumber={page} width={width} className="shadow-sm" />
         </Document>
       </div>
       {pageCount > 1 ? (

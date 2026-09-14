@@ -44,6 +44,7 @@ from angee.workflows_ocr.service import (
     _merge,
     _unchanged_claims,
     extract,
+    json_pointer_value,
     model_deployment_identity,
     reextract,
     revise,
@@ -57,6 +58,12 @@ from tests.test_agents_graphql import AGENTS_GRAPHQL_MODELS
 from tests.test_integrate_vcs import VCS_TEST_MODELS
 from tests.test_messaging import MESSAGING_TEST_MODELS
 from tests.workflows import Decision, Step, StepRun, Workflow, WorkflowRun
+
+
+def test_json_pointer_value_resolves_rfc6901_tokens_and_rejects_missing() -> None:
+    assert json_pointer_value({"vendor/name": {"tax~id": "CZ123"}}, "/vendor~1name/tax~0id") == "CZ123"
+    with pytest.raises(KeyError):
+        json_pointer_value({"vendor": {}}, "/vendor/name")
 
 
 @pytest.fixture()

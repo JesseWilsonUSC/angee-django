@@ -321,7 +321,7 @@ function ConsoleWorkbench({
           </Drawer.Content>
         </Drawer.Portal>
       </Drawer.Root>
-      <Drawer.Root
+      {!largeViewport ? <Drawer.Root
         open={showChatter && !largeViewport && compactChatterOpen}
         onOpenChange={setCompactChatterOpen}
       >
@@ -337,7 +337,7 @@ function ConsoleWorkbench({
             </ControlBandProvider>
           </Drawer.Content>
         </Drawer.Portal>
-      </Drawer.Root>
+      </Drawer.Root> : null}
     </>
   );
 }

@@ -133,7 +133,10 @@ export function ResourceListBody<TRow extends Row = Row>({
   // A record is open when an id is selected or a create was requested.
   const open = hasRecordSurface && (resolvedCreating || resolvedRecordId != null);
   const editId = resolvedCreating ? null : resolvedRecordId ?? null;
-  const clearSelection = React.useCallback(() => handleSelectRecord?.(null), [handleSelectRecord]);
+  const clearSelection = React.useCallback(() => {
+    if (handleCloseRecord) handleCloseRecord();
+    else handleSelectRecord?.(null);
+  }, [handleCloseRecord, handleSelectRecord]);
   const {
     selectRecord,
     retainLocalList,
@@ -296,7 +299,7 @@ export function ResourceListBody<TRow extends Row = Row>({
     />
   ) : null;
   const recordContent = renderRecord && !resolvedCreating
-    ? renderRecord({ recordId: editId })
+    ? renderRecord({ recordId: editId, navigation: recordNavigation, onClose: clearSelection })
     : recordForm;
 
   if (placement === "split") {

@@ -26,6 +26,8 @@ export interface PreviewFile {
 
 export interface PreviewProviderProps {
   file: PreviewFile;
+  /** One-based source page to reveal, when the renderer supports pages. */
+  page?: number | null;
   /** Normalised mime resolved by `PreviewPane` (always a concrete string). */
   mime: string;
 }

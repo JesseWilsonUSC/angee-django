@@ -209,6 +209,16 @@ history uses native Query pages with domain-owned
   projection, route transitions, DnD policy, and domain actions. Page tests use
   `ShellPageTestProviders`, `PrimaryPaneTestHost`, and `ChatterTabsTestHost`
   from `@angee/app/testing` instead of hand-rolled shell provider wrappers.
+- Chatter publishers compose by owner for their mounted lifetime. Panels mount
+  lazily when first visited and then remain mounted for that record, so a shared
+  `useRecordPeek` Records tab can open evidence without discarding draft input
+  in another panel; unmounting the temporary peek must leave other publishers'
+  tabs and composer intact.
+- Human-in-the-loop queues use the resource page shell for filtering, grouping,
+  paging, record selection, and URL state. The workflows Decision inbox keeps
+  `ApprovalTask` as the sole form and mutation owner and specializes only its
+  content slot by Decision action; resolving closes the stale row so the native
+  filtered collection refreshes before selecting the next current record.
 - **Routed page components are code-split.** In an addon manifest give each
   routed page `component: lazyRouteComponent(() => import("./views/Page"),
   "Page")` (the stack-native helper from `@tanstack/react-router`, already a

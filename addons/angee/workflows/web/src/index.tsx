@@ -16,7 +16,7 @@ import {
 
 import { enWorkflowsMessages } from "./i18n";
 import { RunWorkflowMenu } from "./RunWorkflowMenu";
-export { WORKFLOW_TRIGGER_FORM_FIELDS_SLOT } from "./slots";
+export { WORKFLOW_DECISION_CONTENT_SLOT, WORKFLOW_TRIGGER_FORM_FIELDS_SLOT } from "./slots";
 
 import { CHATTER_TAB_SEARCH_KEY } from "@angee/ui";
 import { DECISION_SEARCH_KEY, WORKFLOW_RUN_SEARCH_KEY } from "./decision-navigation";
@@ -39,12 +39,12 @@ const workflowsRoutes: readonly BaseAddonRoute[] = [
     "workflows.WorkflowRun",
     { detailName: "workflows.run" },
   ),
-  {
-    name: "workflows.inbox",
-    path: "/workflows/inbox",
-    layout: "console",
-    component: lazyRouteComponent(() => import("./views/InboxPage"), "InboxPage"),
-  },
+  ...resourcePageRoutes(
+    "workflows.inbox",
+    "/workflows/inbox",
+    lazyRouteComponent(() => import("./views/InboxPage"), "InboxPage"),
+    "workflows.Decision",
+  ),
 ];
 
 const workflowsMenu: readonly BaseMenuItem[] = [
@@ -106,7 +106,7 @@ const workflows = defineBaseAddon({
 
 export default workflows;
 export { ApprovalTask } from "./views/ApprovalTask";
-export type { ApprovalTaskProps } from "./views/ApprovalTask";
+export type { ApprovalTaskProps, ApprovalVerdict, WorkflowDecisionContentProps, WorkflowDecisionRecordReference } from "./views/ApprovalTask";
 export { WorkflowApprovals } from "./views/WorkflowApprovals";
 export type { WorkflowApprovalsProps } from "./views/WorkflowApprovals";
 export { useWorkflowsT } from "./i18n";

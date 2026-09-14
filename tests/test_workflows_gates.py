@@ -551,6 +551,50 @@ def test_nested_decision_schema_validates_objects_and_array_rows_before_round_tr
     assert decision.resolution == resolution
 
 
+def test_decision_schema_enforces_resolution_conditional_requirements(
+    workflow_gate_tables: None,
+    no_workflow_queue: None,
+) -> None:
+    """The native Decision owner gates inputs selected by the submitted action."""
+
+    del workflow_gate_tables, no_workflow_queue
+    assignee = User.objects.create_user(username="wdc-conditional-schema-assignee")
+    schema = {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+            "action": {"enum": ["approve", "reject"]},
+            "party_id": {"type": "string", "minLength": 1, "pattern": r".*\S.*"},
+        },
+        "allOf": [{
+            "if": {"properties": {"action": {"const": "approve"}}, "required": ["action"]},
+            "then": {"required": ["party_id"]},
+        }],
+    }
+    workflow = workflow_with_steps(
+        name="Conditional schema gate",
+        steps=({
+            "key": "gate", "step_class": "gate",
+            "config": _gate_config([assignee], None, [], decision_schema=schema),
+        },),
+        edges=(),
+    )
+    decision = _decision_for(_open_gate_run(workflow), "gate")
+
+    engine.decide(decision, "complete", payload={"action": "approve"}, actor=assignee)
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.PENDING
+
+    engine.decide(decision, "complete", payload={"action": "approve", "party_id": ""}, actor=assignee)
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.PENDING
+
+    engine.decide(decision, "complete", payload={"action": "reject"}, actor=assignee)
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.COMPLETED
+    assert decision.resolution["action"] == "reject"
+
+
 def test_decision_mapping_schema_enforces_authored_constraints_after_normalization(
     monkeypatch: Any,
 ) -> None:
@@ -805,6 +849,8 @@ def test_public_schema_exposes_decision_resource_decide_mutation_and_subscriptio
     assert "decisionChanged" in sdl
     assert "target_model" in sdl
     assert "target_id" in sdl
+    target_section = sdl.split("type WorkflowArtifactTarget", 1)[1].split("type ", 1)[0]
+    assert "label: String" in target_section
 
     workflows_schema = importlib.import_module("angee.workflows.schema")
     parts = {key: tuple(workflows_schema.schemas["public"].get(key, ())) for key in SCHEMA_PART_KEYS}

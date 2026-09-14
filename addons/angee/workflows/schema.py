@@ -1007,6 +1007,7 @@ class WorkflowArtifactTarget:
     model: str
     id: PublicID
     tab: str | None = None
+    label: str | None = None
 
     @classmethod
     def for_decision(cls, decision: Any, info: strawberry.Info) -> WorkflowArtifactTarget | None:
@@ -1031,9 +1032,12 @@ class WorkflowArtifactTarget:
         except (LookupError, ValueError):
             return None
         scoped = read_scoped_queryset(model, actor, action="read")
-        if scoped is None or instance_for_id(model, target_id, queryset=scoped) is None:
+        target = instance_for_id(model, target_id, queryset=scoped) if scoped is not None else None
+        if target is None:
             return None
-        return cls(model=model_label, id=cast(PublicID, target_id), tab=tab or None)
+        with actor_context(actor):
+            label = str(target)
+        return cls(model=model_label, id=cast(PublicID, target_id), tab=tab or None, label=label)
 
 
 def _public_subject_value(value: str) -> str:
@@ -1742,7 +1746,11 @@ _DECISION_RESOURCE = hasura_model_resource(
     filterable=[
         "id",
         "step_run",
+        "step_run__step",
+        "step_run__step__name",
         "step_run__run",
+        "step_run__run__workflow",
+        "step_run__run__workflow__name",
         "suspension_attempt",
         "priority",
         "action",
@@ -1756,6 +1764,8 @@ _DECISION_RESOURCE = hasura_model_resource(
     ],
     sortable=[
         "step_run",
+        "step_run__step",
+        "step_run__step__name",
         "priority",
         "action",
         "verdict",
@@ -1763,16 +1773,24 @@ _DECISION_RESOURCE = hasura_model_resource(
         "escalate_at",
         "created_at",
         "updated_at",
+        "step_run__run__workflow",
+        "step_run__run__workflow__name",
     ],
     aggregatable=["id", "priority", "attempts"],
-    groupable=["step_run", "action", "verdict", "updated_at"],
+    groupable=[
+        "step_run", "step_run__step", "step_run__step__name",
+        "step_run__run__workflow", "step_run__run__workflow__name",
+        "action", "verdict", "updated_at",
+    ],
     insert=False,
     update=False,
     delete=False,
     get_queryset=_read_resource_queryset(Decision),
     field_id_decode={
         "step_run": public_pk_decoder(StepRun),
+        "step_run__step": public_pk_decoder(Step),
         "step_run__run": public_pk_decoder(WorkflowRun),
+        "step_run__run__workflow": public_pk_decoder(Workflow),
         "suspension_attempt": public_pk_decoder(StepAttempt),
     },
 )
@@ -1783,7 +1801,11 @@ _PUBLIC_DECISION_RESOURCE = hasura_model_resource(
     filterable=[
         "id",
         "step_run",
+        "step_run__step",
+        "step_run__step__name",
         "step_run__run",
+        "step_run__run__workflow",
+        "step_run__run__workflow__name",
         "suspension_attempt",
         "priority",
         "action",
@@ -1797,22 +1819,32 @@ _PUBLIC_DECISION_RESOURCE = hasura_model_resource(
     ],
     sortable=[
         "priority",
+        "step_run__step",
+        "step_run__step__name",
         "action",
         "verdict",
         "expires_at",
         "escalate_at",
         "created_at",
         "updated_at",
+        "step_run__run__workflow",
+        "step_run__run__workflow__name",
     ],
     aggregatable=["id", "priority", "attempts"],
-    groupable=["action", "verdict", "updated_at"],
+    groupable=[
+        "step_run__step", "step_run__step__name",
+        "step_run__run__workflow", "step_run__run__workflow__name",
+        "action", "verdict", "updated_at",
+    ],
     insert=False,
     update=False,
     delete=False,
     get_queryset=_read_resource_queryset(Decision),
     field_id_decode={
         "step_run": public_pk_decoder(StepRun),
+        "step_run__step": public_pk_decoder(Step),
         "step_run__run": public_pk_decoder(WorkflowRun),
+        "step_run__run__workflow": public_pk_decoder(Workflow),
         "suspension_attempt": public_pk_decoder(StepAttempt),
     },
 )

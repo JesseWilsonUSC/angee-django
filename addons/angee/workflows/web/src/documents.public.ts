@@ -21,10 +21,10 @@ export const DecideWorkflowDecisionDocument = graphql(`
 export const WorkflowDecisionDocument = graphql(`
   query WorkflowDecision($id: String!) {
     workflow_decisions(where: {id: {_eq: $id}}, limit: 1) {
-      id action priority payload verdict resolution attempts max_attempts
+      id action priority payload verdict resolution resolved_by attempts max_attempts
       expires_at escalate_at decision_schema workflow_name step_name
       source_run_id source_execution_id source_attempt_id created_at updated_at
-      target_reference { model id tab }
+      target_reference { model id tab label }
     }
   }
 `);
@@ -41,6 +41,7 @@ export const ScopedWorkflowDecisionDocument = graphql(`
       payload
       verdict
       resolution
+      resolved_by
       attempts
       max_attempts
       expires_at
@@ -53,7 +54,7 @@ export const ScopedWorkflowDecisionDocument = graphql(`
       source_attempt_id
       created_at
       updated_at
-      target_reference { model id tab }
+      target_reference { model id tab label }
     }
   }
 `);
@@ -64,10 +65,10 @@ export const TargetedWorkflowDecisionDocument = graphql(`
       where: {id: {_eq: $id}, target_model: {_eq: $targetModel}, target_id: {_eq: $targetId}}
       limit: 1
     ) {
-      id action priority payload verdict resolution attempts max_attempts
+      id action priority payload verdict resolution resolved_by attempts max_attempts
       expires_at escalate_at decision_schema workflow_name step_name
       source_run_id source_execution_id source_attempt_id created_at updated_at
-      target_reference { model id tab }
+      target_reference { model id tab label }
     }
   }
 `);
@@ -77,10 +78,10 @@ export const TargetedTabWorkflowDecisionDocument = graphql(`
       where: {id: {_eq: $id}, target_model: {_eq: $targetModel}, target_id: {_eq: $targetId}, target_tab: {_eq: $targetTab}}
       limit: 1
     ) {
-      id action priority payload verdict resolution attempts max_attempts
+      id action priority payload verdict resolution resolved_by attempts max_attempts
       expires_at escalate_at decision_schema workflow_name step_name
       source_run_id source_execution_id source_attempt_id created_at updated_at
-      target_reference { model id tab }
+      target_reference { model id tab label }
     }
   }
 `);

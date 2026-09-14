@@ -148,17 +148,7 @@ export function Chatter({
             </Tabs.Tab>
           ))}
         </Tabs.List>
-        {resolvedTabs.map((tab) => (
-          <Tabs.Panel key={tab.id} value={tab.id} className="min-h-0 flex-1">
-            <ScrollArea
-              className="h-full"
-              viewportClassName={cn("overflow-x-hidden p-4", tab.panelClassName)}
-              contentClassName="min-w-0 max-w-full"
-            >
-              {tab.children}
-            </ScrollArea>
-          </Tabs.Panel>
-        ))}
+        <ChatterPanels key={viewContext.pathname} tabs={resolvedTabs} active={active} />
       </Tabs>
       {resolvedComposer ? (
         <div className="min-w-0 shrink-0 overflow-hidden border-t border-border-subtle p-3">
@@ -167,6 +157,25 @@ export function Chatter({
       ) : null}
     </aside>
   );
+}
+
+/** Visit lazily, then retain this record's draft input while peeking at sources. */
+function ChatterPanels({ tabs, active }: { tabs: readonly ChatterTab[]; active: string }): React.ReactElement {
+  const [visited, setVisited] = React.useState<readonly string[]>([active]);
+  React.useEffect(() => {
+    setVisited((current) => current.includes(active) ? current : [...current, active]);
+  }, [active]);
+  return <>{tabs.map((tab) => (
+    <Tabs.Panel key={tab.id} value={tab.id} keepMounted={visited.includes(tab.id)} className="min-h-0 flex-1">
+      <ScrollArea
+        className="h-full"
+        viewportClassName={cn("overflow-x-hidden p-4", tab.panelClassName)}
+        contentClassName="min-w-0 max-w-full"
+      >
+        {tab.children}
+      </ScrollArea>
+    </Tabs.Panel>
+  ))}</>;
 }
 
 function contributionMatches(

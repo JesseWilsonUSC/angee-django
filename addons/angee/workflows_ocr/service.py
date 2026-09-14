@@ -472,6 +472,15 @@ def _unchanged_claims(claims: Any, *, before: Any, after: Any) -> dict[str, Any]
 _MISSING = object()
 
 
+def json_pointer_value(value: Any, pointer: str) -> Any:
+    """Resolve one RFC 6901 pointer or raise ``KeyError`` when it is invalid or absent."""
+
+    resolved = _json_pointer_value(value, pointer)
+    if resolved is _MISSING:
+        raise KeyError(pointer)
+    return resolved
+
+
 def _json_pointer_value(
     value: Any, pointer: str, *, array_element_baseline: Any = _MISSING,
 ) -> Any:

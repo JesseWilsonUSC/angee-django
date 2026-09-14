@@ -84,8 +84,8 @@ export function ChatterProvider({
   >(null);
   const [activeTab, setActiveTab] = useState<ChatterTabId>(defaultTab);
   const [contentState, setContentState] = useState<
-    (ChatterContent & { owner: symbol }) | null
-  >(null);
+    readonly (ChatterContent & { owner: symbol })[]
+  >([]);
 
   const registerSecondaryController = useCallback(
     (controller: ChatterPaneController | null) => {
@@ -125,23 +125,25 @@ export function ChatterProvider({
     (owner: symbol, content: ChatterContent | null) => {
       const next = normalizeChatterContent(content);
       setContentState((current) => {
+        const previous = current.find((entry) => entry.owner === owner);
         if (next) {
-          if (current?.owner === owner && sameChatterContent(current, next)) {
+          if (previous && sameChatterContent(previous, next)) {
             return current;
           }
-          return { ...next, owner };
+          return [...current.filter((entry) => entry.owner !== owner), { ...next, owner }];
         }
-        return current?.owner === owner ? null : current;
+        return previous ? current.filter((entry) => entry.owner !== owner) : current;
       });
     },
     [],
   );
   const content = useMemo<ChatterContent | null>(() => {
-    if (!contentState) return null;
+    if (!contentState.length) return null;
+    const composer = contentState.findLast((entry) => entry.composer !== undefined)?.composer;
     return {
-      ...(contentState.tabs !== undefined ? { tabs: contentState.tabs } : {}),
-      ...(contentState.composer !== undefined
-        ? { composer: contentState.composer }
+      tabs: contentState.flatMap((entry) => entry.tabs ?? []),
+      ...(composer !== undefined
+        ? { composer }
         : {}),
     };
   }, [contentState]);

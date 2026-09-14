@@ -63,6 +63,8 @@ export type {
 } from "./form-view-surface";
 
 export interface FormViewProps extends UseFormViewSurfaceProps {
+  /** Suppress contributed record toolbar controls in a passive embedded peek. */
+  hideRecordChrome?: boolean;
   /** Publish this routed record's representation into the current breadcrumb. */
   publishBreadcrumbLabel?: boolean;
   /** Override the record heading from the same live create/edit form context. */
@@ -279,7 +281,7 @@ function FormViewInstance(props: FormViewProps): React.ReactElement {
       </div>
       <div className="min-w-2 flex-1" />
       <div className="flex min-w-max shrink-0 items-center gap-2">
-        {recordChromeContext ? (
+        {recordChromeContext && !props.hideRecordChrome ? (
           <RecordChrome value={recordChromeContext} />
         ) : null}
         {toolbar}

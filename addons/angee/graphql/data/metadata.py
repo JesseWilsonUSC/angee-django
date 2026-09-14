@@ -887,9 +887,16 @@ def _relation_label_axes(
     model: type[models.Model],
     group_by_fields: tuple[str, ...],
 ) -> dict[str, str]:
-    """Return relation label axes keyed by their direct relation axis."""
+    """Return scalar label axes keyed by their longest grouped relation prefix."""
 
-    direct_axes = {path for path in group_by_fields if "__" not in path}
+    relation_axes: set[str] = set()
+    for path in group_by_fields:
+        try:
+            field = require_field_for_path(model, path)
+        except FieldPathError:
+            continue
+        if is_to_one_relation(field):
+            relation_axes.add(path)
     label_axes: dict[str, str] = {}
     for path in group_by_fields:
         if "__" not in path:
@@ -903,18 +910,16 @@ def _relation_label_axes(
             # label for the first relation in the path. Advertising it as a
             # label axis makes clients select the object as a bare leaf.
             continue
-        relation, _leaf = path.split("__", 1)
-        try:
-            field = model._meta.get_field(relation)
-        except FieldDoesNotExist:
-            continue
-        if not is_to_one_relation(field):
-            continue
-        if relation not in direct_axes:
+        prefixes = tuple(
+            axis for axis in relation_axes if path.startswith(f"{axis}__")
+        )
+        if not prefixes:
+            relation = path.rsplit("__", 1)[0]
             raise ImproperlyConfigured(
                 f"resource metadata for {model._meta.label} relation label axis '{path}' "
-                f"requires matching direct relation group axis '{relation}'."
+                f"requires matching relation group axis '{relation}'."
             )
+        relation = max(prefixes, key=lambda item: item.count("__"))
         existing = label_axes.get(relation)
         if existing is not None and existing != path:
             raise ImproperlyConfigured(

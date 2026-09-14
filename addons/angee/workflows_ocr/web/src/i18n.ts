@@ -7,6 +7,7 @@ export const enWorkflowsOcrMessages = {
   "sources": "Sources",
   "source": "Source {number}",
   "sourceHash": "Content hash",
+  "sourceBinding": "Exact source reference",
   "openFile": "Open file",
   "openMessage": "Open message",
   "result": "Extracted result",

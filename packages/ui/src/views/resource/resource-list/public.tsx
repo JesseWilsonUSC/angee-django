@@ -9,10 +9,11 @@ import type { RegisteredForm } from "../../form/registered-form";
 import { RoutedRecordController } from "../resource-routing";
 import { useResourceViewMaybe, withResourceViewScope } from "../resource-view-context";
 import { initialResourceSorting } from "../resource-view-codecs";
-import { type ResourceViewDefaultGroups, type ResourceViewGroup, type ResourceViewKind } from "../resource-view-model";
+import { type ResourceViewDefaultGroups, type ResourceViewFilter, type ResourceViewGroup, type ResourceViewKind } from "../resource-view-model";
 import type { ListViewNavigationScope } from "../resource-view-surface";
 import type { BoardLaneSource } from "../resource-view-types";
 import type { Occurrence } from "../../calendar/CalendarView";
+import type { RecordNavigation } from "../RecordPager";
 import type { AnyCalendarWindowSource } from "../../calendar/use-calendar-window";
 import { type ActionDescriptor, type FacetDescriptor, type GroupDescriptor } from "../../page";
 import { ResourceListBody } from "./body";
@@ -22,6 +23,8 @@ export type ResourceRecordPlacement = "inline" | "drawer" | "split";
 
 export interface ResourceRecordRenderContext {
   recordId: string | null;
+  navigation: RecordNavigation | null;
+  onClose: () => void;
 }
 
 export interface ResourceListSplitLayout {
@@ -116,6 +119,8 @@ export interface ResourceListProps<TRow extends Row = Row> {
   /** List options forwarded to `ListView`. */
   presentation?: ListViewProps<TRow>["presentation"];
   baseFilter?: ListViewProps<TRow>["baseFilter"];
+  /** Initial editable filter for a new view; route state and saved views remain authoritative thereafter. */
+  defaultFilter?: ResourceViewFilter;
   filterOptions?: ListViewProps<TRow>["filterOptions"];
   facets?: ListViewProps<TRow>["facets"];
   customFilterFields?: ListViewProps<TRow>["customFilterFields"];
@@ -208,6 +213,7 @@ export interface ResourceRecordController<TRow extends Row = Row> {
 export function ResourceList<TRow extends Row = Row>({
   pageSize,
   defaultView,
+  defaultFilter,
   defaultGroup,
   defaultGroups,
   children,
@@ -240,8 +246,9 @@ export function ResourceList<TRow extends Row = Row>({
       pageSize: initialPageSize,
       view: initialDefaultView,
       sorting: initialResourceSorting(modelMetadata, initialOrder),
+      filter: defaultFilter,
     }),
-    [initialDefaultView, initialPageSize, initialOrder, modelMetadata],
+    [defaultFilter, initialDefaultView, initialPageSize, initialOrder, modelMetadata],
   );
   return withResourceViewScope({
     ambient: resourceView,

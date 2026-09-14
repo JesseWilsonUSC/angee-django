@@ -136,7 +136,9 @@ test("cold Files navigation preserves the real shell, tree, pager and active Det
   expect(trash.disabled).toBe(false);
   expect(control?.contains(trash)).toBe(true);
   expect(update).not.toHaveBeenCalled();
-  expect(getOne).toHaveBeenCalledTimes(2);
+  // The initial compact server snapshot remounts once at the desktop breakpoint;
+  // subsequent record navigation owns one form read per id.
+  expect(getOne.mock.calls.map(([request]) => String(request.id))).toEqual(["file-a", "file-a", "file-b"]);
 
   for (const missing of [false, true]) {
     const id = missing ? "file-missing" : "file-denied";
