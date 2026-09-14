@@ -5,6 +5,7 @@
 // `@angee/refine` at the call site — no document is authored here.
 
 import { graphql, type DocumentType } from "@angee/gql/console";
+import { jsonObjectFromUnknown, type JsonObject } from "@angee/ui";
 import * as v from "valibot";
 
 // The browser-reachable chat endpoint for a running agent: the routed WebSocket URL
@@ -140,6 +141,13 @@ export interface AgentChatView extends Record<string, unknown> {
   sqid?: string;
   sqids?: string[];
   params?: Record<string, unknown>;
+}
+
+/** Normalize the view envelope once where an authored JSON variable consumes it. */
+export function agentChatViewInput(view: AgentChatView): JsonObject {
+  const input = jsonObjectFromUnknown(view);
+  if (input === undefined) throw new TypeError("Agent chat view must be a JSON object.");
+  return input;
 }
 
 // Resolve which agent serves the user's current view (the side chatter). Returns the

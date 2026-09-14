@@ -8,6 +8,7 @@ import { Link } from "@tanstack/react-router";
 import { useAgentsT } from "../i18n";
 import {
   ResolveSessionForView,
+  agentChatViewInput,
   type AgentChatView,
 } from "../documents";
 import { KeptAliveAgents, useOpenedAgents } from "./useOpenedAgents";
@@ -60,7 +61,7 @@ export function AgentChatterPane({
 
   const sessionQuery = useAuthoredQuery(
     ResolveSessionForView,
-    { view: resolveView },
+    { view: agentChatViewInput(resolveView) },
     { models: ["agents.Agent", "agents.AgentSession"] },
   );
   const session = sessionQuery.data?.resolve_session_for_view ?? null;
