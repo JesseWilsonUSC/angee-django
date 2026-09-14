@@ -78,11 +78,13 @@ describe("projects addon manifest", () => {
     // No `stage`: it is queue-scoped and the picker is not, so the dialog would
     // offer stages the server rejects at submit. Lane presets still carry it.
     expect(names).not.toContain("stage");
+    // No `queue` either: a board or cycle passes it through `createDefaults`, and
+    // any other create files the task in the creator's own queue.
+    expect(names).not.toContain("queue");
     expect(names).toEqual([
       "title",
       "note",
       "project",
-      "queue",
       "assignee",
       "priority",
       "due_date",
