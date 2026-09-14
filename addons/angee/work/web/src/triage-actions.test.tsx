@@ -3,6 +3,10 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
+vi.mock("@angee/projects", () => ({
+  TASK_MODEL: "projects.Task",
+}));
+
 vi.mock("@angee/ui", () => ({
   ActionFormDialog: () => null,
   Button: () => null,

@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@angee/projects", () => ({
+  TASK_MODEL: "projects.Task",
+  TaskBoardSurface: ({ children }: { children?: React.ReactNode }) => (
+    <>{children}</>
+  ),
   useTaskFormDeclaration: () => null,
 }));
 
