@@ -62,9 +62,19 @@ test.describe("shared record access", () => {
     await firstTask.click();
     await expect(share).toBeEnabled();
     await share.click();
-    await expect(page.getByRole("dialog", {
-      name: "Share 1 selected record",
-    })).toBeVisible();
+    const dialog = page.getByRole("dialog", { name: "Share Task" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("combobox", { name: "Access" })).toBeEnabled({
+      timeout: 20_000,
+    });
+    await dialog.getByRole("button", { name: "Close" }).click();
+
+    await page.getByRole("link", { name: /^Open / }).first().click();
+    await expect(page).toHaveURL(/\/projects\/tasks\/[^/?]+/);
+    await expect(page.getByRole("button", {
+      name: "Share",
+      exact: true,
+    })).toHaveCount(1);
   });
 
   test("record chrome shows one shared action and offers agent service users", async ({
