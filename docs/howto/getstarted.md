@@ -286,7 +286,7 @@ To put a Claude Code agent to work on the framework itself:
    `{"flavor": "dev"}`. The seeded *Framework Dev Agent* under Agents →
    Templates shows the reference shape.
 3. **Provision** the record: the operator cuts the agent its own src workspace
-   (worktrees on a `workspace/<agent>` branch) and builds its container — a
+   (worktrees on a `<stack>/<agent>` branch) and builds its container — a
    few minutes the first time.
 4. Work with it in the **Chat** on its session page, or hands-on inside the
    same workspace over `docker compose exec` (the dev flavor ships the
@@ -347,7 +347,9 @@ migrate, sync permissions, load data, check GraphQL SDL), drive its `manage.py`
 through `uv` from the controlling stack root. [Checks](../checks.md#composition-and-schema)
 owns the prerequisites and ordering. To work on a change in
 isolation, create a src-style workspace — the consolidated framework source and
-optional external sources are pinned to `workspace/<name>`:
+optional external sources are pinned to `<stack>/<name>`, the stack's name being
+the branch namespace so stacks sharing one source cache or one fork never
+collide (shared work declares a `feature/<topic>` branch instead):
 
 ```sh
 # Resolve angee_root with .agents/skills/angee-workspace/SKILL.md.

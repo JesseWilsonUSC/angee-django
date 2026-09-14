@@ -354,6 +354,7 @@ def _render_dev_stack(
     work_state_source: str = "",
     work_state_repo: str = "",
     work_state_ref: str = "main",
+    sources_home: str = "",
     celery_queues: str = "",
     enable_ollama: bool = False,
     ollama_port: str = "11434",
@@ -392,6 +393,7 @@ def _render_dev_stack(
         "project_path": project_path,
         "redis_port": "6379",
         "runtime_mode": _runtime_mode,
+        "sources_home": sources_home,
         "storybook_port": "6006",
         "ui_port": "5173",
         "web_path": "web",
@@ -1004,8 +1006,10 @@ def test_dev_stack_declares_the_framework_sources_and_the_src_workspace() -> Non
     assert wired["workspaces"]["src"]["inputs"] == {"work_state_source": "work-angee"}
     # ...and every OTHER src-template workspace inherits the binding through the
     # stack's workspace_defaults, so `ws create --template src` needs no --input.
+    # The same block always carries the stack's name as the workspace branch
+    # prefix, so every workspace branch is `<stack>/<workspace>`.
     assert wired["workspace_defaults"] == {
-        "workspaces/src": {"inputs": {"work_state_source": "work-angee"}}
+        "workspaces/src": {"inputs": {"branch_prefix": "app", "work_state_source": "work-angee"}}
     }
     assert wired["sources"]["work-angee"] == {
         "kind": "git",
@@ -1027,14 +1031,15 @@ def test_dev_stack_declares_the_framework_sources_and_the_src_workspace() -> Non
     name_only = _render_dev_stack(work_state_source="work-angee")
     assert name_only["workspaces"]["src"]["inputs"] == {"work_state_source": "work-angee"}
     assert name_only["workspace_defaults"] == {
-        "workspaces/src": {"inputs": {"work_state_source": "work-angee"}}
+        "workspaces/src": {"inputs": {"branch_prefix": "app", "work_state_source": "work-angee"}}
     }
     assert "work-angee" not in name_only["sources"]
 
     # Repo only (no name): nothing to key the source on, so no work-state wiring.
     repo_only = _render_dev_stack(work_state_repo="git@github.com:ang-ee/work-angee.git")
     assert "inputs" not in repo_only["workspaces"]["src"]
-    assert "workspace_defaults" not in repo_only
+    # No work-state binding, but the branch-prefix default is unconditional.
+    assert repo_only["workspace_defaults"] == {"workspaces/src": {"inputs": {"branch_prefix": "app"}}}
     assert set(repo_only["sources"]) == {"app", "framework", "angee"}
 
     # The local docker instance keeps its own source story (framework checkout at
@@ -1044,6 +1049,37 @@ def test_dev_stack_declares_the_framework_sources_and_the_src_workspace() -> Non
     assert "workspaces" not in local
     assert "workspace_defaults" not in local
 
+
+
+def test_dev_stack_shares_one_machine_wide_cache_per_repository() -> None:
+    """sources_home moves every git cache to `<home>/<repository>` so all stacks
+    on a machine cut worktrees from one clone; empty keeps per-stack caches.
+    The stack name is always rendered as the workspace branch prefix so the
+    shared cache never sees two stacks fighting over one branch name."""
+
+    bare = _render_dev_stack()
+    assert bare["sources"]["angee"]["cache_path"] == "sources/angee"
+    assert bare["workspace_defaults"] == {"workspaces/src": {"inputs": {"branch_prefix": "app"}}}
+
+    shared = _render_dev_stack(
+        sources_home="/home/dev/sources",
+        addons_profile="full",
+        include_arp=True,
+        work_state_source="work-angee",
+        work_state_repo="git@github.com:ang-ee/work-angee.git",
+    )
+    assert shared["sources"]["angee"]["cache_path"] == "/home/dev/sources/angee-django"
+    assert shared["sources"]["angee-messaging-bridges"]["cache_path"] == (
+        "/home/dev/sources/angee-messaging-bridges"
+    )
+    assert shared["sources"]["angee-arp"]["cache_path"] == "/home/dev/sources/angee-arp"
+    assert shared["sources"]["work-angee"]["cache_path"] == "/home/dev/sources/work-angee"
+    assert shared["workspace_defaults"]["workspaces/src"]["inputs"]["branch_prefix"] == "app"
+
+    copier = yaml.safe_load(DEV_COPIER.read_text(encoding="utf-8"))
+    assert copier["sources_home"]["type"] == "str"
+    assert copier["sources_home"]["default"] == ""
+    assert "<project_name>/<workspace>" in copier["project_name"]["help"]
 
 def test_dev_stack_docker_mode_is_containerized_framework_dev() -> None:
     """Docker mode keeps the framework roster with containerized lifecycle jobs."""

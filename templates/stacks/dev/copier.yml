@@ -111,7 +111,10 @@ _angee:
 project_name:
   type: str
   default: app
-  help: Machine name of the project host; also the chained project's name.
+  help: >-
+    Machine name of the project host; also the chained project's name and the
+    namespace of every workspace branch this stack cuts (`<project_name>/<workspace>`).
+    Give each stack on a machine or a shared fork its own name.
 
 # Directory + import namespace for this project's own consumer addons (addons/<ns>/,
 # referenced in INSTALLED_APPS as <ns>.<app>). Must be a valid Python identifier.
@@ -126,6 +129,16 @@ project_path:
   type: path
   default: "."
   help: Path to the project host root. The project IS the stack root (`.`) — the chained projects/web template renders it there. Absolute paths are accepted and kept as-is for an externally-scaffolded host.
+
+# Machine-wide home for the git source caches, shared by every stack on the
+# machine so one clone per repository serves all of them (`<sources_home>/<repo>`).
+# A plain string, not a path input: the operator resolves a relative value against
+# ANGEE_ROOT and an absolute one verbatim. Empty keeps the classic per-stack
+# caches under sources/.
+sources_home:
+  type: str
+  default: ""
+  help: Absolute directory holding one shared git cache per repository (e.g. ~/Work/sources, spelled out); empty = per-stack caches under sources/.
 
 framework_path:
   type: path

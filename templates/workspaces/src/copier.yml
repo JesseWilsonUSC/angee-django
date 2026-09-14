@@ -10,9 +10,11 @@ _angee:
   name: src
   description: >-
     Conventional framework-source workspace. The consolidated angee checkout
-    is one worktree on workspace/<name>, with optional external-addon worktrees
-    for messaging bridges and arpee. Update a slot through workspaceSourcePull
-    (`angee ws source pull`); do not switch the worktree to its base ref.
+    is one worktree on `<branch_prefix>/<name>` (the stack supplies its name as
+    the prefix through workspace_defaults), with optional external-addon
+    worktrees for messaging bridges and arpee on the same branch. Update a slot
+    through workspaceSourcePull (`angee ws source pull`); do not switch the
+    worktree to its base ref.
   instance_naming:
     pattern: "${inputs.agent_name | slug | truncate(48)}"
     max_length: 48
@@ -32,6 +34,14 @@ _angee:
       type: str
       default: main
       help: Mainline ref for the consolidated framework source slot.
+    angee_messaging_bridges_ref:
+      type: str
+      default: main
+      help: Mainline ref for the optional messaging-bridges slot.
+    angee_arp_ref:
+      type: str
+      default: main
+      help: Mainline ref for the optional arpee slot.
     work_state_source:
       type: str
       default: ""
@@ -46,7 +56,7 @@ _angee:
     angee-messaging-bridges:
       source: angee-messaging-bridges
       mode: worktree
-      ref: main
+      ref: "${inputs.angee_messaging_bridges_ref}"
       branch: "${inputs.branch_prefix}/${name | slug}"
       subpath: angee-messaging-bridges
       # Opt-in external addon repo: a base-profile stack declares no source for it; skip.
@@ -54,7 +64,7 @@ _angee:
     angee-arp:
       source: angee-arp
       mode: worktree
-      ref: main
+      ref: "${inputs.angee_arp_ref}"
       branch: "${inputs.branch_prefix}/${name | slug}"
       subpath: angee-arp
       # Opt-in product repo (arpee): skip when the stack declares no source.
@@ -81,6 +91,14 @@ branch_prefix:
   default: workspace
 
 angee_ref:
+  type: str
+  default: main
+
+angee_messaging_bridges_ref:
+  type: str
+  default: main
+
+angee_arp_ref:
   type: str
   default: main
 

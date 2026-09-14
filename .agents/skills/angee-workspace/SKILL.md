@@ -21,7 +21,9 @@ names unless the CLI cannot answer.
 Resolve the controlling stack root before any workspace or GitOps command. Run
 those commands with the resolved root explicitly, even while inside a source
 checkout or target workspace. Never `git checkout` or `git switch` inside an
-Angee workspace; a workspace is pinned to its `workspace/<name>` branch.
+Angee workspace; a workspace is pinned to its `<prefix>/<name>` branch, where
+the prefix is the stack's name (from the stack's `workspace_defaults`) unless
+the workspace declares a shared `feature/<topic>` branch explicitly.
 
 ## Resolve The Controlling Stack Root
 
@@ -65,8 +67,8 @@ current directory, which is rarely the stack root.
 For each workspace worktree source, the parent ref is the source `ref` reported by
 `angee --root "$angee_root" ws git <name> --json` or the matching link in
 `angee --root "$angee_root" gitops topology --json`. That ref may be a normal
-branch (`main`), a feature branch, or another workspace branch
-(`workspace/<parent>`).
+branch (`main`), a shared feature branch (`feature/<topic>`), or another
+workspace branch (`<prefix>/<parent>`).
 
 The optional work-state clone is independent task history. Do not merge it
 between workspace branches as if it were a framework worktree; synchronize its
@@ -207,7 +209,7 @@ angee --root "$angee_root" ws source merge <current-workspace> <slot> <source-br
 ```
 
 For a workspace argument, `<source-branch-or-ref>` is the source slot's reported
-`branch`, usually `workspace/<source>`. Repeat the merge for matching framework
+`branch`, usually `<prefix>/<source>`. Repeat the merge for matching framework
 and external-addon worktree slots in BOTH workspaces; a slot only one side has
 is skipped and reported. The work-state clone follows its own upstream.
 
@@ -246,10 +248,15 @@ angee --root "$angee_root" ws source push <workspace> <slot>
    - If the slot has no upstream, publish it and set upstream:
 
 ```sh
-angee --root "$angee_root" ws source publish <workspace> <slot> --remote origin --branch <branch>
+angee --root "$angee_root" ws source publish <workspace> <slot> --remote <remote> --branch <branch>
 ```
 
-   `<branch>` comes from the source slot's reported `branch`.
+   `<branch>` comes from the source slot's reported `branch`. `<remote>` is the
+   slot's push remote as git resolves it (`git -C <slot-path> config
+   remote.pushDefault`, else `origin`); never publish a stack-prefixed branch to a
+   remote that only accepts `main`, `release/*`, `feature/*`, and `dev-*/*`.
+   Publish only slots with commits beyond their base ref; an empty branch on an
+   untouched repository is noise.
 6. When present, the `work-state` slot is a slot like any other: inspect its
    reported branch and source kind. Commit and push its changes continuously
    (`ws source push <workspace> work-state` for a Git source), within the user's

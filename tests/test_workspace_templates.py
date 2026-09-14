@@ -29,9 +29,12 @@ def test_src_workspace_materializes_one_framework_worktree_and_optional_external
     assert "optional" not in sources["angee"]
     for slot in OPTIONAL_SLOTS:
         assert sources[slot]["optional"] is True
+    # Every git slot takes its base from its own input so a stack whose feature
+    # branch spans several repositories can pin each slot without editing the
+    # rendered record; the defaults are the repositories' mainlines.
     assert sources["angee"]["ref"] == "${inputs.angee_ref}"
-    for slot in OPTIONAL_SLOTS:
-        assert sources[slot]["ref"] == "main"
+    assert sources["angee-messaging-bridges"]["ref"] == "${inputs.angee_messaging_bridges_ref}"
+    assert sources["angee-arp"]["ref"] == "${inputs.angee_arp_ref}"
 
     inputs = manifest["_angee"]["inputs"]
     assert set(inputs) == {
@@ -39,6 +42,8 @@ def test_src_workspace_materializes_one_framework_worktree_and_optional_external
         "mcp_json",
         "branch_prefix",
         "angee_ref",
+        "angee_messaging_bridges_ref",
+        "angee_arp_ref",
         "work_state_source",
     }
     assert inputs["angee_ref"] == {
@@ -46,7 +51,15 @@ def test_src_workspace_materializes_one_framework_worktree_and_optional_external
         "default": "main",
         "help": "Mainline ref for the consolidated framework source slot.",
     }
-    assert manifest["angee_ref"] == {"type": "str", "default": "main"}
+    for name in ("angee_ref", "angee_messaging_bridges_ref", "angee_arp_ref"):
+        assert inputs[name]["type"] == "str"
+        assert inputs[name]["default"] == "main"
+        assert manifest[name] == {"type": "str", "default": "main"}
+
+    # The branch prefix is the stack's namespace; the template keeps a neutral
+    # fallback and the stack's workspace_defaults supplies its own name.
+    assert inputs["branch_prefix"] == {"type": "str", "default": "workspace"}
+    assert "`<branch_prefix>/<name>`" in manifest["_angee"]["description"]
 
 
 def test_src_workspace_preserves_its_claude_symlink() -> None:
