@@ -139,6 +139,8 @@ def test_schema_owner_requires_object_root() -> None:
 def test_reextract_uses_newest_lineage_revision_and_reuses_newest_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """Recovery advances only within the original frozen extraction policy."""
 
+    assert service.authored_engine_config({"timeout": 30, "retry_of_revision": 2}) == {"timeout": 30}
+
     target = SimpleNamespace(has_access=lambda _permission: True)
     original = SimpleNamespace(
         status="failed",

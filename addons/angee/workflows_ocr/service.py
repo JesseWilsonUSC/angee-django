@@ -251,7 +251,7 @@ def reextract(extraction: Any) -> Any:
             raise PermissionDenied("Read access to every inference model is required.")
     if latest.status == "succeeded":
         return latest
-    config = _retry_base_config(latest.engine_config)
+    config = authored_engine_config(latest.engine_config)
     config["retry_of_revision"] = latest.revision
     return extract(
         files=files,
@@ -535,7 +535,9 @@ def _changed_json_pointers(before: Any, after: Any, pointer: str = "") -> tuple[
     return (pointer,)
 
 
-def _retry_base_config(config: Mapping[str, Any]) -> dict[str, Any]:
+def authored_engine_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Return authored engine policy without native retry lineage metadata."""
+
     return {key: value for key, value in dict(config).items() if key != "retry_of_revision"}
 
 
@@ -545,7 +547,7 @@ def _same_retry_policy(candidate: Any, original: Any) -> bool:
         and candidate.model_id == original.model_id
         and candidate.recognition_model_id == original.recognition_model_id
         and str(candidate.schema_digest) == str(original.schema_digest)
-        and _retry_base_config(candidate.engine_config) == _retry_base_config(original.engine_config)
+        and authored_engine_config(candidate.engine_config) == authored_engine_config(original.engine_config)
     )
 
 
