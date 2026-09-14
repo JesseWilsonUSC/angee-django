@@ -13,7 +13,11 @@ import type {
   PopoverTriggerProps as BasePopoverTriggerProps,
 } from "@base-ui/react/popover";
 
+import { cn } from "../lib/cn";
 import { tv, type VariantProps } from "../lib/variants";
+
+/** Global layer for the fixed Base UI positioner that owns portal stacking. */
+export const PORTALED_CONTROL_LAYER = "z-popover";
 
 // A positioning anchor described by a rect instead of a DOM node. Matches the
 // structural shape the positioner accepts for its `anchor` prop.
@@ -26,7 +30,7 @@ type VirtualElement = {
 export const popoverVariants = tv({
   slots: {
     content:
-      "z-popover overflow-hidden rounded-8 border border-border-subtle bg-popover shadow-popover outline-none data-[ending-style]:opacity-0 data-[starting-style]:opacity-0",
+      "overflow-hidden rounded-8 border border-border-subtle bg-popover shadow-popover outline-none data-[ending-style]:opacity-0 data-[starting-style]:opacity-0",
     list: "max-h-64 overflow-y-auto p-1",
     input:
       "h-7 w-full border-0 bg-transparent px-2 text-13 text-fg outline-none placeholder:text-fg-muted",
@@ -64,7 +68,12 @@ export type PopoverRootProps<Payload = unknown> =
 export type PopoverTriggerProps<Payload = unknown> =
   BasePopoverTriggerProps<Payload>;
 export type PopoverPortalProps = BasePopoverPortalProps;
-export type PopoverPositionerProps = BasePopoverPositionerProps;
+export type PopoverPositionerProps = Omit<
+  BasePopoverPositionerProps,
+  "className"
+> & {
+  className?: string;
+};
 export type PopoverArrowProps = BasePopoverArrowProps;
 export type PopoverBackdropProps = BasePopoverBackdropProps;
 export type PopoverCloseProps = BasePopoverCloseProps;
@@ -74,7 +83,6 @@ export type PopoverViewportProps = React.ComponentPropsWithoutRef<
 
 export const PopoverRoot = BasePopover.Root;
 export const PopoverPortal = BasePopover.Portal;
-export const PopoverPositioner = BasePopover.Positioner;
 export const PopoverArrow = BasePopover.Arrow;
 export const PopoverBackdrop = BasePopover.Backdrop;
 export const PopoverClose = BasePopover.Close;
@@ -86,6 +94,20 @@ export const PopoverViewport = BasePopover.Viewport;
 // view-state work is de-prioritized at its owner (a React transition in the resource-view
 // store), not by re-timing the trigger.
 export const PopoverTrigger = BasePopover.Trigger;
+
+export const PopoverPositioner = React.forwardRef<
+  HTMLDivElement,
+  PopoverPositionerProps
+>(function PopoverPositioner({ className, ...props }, ref) {
+  return (
+    <BasePopover.Positioner
+      ref={ref}
+      className={cn(PORTALED_CONTROL_LAYER, className)}
+      {...props}
+    />
+  );
+});
+PopoverPositioner.displayName = "PopoverPositioner";
 
 export interface PopoverVirtualAnchorRect {
   x: number;

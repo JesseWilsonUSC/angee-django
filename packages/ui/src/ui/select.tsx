@@ -21,7 +21,7 @@ import type {
 import { Glyph } from "../chrome/Glyph";
 import { cn } from "../lib/cn";
 import { tv, type VariantProps } from "../lib/variants";
-import { POPUP_BASE } from "./popover";
+import { POPUP_BASE, PORTALED_CONTROL_LAYER } from "./popover";
 import { widgetControlSurface } from "./widget-control";
 
 export const selectVariants = tv({
@@ -96,17 +96,35 @@ export type SelectRootProps<
   Multiple extends boolean | undefined = false,
 > = BaseSelectRootProps<Value, Multiple>;
 export type SelectPortalProps = BaseSelectPortalProps;
-export type SelectPositionerProps = BaseSelectPositionerProps;
+export type SelectPositionerProps = Omit<
+  BaseSelectPositionerProps,
+  "className"
+> & {
+  className?: string;
+};
 export type SelectBackdropProps = BaseSelectBackdropProps;
 export type SelectArrowProps = BaseSelectArrowProps;
 export type SelectGroupProps = BaseSelectGroupProps;
 
 export const SelectRoot = BaseSelect.Root;
 export const SelectPortal = BaseSelect.Portal;
-export const SelectPositioner = BaseSelect.Positioner;
 export const SelectBackdrop = BaseSelect.Backdrop;
 export const SelectArrow = BaseSelect.Arrow;
 export const SelectGroup = BaseSelect.Group;
+
+export const SelectPositioner = React.forwardRef<
+  HTMLDivElement,
+  SelectPositionerProps
+>(function SelectPositioner({ className, ...props }, ref) {
+  return (
+    <BaseSelect.Positioner
+      ref={ref}
+      className={cn(PORTALED_CONTROL_LAYER, className)}
+      {...props}
+    />
+  );
+});
+SelectPositioner.displayName = "SelectPositioner";
 
 export type SelectTriggerProps = Omit<BaseSelectTriggerProps, "className"> &
   Pick<SelectRecipeProps, "size" | "invalid" | "readOnly"> & {

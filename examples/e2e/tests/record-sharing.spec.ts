@@ -31,6 +31,8 @@ test.describe("shared record access", () => {
       "110",
     );
     await expect(dialog).toHaveCSS("z-index", "101");
+    await page.getByRole("option", { name: "reader", exact: true }).click();
+    await expect(access).toContainText("reader");
   });
 
   test("record chrome shows one shared action and offers agent service users", async ({

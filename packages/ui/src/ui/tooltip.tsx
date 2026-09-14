@@ -10,12 +10,13 @@ import type {
   TooltipTriggerProps as BaseTooltipTriggerProps,
 } from "@base-ui/react/tooltip";
 
+import { cn } from "../lib/cn";
 import { tv, type VariantProps } from "../lib/variants";
 
 export const tooltipVariants = tv({
   slots: {
     content:
-      "z-tooltip max-w-xs rounded-6 bg-tooltip px-2 py-1.5 text-2xs font-medium text-on-tooltip shadow-md outline-none transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0",
+      "max-w-xs rounded-6 bg-tooltip px-2 py-1.5 text-2xs font-medium text-on-tooltip shadow-md outline-none transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0",
     arrow: "text-tooltip data-[uncentered]:hidden",
   },
   variants: {
@@ -42,7 +43,12 @@ export type TooltipRootProps<Payload = unknown> =
 export type TooltipTriggerProps<Payload = unknown> =
   BaseTooltipTriggerProps<Payload>;
 export type TooltipPortalProps = BaseTooltipPortalProps;
-export type TooltipPositionerProps = BaseTooltipPositionerProps;
+export type TooltipPositionerProps = Omit<
+  BaseTooltipPositionerProps,
+  "className"
+> & {
+  className?: string;
+};
 export type TooltipProviderProps = BaseTooltipProviderProps;
 export type TooltipArrowProps = BaseTooltipArrowProps & {
   className?: string;
@@ -51,8 +57,21 @@ export type TooltipArrowProps = BaseTooltipArrowProps & {
 export const TooltipRoot = BaseTooltip.Root;
 export const TooltipTrigger = BaseTooltip.Trigger;
 export const TooltipPortal = BaseTooltip.Portal;
-export const TooltipPositioner = BaseTooltip.Positioner;
 export const TooltipProvider = BaseTooltip.Provider;
+
+export const TooltipPositioner = React.forwardRef<
+  HTMLDivElement,
+  TooltipPositionerProps
+>(function TooltipPositioner({ className, ...props }, ref) {
+  return (
+    <BaseTooltip.Positioner
+      ref={ref}
+      className={cn("z-tooltip", className)}
+      {...props}
+    />
+  );
+});
+TooltipPositioner.displayName = "TooltipPositioner";
 
 export type TooltipContentProps = BaseTooltipPopupProps &
   Pick<TooltipRecipeProps, "size"> & {
@@ -148,4 +167,3 @@ export const Tooltip = function Tooltip({
     </TooltipRoot>
   );
 };
-
