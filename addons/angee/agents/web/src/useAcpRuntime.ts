@@ -21,6 +21,7 @@ import {
   AgentChatEndpointMutation,
   AgentChatEndpointSchema,
   RenderAgentPrompt,
+  agentChatViewInput,
   type AgentChatEndpoint,
   type AgentChatView,
   type McpServerConfig,
@@ -366,7 +367,7 @@ async function fetchSystemContext(
   view: AgentChatView,
 ): Promise<string> {
   try {
-    const data = await renderPrompt({ id: agentId, view });
+    const data = await renderPrompt({ id: agentId, view: agentChatViewInput(view) });
     return data?.render_agent_prompt ?? "";
   } catch {
     return "";

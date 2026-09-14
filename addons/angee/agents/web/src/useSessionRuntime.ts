@@ -16,6 +16,7 @@ import {
   PostAgentMessage,
   RenderAgentPrompt,
   StartAgentSession,
+  agentChatViewInput,
   type AgentChatView,
 } from "./documents";
 import type { AcpRuntime, AcpStatus } from "./useAcpRuntime";
@@ -112,7 +113,7 @@ export function useSessionRuntime(
     if (startingRef.current?.agentId === agentId) return;
     const attempt = { agentId, sequence: ++requestSequence.current };
     startingRef.current = attempt;
-    void startSession({ agent: agentId, context: view })
+    void startSession({ agent: agentId, context: agentChatViewInput(view) })
       .then((data) => {
         const id = data?.start_agent_session.id;
         if (!active || activeAgentRef.current !== agentId || startingRef.current !== attempt) return;
@@ -187,7 +188,7 @@ export function useSessionRuntime(
   }, [latest.refetch, sessionId, turns.refetch]);
   const renderContext = React.useCallback(async (): Promise<string> => {
     try {
-      const data = await renderPrompt({ id: agentId, view });
+      const data = await renderPrompt({ id: agentId, view: agentChatViewInput(view) });
       return data?.render_agent_prompt ?? "";
     } catch {
       return "";
