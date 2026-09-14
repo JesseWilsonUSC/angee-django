@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { ConfigEnv, Plugin, UserConfig } from "vite";
 
-import { angeePrebundleForce, angeePrebundleForcePlugin, angeeUIAllowedHosts } from "../config/vite";
+import {
+  angeePrebundleForce,
+  angeePrebundleForcePlugin,
+  angeeUIAllowedHosts,
+  defineAngeeWebViteConfig,
+} from "../config/vite";
 
 // The `config` hook ignores its plugin-context `this`, so drop it for the call.
 type ConfigHookFn = (config: UserConfig, env: ConfigEnv) => unknown;
@@ -30,6 +35,24 @@ describe("angeeUIAllowedHosts", () => {
       "preview.example.com",
     ]);
   });
+});
+
+test("linked UI keeps the complete CodeMirror graph out of dependency optimization", async () => {
+  const webRoot = mkdtempSync(join(tmpdir(), "angee-vite-codemirror-"));
+  try {
+    writeFileSync(join(webRoot, "package.json"), '{"dependencies":{"@angee/ui":"workspace:*"}}\n');
+    const config = await defineAngeeWebViteConfig({
+      prebundleAngeePackages: true,
+      gqlRuntimeDir: join(webRoot, "runtime", "gql"),
+      webRoot,
+    });
+
+    expect(config.optimizeDeps?.exclude).toEqual(
+      expect.arrayContaining(["@angee/ui", "@codemirror", "codemirror"]),
+    );
+  } finally {
+    rmSync(webRoot, { recursive: true, force: true });
+  }
 });
 
 // The prebundle cache-bust: `optimizeDeps.force` flips true only when a linked
