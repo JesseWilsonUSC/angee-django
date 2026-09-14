@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { DashboardView } from "./DashboardView";
 import { Metric } from "./Metric";
@@ -37,5 +37,24 @@ describe("DashboardView", () => {
     expect(screen.getByRole("region", { name: "only" })).toBeTruthy();
     // No <dl> metric grid emitted.
     expect(document.querySelector("dl")).toBeNull();
+  });
+
+  test("preserves a metric deep link and its client-side navigation handler", () => {
+    const onNavigate = vi.fn();
+    render(
+      <DashboardView>
+        <Metric
+          label="Users"
+          value={128}
+          href="/iam/users"
+          onNavigate={onNavigate}
+        />
+      </DashboardView>,
+    );
+
+    const link = screen.getByRole("link", { name: /Users/ });
+    expect(link.getAttribute("href")).toBe("/iam/users");
+    fireEvent.click(link);
+    expect(onNavigate).toHaveBeenCalledWith("/iam/users");
   });
 });

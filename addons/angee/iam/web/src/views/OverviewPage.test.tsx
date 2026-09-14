@@ -4,9 +4,17 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import iam from "../index";
+
 const mocks = vi.hoisted(() => ({
   grantRole: vi.fn(),
+  navigate: vi.fn(),
   overview: { data: undefined as unknown, isFetching: false, error: null },
+}));
+
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
+  useNavigate: () => mocks.navigate,
 }));
 
 vi.mock("@angee/refine", async (importOriginal) => ({
@@ -25,7 +33,7 @@ vi.mock("../SubjectControl", () => ({
   ),
 }));
 
-import { AppRuntimeProvider, ModalsHost, baseIcons, defaultWidgets } from "@angee/ui";
+import { AppRuntimeProvider, ModalsHost, baseIcons, createRouteHref, defaultWidgets } from "@angee/ui";
 
 import { OverviewPage } from "./OverviewPage";
 
@@ -33,6 +41,7 @@ describe("IAM overview page", () => {
   afterEach(() => {
     cleanup();
     mocks.grantRole.mockReset();
+    mocks.navigate.mockReset();
     mocks.overview.data = undefined;
   });
 
@@ -63,6 +72,32 @@ describe("IAM overview page", () => {
     expect(screen.getByRole("option", { name: "angee / Admin" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "angee / Removed" })).toBeNull();
   });
+
+  test("links dashboard metrics to their related IAM views", () => {
+    mocks.overview.data = overviewData();
+    renderPage(<OverviewPage />);
+
+    const users = screen.getByRole("link", { name: /Users/ });
+    expect(users.getAttribute("href")).toBe("/iam/users");
+    expect(screen.getByRole("link", { name: /Roles/ }).getAttribute("href")).toBe(
+      "/iam/roles",
+    );
+    expect(screen.getByRole("link", { name: /^Grants/ }).getAttribute("href")).toBe(
+      "/iam/grants",
+    );
+    expect(screen.getByRole("link", { name: /Relationships/ }).getAttribute("href")).toBe(
+      "/iam/relationships",
+    );
+    expect(screen.getByRole("link", { name: /Privileged grants/ }).getAttribute("href")).toBe(
+      "/iam/grants",
+    );
+    expect(screen.getByRole("link", { name: /Unassigned users/ }).getAttribute("href")).toBe(
+      "/iam/users",
+    );
+
+    fireEvent.click(users);
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: "/iam/users" });
+  });
 });
 
 function overviewData(): unknown {
@@ -88,7 +123,13 @@ function overviewData(): unknown {
 
 function renderPage(children: ReactNode): ReturnType<typeof render> {
   return render(
-    <AppRuntimeProvider runtime={{ icons: baseIcons, widgets: defaultWidgets }}>
+    <AppRuntimeProvider
+      runtime={{
+        icons: baseIcons,
+        widgets: defaultWidgets,
+        routeHref: createRouteHref(iam.routes ?? []),
+      }}
+    >
       <ModalsHost>{children}</ModalsHost>
     </AppRuntimeProvider>,
   );
