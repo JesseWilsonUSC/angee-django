@@ -1017,8 +1017,33 @@ def _validate_mapping_schema(
         return dict(resolution)
     if schema.get("type", "object") != "object":
         raise ValidationError({"payload": "Decision schema root type must be object."})
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        raise ValidationError({"payload": "Decision schema properties must be an object."})
+    context_fields = {
+        str(field_name)
+        for field_name, field_schema in properties.items()
+        if isinstance(field_schema, dict) and field_schema.get("layout") == "context"
+    }
+    submitted_context = context_fields.intersection(resolution)
+    if submitted_context:
+        raise ValidationError({
+            field_name: "Decision context cannot be submitted as a resolution."
+            for field_name in sorted(submitted_context)
+        })
+    resolution_schema = dict(schema)
+    resolution_schema["properties"] = {
+        field_name: field_schema
+        for field_name, field_schema in properties.items()
+        if str(field_name) not in context_fields
+    }
+    if isinstance(schema.get("required"), list):
+        resolution_schema["required"] = [
+            field_name for field_name in schema["required"]
+            if str(field_name) not in context_fields
+        ]
     # Human-paced decisions rebuild per attempt; memoize by schema-dict hash before bulk or programmatic reuse.
-    model = _mapping_schema_model(schema, name="DecisionResolution")
+    model = _mapping_schema_model(resolution_schema, name="DecisionResolution")
     try:
         parsed = model.model_validate(resolution)
     except PydanticValidationError as error:
@@ -1026,7 +1051,7 @@ def _validate_mapping_schema(
     submitted = cast(dict[str, Any], parsed.model_dump(exclude_unset=True))
     schema_errors: dict[str, list[str]] = {}
     for error in sorted(
-        Draft202012Validator(schema).iter_errors(submitted),
+        Draft202012Validator(resolution_schema).iter_errors(submitted),
         key=lambda item: (tuple(str(part) for part in item.path), item.message),
     ):
         field = ".".join(str(component) for component in error.path) or "payload"
@@ -1034,7 +1059,7 @@ def _validate_mapping_schema(
     if schema_errors:
         raise ValidationError(schema_errors)
     validated = cast(dict[str, Any], parsed.model_dump(exclude_none=False))
-    _validate_relation_fields(schema, validated, actor)
+    _validate_relation_fields(resolution_schema, validated, actor)
     return validated
 
 

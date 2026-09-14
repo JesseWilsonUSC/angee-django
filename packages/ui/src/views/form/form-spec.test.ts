@@ -150,6 +150,19 @@ describe("deserializeFormSpec", () => {
     ]);
   });
 
+  test("retains the explicit approval layout annotation", () => {
+    expect(deserializeFormSpec({ properties: {
+      source: { type: "string", layout: "context" },
+      action: { type: "string", layout: "input" },
+    } }, defaultWidgets)).toEqual([
+      { name: "source", kind: "string", widget: "text", layout: "context" },
+      { name: "action", kind: "string", widget: "text", layout: "input" },
+    ]);
+    expect(() => deserializeFormSpec({ properties: {
+      source: { type: "string", layout: "summary" },
+    } }, defaultWidgets)).toThrow(/Invalid source.layout/);
+  });
+
   test("rejects enum values the string-valued select cannot preserve", () => {
     expect(() =>
       deserializeFormSpec(

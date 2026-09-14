@@ -6,7 +6,7 @@ import { BreadcrumbLabelProvider } from "../chrome/Breadcrumb";
 import { DrawerRail } from "../chrome/DrawerRail";
 import { TopBar } from "../chrome/TopBar";
 import { Chatter } from "../communication/Chatter";
-import { ChatterProvider, useChatter } from "../communication/chatter-context";
+import { ChatterProvider, useChatter, type ChatterPaneController } from "../communication/chatter-context";
 import { useUiT } from "../i18n";
 import { cn } from "../lib/cn";
 import { SlotOutlet } from "../lib/slot-outlet";
@@ -246,9 +246,11 @@ function ConsoleWorkbench({
     setCompactPrimaryOpen(false);
     setCompactChatterOpen((open) => !open);
   }, []);
-  const compactChatterController = React.useMemo<PaneToggleController>(
+  const compactChatterController = React.useMemo<ChatterPaneController>(
     () => ({
       collapsed: !compactChatterOpen,
+      collapse: () => setCompactChatterOpen(false),
+      expand: () => { setCompactPrimaryOpen(false); setCompactChatterOpen(true); },
       toggle: toggleCompactChatter,
     }),
     [compactChatterOpen, toggleCompactChatter],
@@ -261,6 +263,11 @@ function ConsoleWorkbench({
     setCompactPrimaryOpen(false);
     setCompactChatterOpen(false);
   }, [pathname, largeViewport]);
+  React.useEffect(() => {
+    if (!showChatter || largeViewport) return;
+    registerSecondaryController(compactChatterController);
+    return () => registerSecondaryController(null);
+  }, [compactChatterController, largeViewport, registerSecondaryController, showChatter]);
   React.useEffect(() => {
     const controller = showChatter && !largeViewport
       ? compactChatterController
@@ -318,7 +325,7 @@ function ConsoleWorkbench({
         open={showChatter && !largeViewport && compactChatterOpen}
         onOpenChange={setCompactChatterOpen}
       >
-        <Drawer.Portal>
+        <Drawer.Portal keepMounted>
           <Drawer.Backdrop />
           <Drawer.Content
             side="right"

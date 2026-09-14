@@ -2,6 +2,7 @@ export { Chatter, type ChatterProps } from "./Chatter";
 export { RevisionsTab, type RevisionsTabProps } from "./RevisionsTab";
 export {
   ChatterProvider,
+  CHATTER_TAB_SEARCH_KEY,
   useChatter,
   useChatterContent,
   type ChatterContent,

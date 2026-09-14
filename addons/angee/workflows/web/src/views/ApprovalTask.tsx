@@ -1,4 +1,3 @@
-import { decisionHref } from "../decision-navigation";
 import * as React from "react";
 import { useAuthoredMutation, type DocumentVariables } from "@angee/refine";
 import {
@@ -10,6 +9,7 @@ import {
   type JsonValue,
 } from "@angee/ui";
 import { useNavigate } from "@tanstack/react-router";
+import { decisionHref } from "../decision-navigation";
 import { DecideWorkflowDecisionDocument, type PendingWorkflowDecision } from "../documents.public";
 import { useWorkflowsT } from "../i18n";
 
@@ -123,11 +123,19 @@ function FormSpecApprovalResolution({ approval, active, editable, onResolved, re
 }): React.ReactElement {
   const t = useWorkflowsT();
   const fields = useFormSpecFields(approval.decision_schema);
-  const [values, setValues] = React.useState<Record<string, unknown>>(() => formSpecInitialValues(fields, active ? approval.payload : approval.resolution));
+  const contextFields = React.useMemo(() => fields.filter((field) => field.layout === "context"), [fields]);
+  const inputFields = React.useMemo(() => fields.filter((field) => field.layout !== "context"), [fields]);
+  const contextValues = React.useMemo(
+    () => formSpecInitialValues(contextFields, approval.payload),
+    [approval.payload, contextFields],
+  );
+  const [values, setValues] = React.useState<Record<string, unknown>>(
+    () => formSpecInitialValues(inputFields, active ? approval.payload : approval.resolution),
+  );
   React.useEffect(() => {
-    if (!active) setValues(formSpecInitialValues(fields, approval.resolution));
-  }, [active, approval.resolution, fields]);
-  const fieldNames = React.useMemo(() => fields.map((field) => field.name), [fields]);
+    if (!active) setValues(formSpecInitialValues(inputFields, approval.resolution));
+  }, [active, approval.resolution, inputFields]);
+  const fieldNames = React.useMemo(() => inputFields.map((field) => field.name), [inputFields]);
   const validationErrors = useDottedPathFieldErrors(fieldNames);
   const [error, setError] = React.useState<string | null>(null);
   const resolution = useApprovalResolver(onResolved, reconcile);
@@ -144,16 +152,25 @@ function FormSpecApprovalResolution({ approval, active, editable, onResolved, re
     }
   }
   return (
-    <section className="space-y-3">
-      <h3 className="text-xs font-semibold text-fg-muted">{t("inbox.yourDecision")}</h3>
-      {fields.map((field) => (
+    <div className="space-y-4">
+      {contextFields.length ? <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-fg-muted">{t("inbox.decisionContext")}</h3>
+        {contextFields.map((field) => (
+          <LabeledDescriptorField key={field.name} field={field} value={contextValues[field.name]}
+            readOnly messages={[]} onChange={() => undefined} />
+        ))}
+      </section> : null}
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-fg-muted">{t("inbox.yourDecision")}</h3>
+      {inputFields.map((field) => (
         <LabeledDescriptorField key={field.name} field={field} value={values[field.name]}
           readOnly={field.readOnly || !editable || resolution.fetching} messages={validationErrors.messagesFor(field.name)}
           onChange={(value) => { validationErrors.clearField(field.name); onDirtyChange?.(true); setValues((current) => ({ ...current, [field.name]: value })); }} />
       ))}
       <ErrorBanner description={error ?? resolution.error?.message ?? validationErrors.formSummary} />
       {editable ? <ApprovalVerdictButtons fetching={resolution.fetching} onResolve={resolve} /> : null}
-    </section>
+      </section>
+    </div>
   );
 }
 

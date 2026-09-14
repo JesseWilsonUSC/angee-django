@@ -12,7 +12,10 @@ import {
 
 import type { CollapsiblePane } from "../page";
 
+export type ChatterPaneController = Pick<CollapsiblePane, "collapsed" | "collapse" | "expand" | "toggle">;
+
 export type ChatterTabId = "agents" | "comments" | "activity" | (string & {});
+export const CHATTER_TAB_SEARCH_KEY = "chatterTab";
 
 export interface ChatterTab {
   id: ChatterTabId;
@@ -43,7 +46,7 @@ export interface ChatterContextValue {
    * persistence). With no Workbench (standalone/tests) the context falls back to
    * a local `collapsed` flag. Pass `null` to unregister on unmount.
    */
-  registerSecondaryController: (controller: CollapsiblePane | null) => void;
+  registerSecondaryController: (controller: ChatterPaneController | null) => void;
 }
 
 export interface ChatterProviderProps {
@@ -73,7 +76,7 @@ export function ChatterProvider({
   // plus its reactive collapsed flag mirrored into state so the chrome re-renders
   // when the pane collapses (including via drag). `null` collapsed means no
   // controller is registered, so the chrome falls back to `localCollapsed`.
-  const controllerRef = useRef<CollapsiblePane | null>(null);
+  const controllerRef = useRef<ChatterPaneController | null>(null);
   const [controllerCollapsed, setControllerCollapsed] = useState<
     boolean | null
   >(null);
@@ -83,7 +86,7 @@ export function ChatterProvider({
   >(null);
 
   const registerSecondaryController = useCallback(
-    (controller: CollapsiblePane | null) => {
+    (controller: ChatterPaneController | null) => {
       controllerRef.current = controller;
       // Same-value state updates bail out, so the Workbench may republish its
       // controller every render (its identity changes each tick) without looping.

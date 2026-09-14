@@ -597,6 +597,35 @@ def test_decision_mapping_schema_enforces_authored_constraints_after_normalizati
     assert relation_checks == [validated]
 
 
+def test_decision_mapping_schema_excludes_layout_context_from_resolution() -> None:
+    """Frozen display context is neither accepted nor materialized as a decision answer."""
+
+    schema = {
+        "type": "object",
+        "required": ["source_evidence", "action"],
+        "properties": {
+            "source_evidence": {
+                "type": "string",
+                "layout": "context",
+                "readOnly": True,
+                "defaultValue": "Extraction ext_1 revision 2",
+            },
+            "action": {"type": "string", "enum": ["accept", "reject"]},
+            "note": {"type": "string"},
+        },
+    }
+
+    assert engine._validate_mapping_schema(schema, {"action": "accept"}) == {
+        "action": "accept",
+        "note": None,
+    }
+    with pytest.raises(ValidationError, match="cannot be submitted"):
+        engine._validate_mapping_schema(
+            schema,
+            {"source_evidence": "forged", "action": "accept"},
+        )
+
+
 def test_decision_relation_permission_defaults_to_write_and_allows_declared_read(monkeypatch: Any) -> None:
     """Relation selection changes scope only through a valid explicit permission."""
 

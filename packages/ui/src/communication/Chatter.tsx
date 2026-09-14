@@ -18,7 +18,7 @@ import {
 } from "../runtime";
 import { ScrollArea } from "../ui/scroll-area";
 import { Tabs } from "../ui/tabs";
-import { useChatter, type ChatterTab } from "./chatter-context";
+import { CHATTER_TAB_SEARCH_KEY, useChatter, type ChatterTab } from "./chatter-context";
 
 export interface ChatterProps {
   tabs?: readonly ChatterTab[];
@@ -32,7 +32,16 @@ export function Chatter({
   className,
 }: ChatterProps): React.ReactElement | null {
   const t = useUiT();
-  const { activeTab, content, setActiveTab } = useChatter();
+  const { activeTab, content, setActiveTab, setCollapsed } = useChatter();
+  const requestedTab = useRouterState({
+    select: (state) => {
+      const value = (state.location.search as Record<string, unknown>)[CHATTER_TAB_SEARCH_KEY];
+      return typeof value === "string" && value ? value : null;
+    },
+  });
+  const requestIdentity = useRouterState({
+    select: (state) => state.location.href,
+  });
   const runtime = useAppRuntime();
   const [counts, setCounts] = React.useState<Record<string, number>>({});
   const publishCount = React.useCallback(
@@ -74,6 +83,15 @@ export function Chatter({
     tabs ?? content?.tabs ?? [],
   );
   const resolvedComposer = composer ?? content?.composer;
+  const requestedTabAvailable = Boolean(
+    requestedTab && resolvedTabs.some((tab) => tab.id === requestedTab),
+  );
+  React.useEffect(() => {
+    if (!requestedTab) return;
+    if (!requestedTabAvailable) return;
+    setActiveTab(requestedTab);
+    setCollapsed(false);
+  }, [requestIdentity, requestedTab, requestedTabAvailable, setActiveTab, setCollapsed]);
   const active = resolvedTabs.some((tab) => tab.id === activeTab)
     ? activeTab
     : resolvedTabs[0]?.id;

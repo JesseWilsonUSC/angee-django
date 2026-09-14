@@ -135,7 +135,7 @@ describe("ApprovalTask", () => {
       </AppRuntimeProvider>,
     );
 
-    const title = screen.getByLabelText("Title");
+    const title = await screen.findByLabelText("Title");
     fireEvent.change(title, { target: { value: "Edited" } });
     fireEvent.click(screen.getByRole("button", { name: /Complete/ }));
 
@@ -146,6 +146,43 @@ describe("ApprovalTask", () => {
       verdict: "COMPLETE",
       payload: { title: "Edited" },
     });
+  });
+
+  test("keeps frozen context separate from submitted decision inputs", async () => {
+    render(<AppRuntimeProvider runtime={{ widgets: defaultWidgets }}><ApprovalTask approval={{
+      ...approval,
+      payload: { source: "Frozen invoice A", action: "approve" },
+      decision_schema: { type: "object", properties: {
+        source: { type: "string", label: "Source", layout: "context" },
+        action: { type: "string", label: "Action", layout: "input" },
+      } },
+    }} onResolved={() => undefined} /></AppRuntimeProvider>);
+
+    expect(await screen.findByText("Frozen invoice A")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Source" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Action"), { target: { value: "reject" } });
+    fireEvent.click(screen.getByRole("button", { name: /Complete/ }));
+    await waitFor(() => expect(mocks.decide).toHaveBeenCalledWith({
+      decision: "decision-1", verdict: "COMPLETE", payload: { action: "reject" },
+    }));
+  });
+
+  test("renders completed context from payload and inputs from retained resolution", async () => {
+    render(<AppRuntimeProvider runtime={{ widgets: defaultWidgets }}><ApprovalTask approval={{
+      ...approval,
+      verdict: "COMPLETED",
+      payload: { source: "Frozen invoice A", action: "old suggestion" },
+      resolution: { source: "tampered context", action: "approve" },
+      decision_schema: { type: "object", properties: {
+        source: { type: "string", label: "Source", layout: "context" },
+        action: { type: "string", label: "Action", layout: "input" },
+      } },
+    }} onResolved={() => undefined} /></AppRuntimeProvider>);
+
+    expect(await screen.findByText("Frozen invoice A")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Source" })).toBeNull();
+    expect(screen.getByText("approve")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Action" })).toBeNull();
   });
 
   test.each([

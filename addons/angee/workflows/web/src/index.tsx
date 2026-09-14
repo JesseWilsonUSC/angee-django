@@ -18,6 +18,7 @@ import { enWorkflowsMessages } from "./i18n";
 import { RunWorkflowMenu } from "./RunWorkflowMenu";
 export { WORKFLOW_TRIGGER_FORM_FIELDS_SLOT } from "./slots";
 
+import { CHATTER_TAB_SEARCH_KEY } from "@angee/ui";
 import { DECISION_SEARCH_KEY } from "./decision-navigation";
 export { DECISION_SEARCH_KEY, decisionHref, decisionSearch } from "./decision-navigation";
 
@@ -76,7 +77,7 @@ const workflowsMenu: readonly BaseMenuItem[] = [
 
 const workflows = defineBaseAddon({
   id: WORKFLOWS_ID,
-  recordSearchKeys: [DECISION_SEARCH_KEY],
+  recordSearchKeys: [CHATTER_TAB_SEARCH_KEY, DECISION_SEARCH_KEY],
   routes: workflowsRoutes,
   menus: workflowsMenu,
   i18n: { workflows: enWorkflowsMessages },

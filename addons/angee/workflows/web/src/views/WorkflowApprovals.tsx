@@ -90,6 +90,7 @@ export function WorkflowApprovals({ runId, executionId, attemptId, target, inclu
         : <GlobalDecisionTask key={context.recordId} {...context} onDirtyChange={setTaskDirty} />,
   }], [scope.runId, scope.target?.id, scope.target?.model, scope.target?.tab, t]);
   if (selectedTaskOnly && selectedId) {
+    const onBack = onDecisionChange ? () => selectDecision(null) : undefined;
     const task = scope.target
       ? <TargetedDecisionTask
         key={`${scope.target.model}:${scope.target.id}:${scope.target.tab ?? ""}:${selectedId}`}
@@ -97,7 +98,7 @@ export function WorkflowApprovals({ runId, executionId, attemptId, target, inclu
         reload={() => undefined}
         target={scope.target}
         onDirtyChange={setTaskDirty}
-        onBack={() => selectDecision(null)}
+        onBack={onBack}
       />
       : scope.runId
         ? <ScopedDecisionTask
@@ -106,14 +107,14 @@ export function WorkflowApprovals({ runId, executionId, attemptId, target, inclu
           reload={() => undefined}
           runId={scope.runId}
           onDirtyChange={setTaskDirty}
-          onBack={() => selectDecision(null)}
+          onBack={onBack}
         />
         : <GlobalDecisionTask
           key={selectedId}
           recordId={selectedId}
           reload={() => undefined}
           onDirtyChange={setTaskDirty}
-          onBack={() => selectDecision(null)}
+          onBack={onBack}
         />;
     return <section aria-label={t("inbox.title")} className="h-full min-h-0">
       {task}

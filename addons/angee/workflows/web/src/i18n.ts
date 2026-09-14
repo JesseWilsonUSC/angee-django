@@ -386,6 +386,7 @@ export const enWorkflowsMessages: Record<string, string> = {
   "inbox.sourceData": "Source data",
   "inbox.sourceMetadata": "Source metadata",
   "inbox.yourDecision": "Your decision",
+  "inbox.decisionContext": "Decision context",
   "inbox.workflowFallback": "Workflow",
   "inbox.resolution": "Resolution payload",
   "inbox.complete": "Complete",

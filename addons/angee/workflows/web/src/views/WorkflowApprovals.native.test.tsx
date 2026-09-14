@@ -93,14 +93,12 @@ test("the native scoped collection opens only the selected Run decision task", a
 
   await waitFor(() => expect(provider.getList).toHaveBeenCalledWith(expect.objectContaining({
     pagination: expect.objectContaining({ pageSize: 20 }),
-    meta: expect.objectContaining({ gqlVariables: expect.objectContaining({
-      where: {
-        _and: [
-          { step_run__run: { _eq: "run-1" } },
-          { verdict: { _eq: "PENDING" } },
-        ],
-      },
-    }) }),
+    meta: expect.objectContaining({ gqlVariables: expect.objectContaining({ where: {
+      _and: expect.arrayContaining([
+        { step_run__run: { _eq: "run-1" } },
+        { verdict: { _eq: "PENDING" } },
+      ]),
+    } }) }),
   })));
   fireEvent.click(await screen.findByText("review"));
   expect(await screen.findByText("Approve tool")).toBeTruthy();
@@ -149,6 +147,7 @@ test("a record overlay renders one exact target task without mounting a nested D
   );
 
   expect(await screen.findByText("Approve tool")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Back to approvals" })).toBeNull();
   expect(provider.getList).not.toHaveBeenCalled();
   expect(exactVariables.at(-1)).toEqual({ id: "decision-1", targetModel: "parties.Party", targetId: "party-7", targetTab: "accounting" });
 });
