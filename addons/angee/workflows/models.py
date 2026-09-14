@@ -119,6 +119,29 @@ logger = logging.getLogger(__name__)
 _CHANGE_FEED_FIX = "declare changes() for the model to join the change feed"
 
 
+@contextmanager
+def _workflow_child_create(instance: Any) -> Iterator[None]:
+    """Authorize one unsaved child through its proposed workflow relation."""
+
+    if not instance._state.adding:
+        yield
+        return
+    actor, bypass = instance.effective_actor(strict=True)
+    if bypass:
+        yield
+        return
+    assert actor is not None
+    with DefinitionQuerySet.caller_context(instance):
+        verified_actor = type(instance)._default_manager.check_create(
+            {"workflow": (instance.workflow,)}
+        )
+    instance.with_actor(verified_actor).sudo(reason="workflows.child.create")
+    try:
+        yield
+    finally:
+        instance.with_actor(verified_actor)
+
+
 @dataclass(frozen=True, slots=True)
 class StepConfigProjection:
     """Canonical authoring value and diagnostics for one persisted step config."""
@@ -798,7 +821,8 @@ class Step(ImplDefaultsMixin, AuditMixin, AngeeDataModel):
                 getattr(old, field) != getattr(self, field)
                 for field in considered
             )
-            super().save(*args, **kwargs)
+            with _workflow_child_create(self):
+                super().save(*args, **kwargs)
             session = _definition_write_session.get()
             if changed and session is not None and self.workflow_id not in session.copy_target_ids:
                 for workflow_id in parent_ids:
@@ -931,7 +955,8 @@ class Edge(AuditMixin, AngeeDataModel):
                 getattr(old, field) != getattr(self, field)
                 for field in considered
             )
-            super().save(*args, **kwargs)
+            with _workflow_child_create(self):
+                super().save(*args, **kwargs)
             session = _definition_write_session.get()
             if changed and session is not None and self.workflow_id not in session.copy_target_ids:
                 for workflow_id in parent_ids:
@@ -1185,7 +1210,8 @@ class Trigger(AuditMixin, AngeeDataModel):
     def _save_validated(self, *args: Any, **kwargs: Any) -> None:
         """Persist after the owning locked path has completed validation."""
 
-        super().save(*args, **kwargs)
+        with _workflow_child_create(self):
+            super().save(*args, **kwargs)
 
     def enable(self) -> None:
         """Enable this trigger through the model owner."""

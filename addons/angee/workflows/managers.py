@@ -1747,7 +1747,22 @@ class WorkflowRunManager(AngeeManager.from_queryset(WorkflowRunQuerySet)):  # ty
         )
 
 
-class StepQuerySet(DefinitionQuerySet):
+class _WorkflowChildCreateQuerySetMixin:
+    """Let workflow-child models preflight their proposed parent relation."""
+
+    model: type[Any]
+    db: str
+
+    def create(self, **kwargs: Any) -> Any:
+        """Construct first so the model owner can authorize its related create."""
+
+        self._for_write = True
+        instance = DefinitionQuerySet.bind_instance(self.model(**kwargs), self)
+        instance.save(force_insert=True, using=self.db)
+        return instance
+
+
+class StepQuerySet(_WorkflowChildCreateQuerySetMixin, DefinitionQuerySet):
     """Guard collection writes to workflow steps."""
 
 
@@ -1755,7 +1770,7 @@ class StepManager(AngeeManager.from_queryset(StepQuerySet)):  # type: ignore[mis
     """Manager for guarded workflow-step writes."""
 
 
-class EdgeQuerySet(DefinitionQuerySet):
+class EdgeQuerySet(_WorkflowChildCreateQuerySetMixin, DefinitionQuerySet):
     """Guard collection writes to workflow edges."""
 
 
@@ -1763,7 +1778,7 @@ class EdgeManager(AngeeManager.from_queryset(EdgeQuerySet)):  # type: ignore[mis
     """Manager for guarded workflow-edge writes."""
 
 
-class TriggerQuerySet(AngeeQuerySet[Any]):
+class TriggerQuerySet(_WorkflowChildCreateQuerySetMixin, AngeeQuerySet[Any]):
     """Collection writes that preserve trigger activation and rule invariants."""
 
     def update(self, **kwargs: Any) -> int:
