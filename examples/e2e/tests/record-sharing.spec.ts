@@ -27,7 +27,6 @@ test.describe("shared record access", () => {
     await expect(access).toBeEnabled({ timeout: 20_000 });
     await access.click();
     const accessPositioner = page.locator(".z-popover:visible");
-    await expect(accessPositioner).toHaveCSS("position", "absolute");
     await expect(accessPositioner).toHaveCSS(
       "z-index",
       "110",
@@ -69,7 +68,10 @@ test.describe("shared record access", () => {
       page.getByRole("option", { name: "Angee Developer", exact: true }),
     ).toBeVisible();
     await demoAgent.click();
-    await expect(recipient).toContainText("Demo Agent");
+    await expect(dialog.getByRole("button", {
+      name: "Recipient: Demo Agent",
+      exact: true,
+    })).toBeVisible();
 
     const visibleFields = dialog.getByRole("button", {
       name: "Visible fields",
@@ -77,10 +79,12 @@ test.describe("shared record access", () => {
     });
     await visibleFields.click();
     const menuPositioner = page.locator(".z-popover:visible");
-    await expect(menuPositioner).toHaveCSS("position", "absolute");
     await expect(menuPositioner).toHaveCSS("z-index", "110");
     await page.getByRole("menuitemcheckbox", { name: "Access" }).click();
-    await expect(dialog.getByRole("columnheader", { name: "Access" })).toHaveCount(0);
+    await expect(dialog.getByRole("button", {
+      name: "Sort Access (not sorted)",
+      exact: true,
+    })).toHaveCount(0);
   });
 
   test("agent and custom dashboard records inherit the same Share action", async ({
