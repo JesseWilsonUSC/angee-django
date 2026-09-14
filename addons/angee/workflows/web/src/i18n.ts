@@ -309,6 +309,8 @@ export const enWorkflowsMessages: Record<string, string> = {
   "runs.executionCount": "{count} logical executions",
   "runs.checkpoint": "Checkpoint",
   "runs.failure": "Failure",
+  "runs.advanceError": "Run advancement could not continue",
+  "runs.advanceErrorHint": "The queued work will retry automatically. If this continues, ask the workflow owner to resolve the error.",
   "runs.failedSummary": "Run failed in {step}",
   "runs.failedSummaryFallback": "The run stopped after an execution failed.",
   "runs.inspectFailure": "Inspect failed execution",

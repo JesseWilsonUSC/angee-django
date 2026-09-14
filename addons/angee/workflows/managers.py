@@ -4868,6 +4868,10 @@ class WorkflowDispatchQuerySet(AngeeQuerySet[Any]):
 class WorkflowDispatchManager(AngeeManager.from_queryset(WorkflowDispatchQuerySet)):  # type: ignore[misc]
     """Schedule intents and own bounded publication telemetry."""
 
+    @staticmethod
+    def _advance_error_prefix(dispatch: Any) -> str:
+        return f"Workflow advancement {dispatch.sqid} could not continue: "
+
     def _save(self, dispatch: Any, *, alias: str, **kwargs: Any) -> None:
         connection = connections[alias]
         if not connection.atomic_blocks:
@@ -5027,9 +5031,50 @@ class WorkflowDispatchManager(AngeeManager.from_queryset(WorkflowDispatchQuerySe
         if dispatch.consumed_at is not None or at < dispatch.available_at:
             raise RuntimeError("Ready dispatch admission changed before consumption.")
         session.consumed = True
+        if dispatch.kind == WorkflowDispatchKind.ADVANCE and not fenced:
+            run_model = self.model._meta.get_field("run").remote_field.model
+            run = system_queryset(run_model, using=alias, lock=None).get(pk=dispatch.run_id)
+            if (
+                run.status not in {RunStatus.FAILED, RunStatus.CANCELED}
+                and run.error.startswith(self._advance_error_prefix(dispatch))
+            ):
+                run.error = ""
+                run.save(using=alias, update_fields=["error", "updated_at"])
         dispatch.consumed_at = at
         self._save(dispatch, alias=alias, update_fields=["consumed_at", "updated_at"])
         return DispatchConsumption.FENCED if fenced else DispatchConsumption.CONSUMED
+
+    def record_advance_error(self, dispatch_id: int, *, error: Exception) -> bool:
+        """Expose one failed ADVANCE while preserving its durable retry intent."""
+
+        alias = self.db
+        unresolved = system_queryset(self.model, using=alias, lock=None).values(
+            "kind", "run_id"
+        ).get(pk=dispatch_id)
+        if unresolved["kind"] != WorkflowDispatchKind.ADVANCE or unresolved["run_id"] is None:
+            raise ValidationError({"dispatch": "Advance errors require an ADVANCE intent."})
+        run_model = self.model._meta.get_field("run").remote_field.model
+        with transaction.atomic(using=alias), system_context(reason="workflows.dispatch.advance_error"):
+            run = system_queryset(run_model, using=alias, lock=("self",)).get(
+                pk=unresolved["run_id"]
+            )
+            dispatch = system_queryset(self.model, using=alias, lock=("self",)).get(
+                pk=dispatch_id
+            )
+            if dispatch.kind != WorkflowDispatchKind.ADVANCE or dispatch.run_id != run.pk:
+                raise OperationalError("Advance dispatch ancestry changed while locking.")
+            if dispatch.consumed_at is not None or run.is_terminal:
+                return False
+            prefix = self._advance_error_prefix(dispatch)
+            if run.error and not run.error.startswith(prefix):
+                return False
+            detail = " ".join(str(error).split()) or type(error).__name__
+            message = f"{prefix}{detail}"[:2000]
+            if run.error == message:
+                return False
+            run.error = message
+            run.save(using=alias, update_fields=["error", "updated_at"])
+            return True
 
     def schedule_advance(self, run: Any, *, available_at: datetime) -> Any:
         """Create one independent run advance after locking its owner."""

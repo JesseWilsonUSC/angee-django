@@ -405,6 +405,7 @@ export function RunTimelinePanel({ runId, onReprocess }: { runId: string; onRepr
     || failedExecution?.system_kind || t("runs.systemExecution");
   const failedError = failedExecution?.current_attempt?.error || failedExecution?.error || run.error
     || t("runs.failedSummaryFallback");
+  const activeAdvanceError = TERMINAL_RUN_STATUSES.has(String(run.status)) ? null : run.error;
   const setExecution = (id: string | null) => {
     void navigate({ to: ".", search: (previous: Readonly<Record<string, unknown>>) => inspectionSelectionSearch(previous, { execution: id, attempt: null, history: id ? null : selectedStepId ? "executions" : null, payload: null }) });
   };
@@ -469,6 +470,11 @@ export function RunTimelinePanel({ runId, onReprocess }: { runId: string; onRepr
         {t("runs.recoversAttempt")} <TextLink href={`${routeHref("workflows.run", { id: recoverySource.step_run.run.id })}?execution=${encodeURIComponent(recoverySource.step_run.id)}&attempt=${encodeURIComponent(recoverySource.id)}`} onNavigate={(href) => { void navigate({ to: href }); }}>{t("runs.openSourceAttempt")}</TextLink>
       </div> : null}
       {runWaitingLabel ? <div className="flex-none border-b border-border-subtle bg-sheet px-4 py-2 text-13 text-fg-muted">{runWaitingLabel}</div> : null}
+      {activeAdvanceError ? <section className="flex-none border-b border-danger bg-danger-soft px-4 py-3" role="alert">
+        <h2 className="font-medium text-danger-text">{t("runs.advanceError")}</h2>
+        <p className="mt-1 text-13 text-danger-text">{activeAdvanceError}</p>
+        <p className="mt-1 text-13 text-danger-text">{t("runs.advanceErrorHint")}</p>
+      </section> : null}
       {run.status === "FAILED" ? <section className="flex-none border-b border-danger bg-danger-soft px-4 py-3" role="alert">
         <h2 className="font-medium text-danger-text">{t("runs.failedSummary", { step: failedStepLabel })}</h2>
         <p className="mt-1 text-13 text-danger-text">{failedError}</p>

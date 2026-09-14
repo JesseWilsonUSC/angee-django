@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.db import OperationalError, transaction
 from django.db.models.signals import post_save
 from django.utils import timezone
@@ -47,6 +48,99 @@ def test_advance_intents_are_independent_and_publish_without_consumption(run: Wo
         future.refresh_from_db()
     assert immediate.send_count == 1 and immediate.consumed_at is None
     assert future.send_count == 0 and future.consumed_at is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_advance_error_is_visible_until_the_exact_durable_intent_retries(run: WorkflowRun) -> None:
+    now = timezone.now()
+    dispatch = WorkflowDispatch.objects.schedule_advance(run, available_at=now)
+
+    from angee.workflows import engine
+
+    route = engine._route_completed_steps
+    failed = False
+
+    def fail_once(active_run: WorkflowRun) -> None:
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise ValidationError("Map evidence is structurally invalid.")
+        route(active_run)
+
+    with patch.object(engine, "_route_completed_steps", side_effect=fail_once):
+        with pytest.raises(ValidationError, match="Map evidence is structurally invalid"):
+            engine.advance_dispatch(dispatch.pk, expected_run_id=run.pk, now=now)
+
+        with system_context(reason="verify retained advance error"):
+            run.refresh_from_db()
+            dispatch.refresh_from_db()
+        assert run.status == "pending"
+        assert run.error == (
+            f"Workflow advancement {dispatch.sqid} could not continue: "
+            "['Map evidence is structurally invalid.']"
+        )
+        assert dispatch.consumed_at is None
+
+        assert engine.advance_dispatch(
+            dispatch.pk, expected_run_id=run.pk, now=now
+        ) == {"claimed": 0}
+
+    with system_context(reason="verify successful advance retry"):
+        run.refresh_from_db()
+        dispatch.refresh_from_db()
+    assert run.status == "running"
+    assert run.error == ""
+    assert dispatch.consumed_at == now
+
+    masked = WorkflowDispatch.objects.schedule_advance(run, available_at=now)
+    with patch.object(
+        engine, "_route_completed_steps", side_effect=ValidationError("Original advance failure."),
+    ), patch.object(
+        WorkflowDispatch.objects, "record_advance_error", side_effect=RuntimeError("Telemetry unavailable."),
+    ):
+        with pytest.raises(ValidationError, match="Original advance failure"):
+            engine.advance_dispatch(masked.pk, expected_run_id=run.pk, now=now)
+    assert engine.advance_dispatch(masked.pk, expected_run_id=run.pk, now=now) == {"claimed": 0}
+
+    blocked = WorkflowDispatch.objects.schedule_advance(run, available_at=now)
+    other = WorkflowDispatch.objects.schedule_advance(run, available_at=now)
+    assert WorkflowDispatch.objects.record_advance_error(
+        blocked.pk, error=ValidationError("A different pending advance failed.")
+    )
+    assert engine.advance_dispatch(other.pk, expected_run_id=run.pk, now=now) == {"claimed": 0}
+    with system_context(reason="verify exact advance error ownership"):
+        run.refresh_from_db()
+    assert str(blocked.sqid) in run.error
+    assert engine.advance_dispatch(blocked.pk, expected_run_id=run.pk, now=now) == {"claimed": 0}
+    with system_context(reason="verify exact advance error clearance"):
+        run.refresh_from_db()
+    assert run.error == ""
+
+    with system_context(reason="terminal run error fixture"):
+        run.mark_failed("Retained domain failure.")
+    terminal = WorkflowDispatch.objects.schedule_advance(run, available_at=now)
+    assert engine.advance_dispatch(terminal.pk, expected_run_id=run.pk, now=now) == {"claimed": 0}
+    with system_context(reason="verify terminal run error"):
+        run.refresh_from_db()
+    assert run.error == "Retained domain failure."
+
+    with system_context(reason="cancel a run while its advance is retrying"):
+        canceled_run = WorkflowRun.objects.create(workflow=run.workflow)
+    pending = WorkflowDispatch.objects.schedule_advance(canceled_run, available_at=now)
+    assert WorkflowDispatch.objects.record_advance_error(
+        pending.pk, error=ValidationError("Retained before cancellation."),
+    )
+    with system_context(reason="retain active error through cancellation"):
+        canceled_run.refresh_from_db()
+        retained_error = canceled_run.error
+        canceled_run.mark_canceled()
+    assert engine.advance_dispatch(pending.pk, expected_run_id=canceled_run.pk, now=now) == {"claimed": 0}
+    with system_context(reason="verify fenced delivery preserves the same error marker"):
+        canceled_run.refresh_from_db()
+        pending.refresh_from_db()
+    assert canceled_run.status == "canceled"
+    assert canceled_run.error == retained_error
+    assert pending.consumed_at == now
 
 
 @pytest.mark.django_db(transaction=True)

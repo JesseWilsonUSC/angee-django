@@ -9,6 +9,7 @@ inside ``advance()``.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import traceback
 from collections.abc import Callable, Iterable, Mapping
@@ -79,6 +80,7 @@ DECISION_VERBS: dict[str, Verdict] = {
     "reject": VERDICT_REJECTED,
     "escalate": VERDICT_ESCALATED,
 }
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,29 +201,39 @@ def advance_dispatch(
 
     timestamp = now or timezone.now()
     dispatch_model = _model("WorkflowDispatch")
-    with system_context(reason="workflows.engine.advance_dispatch"), transaction.atomic():
-        with dispatch_model.objects._owner_transition(
-            dispatch_id=dispatch_id, lease_token=None, at=timestamp, using=dispatch_model.objects.db
-        ) as preflight:
-            if preflight.disposition != DispatchPreflightDisposition.READY:
-                return {"claimed": 0}
-            if expected_run_id is not None and preflight.envelope.target_id != expected_run_id:
-                raise ValidationError({"dispatch": "ADVANCE envelope target does not match its durable intent."})
-            if preflight.envelope.kind != WorkflowDispatchKind.ADVANCE:
-                raise ValidationError({"dispatch": "ADVANCE envelope kind does not match its durable intent."})
-            run = _model("WorkflowRun").objects.select_related("workflow").get(
-                pk=preflight.envelope.target_id
-            )
-            claimed_ids: list[int] = []
-            if run.status not in RunStatus.TERMINAL:
-                _activate_run_if_needed(run, timestamp=timestamp)
-                _route_completed_steps(run)
-                if _process_map_steps(run, timestamp=timestamp):
+    admitted = False
+    try:
+        with system_context(reason="workflows.engine.advance_dispatch"), transaction.atomic():
+            with dispatch_model.objects._owner_transition(
+                dispatch_id=dispatch_id, lease_token=None, at=timestamp, using=dispatch_model.objects.db
+            ) as preflight:
+                if preflight.disposition != DispatchPreflightDisposition.READY:
+                    return {"claimed": 0}
+                if expected_run_id is not None and preflight.envelope.target_id != expected_run_id:
+                    raise ValidationError({"dispatch": "ADVANCE envelope target does not match its durable intent."})
+                if preflight.envelope.kind != WorkflowDispatchKind.ADVANCE:
+                    raise ValidationError({"dispatch": "ADVANCE envelope kind does not match its durable intent."})
+                admitted = True
+                run = _model("WorkflowRun").objects.select_related("workflow").get(
+                    pk=preflight.envelope.target_id
+                )
+                claimed_ids: list[int] = []
+                if run.status not in RunStatus.TERMINAL:
+                    _activate_run_if_needed(run, timestamp=timestamp)
                     _route_completed_steps(run)
-                    if not _fail_if_budget_exceeded(run):
-                        claimed_ids = _claim_due_steps(run, timestamp=timestamp, retained=True)
-                        _update_run_status(run, timestamp=timestamp)
-            dispatch_model.objects._consume_locked(dispatch_id, at=timestamp)
+                    if _process_map_steps(run, timestamp=timestamp):
+                        _route_completed_steps(run)
+                        if not _fail_if_budget_exceeded(run):
+                            claimed_ids = _claim_due_steps(run, timestamp=timestamp, retained=True)
+                            _update_run_status(run, timestamp=timestamp)
+                dispatch_model.objects._consume_locked(dispatch_id, at=timestamp)
+    except Exception as error:
+        if admitted:
+            try:
+                dispatch_model.objects.record_advance_error(dispatch_id, error=error)
+            except Exception:  # noqa: BLE001 - preserve the original advancement failure.
+                logger.exception("Could not retain workflow ADVANCE failure visibility.")
+        raise
     return {"claimed": len(claimed_ids)}
 
 
