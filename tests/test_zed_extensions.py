@@ -18,7 +18,7 @@ import pytest
 from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from rebac import RelationshipTuple, to_subject_ref, write_relationships
+from rebac import RelationshipTuple, system_context, to_subject_ref, write_relationships
 from rebac.backends import backend
 from rebac.schema.parser import parse_zed, validate_schema
 from rebac.types import ObjectRef
@@ -298,7 +298,12 @@ def test_contributed_relation_syncs_and_resolves(tmp_path: Path, _restore_scoped
 
     reviewer = User.objects.create_user(username="reviewer", email="reviewer@example.com")
     outsider = User.objects.create_user(username="outsider", email="outsider@example.com")
-    doc = ObjectRef(resource_type="scopedemo/doc", resource_id="doc-1")
+    from tests.scopedemo.models import Scope, ScopedDoc
+
+    with system_context(reason="test contributed relation target"):
+        scope = Scope.objects.create(name="Contributed relation")
+        doc_row = ScopedDoc.objects.create(scope=scope, title="Contributed relation")
+    doc = ObjectRef(resource_type="scopedemo/doc", resource_id=str(doc_row.pk))
     write_relationships([RelationshipTuple(resource=doc, relation="reviewer", subject=to_subject_ref(reviewer))])
 
     assert backend().check_access(subject=to_subject_ref(reviewer), action="read", resource=doc)

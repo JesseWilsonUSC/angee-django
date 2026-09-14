@@ -179,6 +179,10 @@ def test_iam_config_owns_shared_demo_users() -> None:
             "path": "resources/demo/020_iam.directory_wildcard_reader.yaml",
             "kind": "grants",
         },
+        {
+            "path": "resources/demo/030_iam.admin_grant.yaml",
+            "kind": "grants",
+        },
     )
     rows = _resource_rows(config, "demo", "resources/demo/010_iam.user.yaml")
     assert set(rows) == {"user_admin", "user_alice", "user_bob"}

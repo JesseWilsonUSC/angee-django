@@ -189,14 +189,23 @@ def main() -> None:
     if args.action == "tests":
         from django.apps import apps
         from django.conf import settings
+        from django.core.management import call_command
         from django.test.runner import DiscoverRunner
+
+        class ComposedTestRunner(DiscoverRunner):
+            """Prepare the generated host's schema before Django checks its models."""
+
+            def setup_databases(self, **kwargs: Any) -> Any:
+                databases = super().setup_databases(**kwargs)
+                call_command("rebac", "sync", verbosity=0)
+                return databases
 
         assert args.test_label, "Native tests require explicit test labels"
         assert settings.DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3"
         assert settings.DATABASES["default"]["NAME"] == ":memory:"
         settings.ANGEE_GRAPHQL_ALLOW_INMEMORY_CHANNEL_LAYER = True
         settings.MIGRATION_MODULES = {config.label: None for config in apps.get_app_configs()}
-        failures = DiscoverRunner(verbosity=1, interactive=False).run_tests(args.test_label)
+        failures = ComposedTestRunner(verbosity=1, interactive=False).run_tests(args.test_label)
         args.output.write_text(json.dumps({"failures": failures}) + "\n")
         raise SystemExit(bool(failures))
     if args.action == "state":

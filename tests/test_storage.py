@@ -39,6 +39,7 @@ from tests.conftest import (
     _clear_model_tables,
     _create_missing_tables,
     addon_schema,
+    create_platform_admin,
     execute_schema,
     result_data,
 )
@@ -575,7 +576,7 @@ def test_create_drive_gates_on_the_rebac_create_rule(drive: Any) -> None:
     ``test_storage_admin_role_reaches_manager_gated_rows_tuple_free``.)
     """
 
-    admin = get_user_model().objects.create_superuser(
+    admin = create_platform_admin(
         username="storage-create-admin",
         email="create-admin@example.com",
         password="admin",
@@ -641,7 +642,7 @@ def test_create_drive_graphql_surface_is_de_elevated(drive: Any) -> None:
     with no GraphQL gate and no elevated write.
     """
 
-    admin = get_user_model().objects.create_superuser(
+    admin = create_platform_admin(
         username="storage-graphql-create-admin",
         email="gql-create-admin@example.com",
         password="admin",

@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from rebac import PermissionDenied, system_context
 
 from angee.workflows.models import WorkflowStatus
+from tests.conftest import create_platform_admin
 from tests.workflows import Edge, Step, Workflow
 
 User = get_user_model()
@@ -368,7 +369,7 @@ def test_explicit_actor_bound_child_save_and_cascade_delete(workflow_tables: Non
 
     del workflow_tables
     with system_context(reason="seed explicit definition actor"):
-        admin = User.objects.create_superuser(username="definition-admin", password="admin")
+        admin = create_platform_admin(username="definition-admin", password="admin")
         workflow = Workflow.objects.create(name="Actor-bound")
         source = Step.objects.create(workflow=workflow, key="source", name="Source")
         target = Step.objects.create(workflow=workflow, key="target", name="Target")
@@ -388,7 +389,7 @@ def test_explicit_actor_bound_publication_carries_policy_to_copies(workflow_tabl
 
     del workflow_tables
     with system_context(reason="seed explicit publication actor"):
-        admin = User.objects.create_superuser(username="publication-admin", password="admin")
+        admin = create_platform_admin(username="publication-admin", password="admin")
         workflow = Workflow.objects.create(name="Actor publication")
         Step.objects.create(
             workflow=workflow,

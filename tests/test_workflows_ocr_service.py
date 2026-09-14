@@ -298,7 +298,7 @@ class ExtractionServiceTests(TestCase):
     def test_retains_failed_evidence_and_scopes_raw_values_to_authorized_readers(self) -> None:
         failed = self._extract(config={"result": {"unvalidated_raw": "private synthetic value"}})
         self.assertEqual(failed.status, "failed")
-        self.assertEqual(failed.error_code, "ValidationError")
+        self.assertEqual(failed.error_code, "result_validation:ValidationError")
         self.assertEqual(failed.result, {"unvalidated_raw": "private synthetic value"})
         with actor_context(self.owner):
             self.assertEqual(failed.sources.count(), 2)
@@ -424,7 +424,7 @@ class ExtractionServiceTests(TestCase):
                 config={"nul_result": True},
             )
             self.assertEqual(failed.status, "failed")
-            self.assertEqual(failed.error_code, "ValidationError")
+            self.assertEqual(failed.error_code, "result_validation:ValidationError")
             self.assertEqual(failed.result, {})
             self.assertEqual(failed.sources.count(), 1)
             self.assertEqual(failed.parts.count(), 0)

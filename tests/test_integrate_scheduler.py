@@ -306,7 +306,8 @@ def test_a_recovered_sync_drops_the_previous_runs_error_marker(scheduler_tables:
     bridge.refresh_from_db()
     assert bridge.sync_progress["error"]
 
-    second = first + timedelta(seconds=bridge.poll_interval)
+    second = bridge.next_sync_at
+    assert second is not None
     with system_context(reason="test integrate scheduler recover"):
         bridge.config = {"items": 2}
         bridge.save(update_fields=["config"])
@@ -345,7 +346,8 @@ def test_enqueued_due_bridge_records_errors_on_integration_runtime_status(schedu
     assert bridge.sync_error == "Integration operation failed."
     assert bridge.sync_progress["stage"] == Bridge.SyncStage.FAILED
     assert bridge.sync_progress["error"] == "Integration operation failed."
-    assert bridge.next_sync_at == now + timedelta(seconds=17)
+    assert bridge.next_sync_at is not None
+    assert bridge.next_sync_at >= now + timedelta(seconds=17)
     assert integration.lifecycle == IntegrationLifecycle.CONNECTED
     assert integration.runtime_status == IntegrationRuntimeStatus.ERROR
     assert integration.last_used_status == "error"
@@ -390,7 +392,8 @@ def test_enqueued_due_bridge_success_recovers_bridge_and_integration_runtime_sta
     integration.refresh_from_db()
     assert bridge.last_sync_status == "ok"
     assert bridge.last_sync_items == 5
-    assert bridge.next_sync_at == second_now + timedelta(seconds=23)
+    assert bridge.last_sync_completed_at is not None
+    assert bridge.next_sync_at == bridge.last_sync_completed_at + timedelta(seconds=23)
     assert integration.lifecycle == IntegrationLifecycle.CONNECTED
     assert integration.runtime_status == IntegrationRuntimeStatus.OK
     assert integration.last_used_status == "ok"

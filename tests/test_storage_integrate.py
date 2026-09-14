@@ -41,6 +41,7 @@ from tests.conftest import (
     _clear_model_tables,
     _create_missing_tables,
     addon_schema,
+    create_platform_admin,
     execute_schema,
     make_mount,
     result_data,
@@ -82,7 +83,7 @@ def mount_env(tmp_path: Path, mount_tables: None) -> SimpleNamespace:
     del mount_tables
     managed_root = tmp_path / "managed"
     managed_root.mkdir()
-    owner = get_user_model().objects.create_user(
+    owner = create_platform_admin(
         username="mount-owner",
         email="mount-owner@example.com",
     )
@@ -750,7 +751,8 @@ def test_run_sync_records_success_and_missing_root_error_telemetry(
 
     assert _run_sync(mount, now=first_now) == 1
     assert mount.last_sync_started_at == first_now
-    assert mount.last_sync_completed_at == first_now
+    assert mount.last_sync_completed_at is not None
+    assert mount.last_sync_completed_at >= first_now
     assert mount.last_sync_status == "ok"
     assert mount.last_sync_items == 1
     assert mount.sync_stage == mount.SyncStage.COMPLETED
@@ -764,7 +766,8 @@ def test_run_sync_records_success_and_missing_root_error_telemetry(
         mount.run_sync(now=failure_now)
     mount.refresh_from_db()
     assert mount.last_sync_started_at == failure_now
-    assert mount.last_sync_completed_at == first_now
+    assert mount.last_sync_completed_at is not None
+    assert mount.last_sync_completed_at >= first_now
     assert mount.last_sync_status == "error"
     assert mount.sync_stage == mount.SyncStage.FAILED
     assert mount.sync_error == "Integration configuration is invalid."

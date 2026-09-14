@@ -15,6 +15,7 @@ from django.test import RequestFactory, override_settings
 from rebac import (
     ObjectRef,
     RelationshipTuple,
+    backend,
     resolve_subjects,
     system_context,
     to_object_ref,
@@ -23,17 +24,61 @@ from rebac import (
 from rebac.actors import to_subject_ref
 from rebac.models import active_relationship_model
 from rebac.resources import model_for_resource_type
-from rebac.roles import ROLE_RELATION, grant
+from rebac.roles import ROLE_RELATION, grant, revoke
 
 from angee.graphql.data.metadata import _grantable_relations
 from tests.conftest import IAM_CONNECTION_TEST_MODELS, _clear_model_tables, addon_schema, execute_schema
 from tests.conftest import _create_missing_tables as _create_connection_tables
+from tests.conftest import create_platform_admin as _platform_admin
 from tests.conftest import result_data as _data
 from tests.projects_models import Project
 
 User = get_user_model()
 iam_schema = importlib.import_module("angee.iam.schema")
 iam_roles = importlib.import_module("angee.iam.roles")
+
+
+@pytest.mark.parametrize("storage", ["denormalized", "registry"])
+@pytest.mark.parametrize("via_group", [False, True])
+def test_platform_admin_is_grantable_without_django_superuser(
+    iam_permission_hub_tables: None,
+    storage: str,
+    via_group: bool,
+) -> None:
+    """Direct and group admin grants control both the hub and resource arrows."""
+
+    with override_settings(REBAC_LOCAL_BACKEND_STORAGE=storage):
+        admin = _platform_admin(f"grant-admin-{storage}-{via_group}")
+        recipient = User.objects.create_user(username=f"recipient-{storage}-{via_group}")
+        unrelated = User.objects.create_user(username=f"unrelated-{storage}-{via_group}")
+        subject = recipient
+        if via_group:
+            with system_context(reason="test.platform_admin.group"):
+                subject = iam_schema.Group.objects.create(name=f"Administrators {storage}")
+                subject.add_member(str(to_subject_ref(recipient)))
+        console = _schema("console")
+        query = "query { roles { id } }"
+
+        def can_read_unrelated() -> bool:
+            return backend().check_access(
+                subject=to_subject_ref(recipient), action="read", resource=to_object_ref(unrelated),
+            ).allowed
+
+        assert not recipient.is_superuser
+        assert _execute(console, query, user=recipient).errors is not None
+        assert not can_read_unrelated()
+        for mutation, expected in (("grant_role", True), ("revoke_role", False)):
+            result = _data(_execute(
+                console,
+                f'mutation($subject: String!) {{ {mutation}(subject: $subject, role: "angee/role:admin") }}',
+                {"subject": f"auth/group:{subject.sqid}#member" if via_group else f"auth/user:{subject.sqid}"},
+                user=admin,
+            ))
+            assert result[mutation] is True
+            assert (_execute(console, query, user=recipient).errors is None) is expected
+            assert can_read_unrelated() is expected
+        recipient.refresh_from_db()
+        assert not recipient.is_superuser
 
 
 def test_permission_hub_queries_are_admin_only(
@@ -85,11 +130,11 @@ def test_permission_hub_queries_are_admin_only(
     with system_context(reason="test.iam.permission_hub.promote"):
         User.objects.filter(pk=plain.pk).update(is_superuser=True)
     plain.refresh_from_db()
-    assert _execute(console_schema, queries[0], user=plain).errors is None
+    assert _execute(console_schema, queries[0], user=plain).errors is not None
 
-    with system_context(reason="test.iam.permission_hub.deactivate"):
-        User.objects.filter(pk=plain.pk).update(is_active=False)
-    plain.refresh_from_db()
+    grant(actor=plain, role="angee/role:admin")
+    assert _execute(console_schema, queries[0], user=plain).errors is None
+    revoke(actor=plain, role="angee/role:admin")
     assert _execute(console_schema, queries[0], user=plain).errors is not None
 
 
@@ -326,7 +371,7 @@ def test_roles_include_declared_empty_and_tuple_only_legacy_rows(
     assert admin_role == {
         "id": "angee/role:admin",
         "declared": True,
-        "grantable": False,
+        "grantable": True,
     }
     rejected = _execute(
         _schema("console"),
@@ -401,8 +446,7 @@ def test_iam_overview_aggregates_do_not_depend_on_paginated_rows(
     )
     grant(actor=targets[0], role="angee/role:auditor")
     grant(actor=targets[-1], role="angee/role:auditor")
-    with system_context(reason="test.iam.overview.superuser"):
-        User.objects.filter(pk=targets[-1].pk).update(is_superuser=True)
+    grant(actor=targets[-1], role="angee/role:admin")
 
     data = _data(
         _execute(
@@ -448,19 +492,22 @@ def test_iam_overview_aggregates_do_not_depend_on_paginated_rows(
     assert len(data["users"]) == 1
     assert len(data["iam_grants"]) == 1
     assert data["users_aggregate"]["aggregate"]["count"] == 507
-    assert data["iam_grants_aggregate"]["aggregate"]["count"] == 2
+    assert data["iam_grants_aggregate"]["aggregate"]["count"] == 4
     assert overview["user_count"] == 507
     assert overview["role_count"] == len(iam_roles.permission_hub_roles(limit=None))
-    assert overview["grant_count"] == 2
-    assert overview["relationship_count"] == 2
-    assert overview["privileged_grant_count"] == 0
-    assert overview["unassigned_user_count"] == 505
+    assert overview["grant_count"] == 4
+    assert overview["relationship_count"] == 4
+    assert overview["privileged_grant_count"] == 2
+    assert overview["unassigned_user_count"] == 504
     angee_namespace = next(row for row in overview["namespaces"] if row["namespace"] == "angee")
-    assert angee_namespace["grant_count"] == 2
-    assert overview["privileged_grants"] == []
+    assert angee_namespace["grant_count"] == 4
+    assert [row["role"] for row in overview["privileged_grants"]] == [
+        "angee/role:admin",
+        "angee/role:admin",
+    ]
     assert [row["username"] for row in overview["unassigned_users"]] == [
-        "hub-overview-admin",
         "hub-overview-target-001",
+        "hub-overview-target-002",
     ]
 
 
@@ -500,9 +547,9 @@ def test_iam_overview_privileged_grants_on_registry_relationship_storage(
             )
         )["iam_overview"]
 
-    assert overview["grant_count"] == 1
-    assert overview["privileged_grant_count"] == 0
-    assert overview["privileged_grants"] == []
+    assert overview["grant_count"] == 2
+    assert overview["privileged_grant_count"] == 1
+    assert [row["role"] for row in overview["privileged_grants"]] == ["angee/role:admin"]
 
 
 def test_permission_hub_mutations_are_admin_only(
@@ -968,15 +1015,6 @@ def iam_permission_hub_tables(transactional_db: Any) -> Iterator[None]:
                     schema_editor.delete_model(model)
 
 
-def _platform_admin(username: str) -> Any:
-    """Create a superuser whose live IAM attribute grants platform administration."""
-
-    admin = User.objects.create_superuser(
-        username=username,
-        email=f"{username}@example.com",
-        password="admin",
-    )
-    return admin
 
 
 def _role_membership_exists(user: Any, role: str) -> bool:

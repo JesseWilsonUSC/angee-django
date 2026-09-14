@@ -20,7 +20,7 @@ from rebac.models import active_relationship_model
 from rebac.relationships import write_relationships
 
 from angee.graphql.sharing import RecordAccessMutation, _grant_subject
-from tests.conftest import Folder, _clear_model_tables, _create_missing_tables
+from tests.conftest import Backend, Drive, Folder, _clear_model_tables, _create_missing_tables
 from tests.iam_models import Group
 from tests.projects_models import PROJECT_TEST_MODELS, Project
 from tests.test_project_access import project_access_schema as project_access_schema
@@ -44,8 +44,9 @@ def test_grant_subject_resolves_user_and_group_subject_set() -> None:
 def test_grant_subject_rejects_missing_malformed_and_wildcard_subjects() -> None:
     """New grants require one parseable, concrete subject row."""
 
+    missing_user = get_user_model().public_id_from_pk(999_999)
     with pytest.raises(ValueError, match="not found"):
-        _grant_subject("auth/user:missing")
+        _grant_subject(f"auth/user:{missing_user}")
     with pytest.raises(ValueError):
         _grant_subject("not-a-subject")
     with pytest.raises(ValueError, match="concrete subject"):
@@ -58,14 +59,15 @@ def test_grant_subject_rejects_missing_malformed_and_wildcard_subjects() -> None
 def test_record_access_mutations_are_atomic_and_delegate_subject_policy() -> None:
     """The mutation preflights all targets and delegates tuple validity to REBAC."""
 
-    models = (Folder, *PROJECT_TEST_MODELS)
+    models = (Backend, Drive, Folder, *PROJECT_TEST_MODELS)
     created = _create_missing_tables(models)
     user_model = get_user_model()
     try:
         owner = user_model.objects.create_user(username="sharing-owner")
         other = user_model.objects.create_user(username="sharing-other")
         service = user_model.objects.create_user(username="sharing-service", kind="service")
-        group = Group.objects.create(name="Sharing reviewers")
+        with system_context(reason="test.graphql.sharing.group"):
+            group = Group.objects.create(name="Sharing reviewers")
         with actor_context(owner):
             first = Project.objects.create(title="First")
         with actor_context(other):
@@ -111,7 +113,17 @@ def test_record_access_mutations_are_atomic_and_delegate_subject_policy() -> Non
         assert _has_access_tuple(first, "reader", to_subject_ref(group))
 
         with system_context(reason="test.graphql.sharing.invalid_species"):
-            folder = Folder.objects.create(name="Invalid subject", owner=owner)
+            storage_backend = Backend.objects.create(
+                slug="sharing",
+                label="Sharing",
+                backend_class="local",
+            )
+            drive = Drive.objects.create(
+                backend=storage_backend,
+                slug="sharing",
+                name="Sharing",
+            )
+            folder = Folder.objects.create(drive=drive, name="Invalid subject", owner=owner)
         with actor_context(owner), pytest.raises(ValueError, match="is not allowed"):
             grant(
                 object(),
@@ -123,7 +135,7 @@ def test_record_access_mutations_are_atomic_and_delegate_subject_policy() -> Non
             )
         assert not _has_access_tuple(first, "reader", SubjectRef(to_object_ref(folder)))
 
-        stale = SubjectRef.of("auth/user", "missing-service")
+        stale = SubjectRef.of("auth/user", "999999")
         with actor_context(owner):
             write_relationships([RelationshipTuple(to_object_ref(first), "reader", stale)])
             assert revoke(

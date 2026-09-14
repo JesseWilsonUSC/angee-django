@@ -592,7 +592,7 @@ def test_operator_admin_role_reaches_connection_read_tuple_free() -> None:
     connection = schema.get_definition("operator/connection")
     assert connection is not None
     reader = next(relation for relation in connection.relations if relation.name == "reader")
-    assert reader.backing == ConstBinding(target_id="operator_admin", kind="const")
+    assert reader.backing == ConstBinding(target_id="operator_admin")
 
     backend = LocalBackend()
     backend.set_schema(schema)

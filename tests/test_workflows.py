@@ -24,6 +24,7 @@ from angee.workflows.models import (
 )
 from angee.workflows.steps import StepImpl, StepOutcome
 from tests.conftest import SchemaAddon, execute_schema, result_data
+from tests.conftest import create_platform_admin as _platform_admin
 from tests.workflows import (
     Edge,
     Step,
@@ -115,11 +116,6 @@ def create_entry(workflow: Workflow, *, key: str = "start", name: str = "Start")
     )
 
 
-def _platform_admin(username: str) -> Any:
-    """Create a superuser holding the platform-admin role tuple."""
-
-    admin = User.objects.create_superuser(username=username, email=f"{username}@example.com", password="admin")
-    return admin
 
 
 def _console_schema() -> Any:
@@ -823,9 +819,31 @@ def test_workflows_for_subject_declaration_filters_resource_and_rebac(workflow_t
         if query["sql"].lstrip().upper().startswith("SELECT")
         and Workflow._meta.db_table in query["sql"]
     ]
+    for index in range(3):
+        _published_workflow(
+            name=f"Additional matching {index}",
+            subject_declaration=Workflow._meta.label,
+            owner=owner,
+        )
+    with CaptureQueriesContext(connection) as expanded_queries:
+        expanded = result_data(
+            execute_schema(
+                schema,
+                query,
+                {"subjectDeclaration": Workflow._meta.label},
+                user=owner,
+            )
+        )["workflows_for_subject_declaration"]
+    expanded_workflow_selects = [
+        query["sql"]
+        for query in expanded_queries.captured_queries
+        if query["sql"].lstrip().upper().startswith("SELECT")
+            and Workflow._meta.db_table in query["sql"]
+    ]
     # REBAC field ownership stays in the annotated domain query, independent of
     # the number of workflows returned; lineage fields add no per-row reads.
-    assert len(workflow_selects) == 1
+    assert len(workflow_selects) == len(expanded_workflow_selects) == 6
+    assert len(expanded) == 5
     assert hidden == []
 
 

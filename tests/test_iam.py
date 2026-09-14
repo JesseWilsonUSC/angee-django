@@ -186,8 +186,8 @@ def test_kind_mutation_to_service_clears_password_and_blocks_auth() -> None:
 
 
 @pytest.mark.django_db
-def test_overview_requires_swappable_user_people_scope(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The IAM overview requires the swapped user's queryset-owned people() scope."""
+def test_overview_requires_swappable_user_role_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The IAM overview requires the swapped user's queryset-owned role scope."""
 
     from angee.iam import roles
 
@@ -203,7 +203,7 @@ def test_overview_requires_swappable_user_people_scope(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(roles, "get_user_model", lambda: UserModel)
 
-    with pytest.raises(AttributeError, match="people"):
+    with pytest.raises(AttributeError, match="without_direct_roles"):
         roles.OverviewInfo.build(peek_limit=1)
 
 

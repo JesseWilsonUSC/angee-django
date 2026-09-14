@@ -125,7 +125,7 @@ def test_native_import_pipeline_rolls_back_all_groups_grants_and_hooks(
             "fields": {"model": "v1", "tags": ["resource_addon.tag"]},
         },
     ]
-    grant = {"resource": "angee/role:admin", "relation": "member", "subject": "resource_addon.user"}
+    grant = {"resource": "iam/directory:main", "relation": "reader", "subject": "resource_addon.user"}
     data_path = tmp_path / "data.json"
     grant_path = tmp_path / "grants.json"
     data_path.write_text(json.dumps({"rows": rows}))

@@ -36,6 +36,7 @@ from angee.platform import models as platform_models
 from angee.platform.models import _preview_revision
 from tests.conftest import PLATFORM_TEST_MODELS, SchemaAddon, execute_schema
 from tests.conftest import _create_missing_tables as _create_tables
+from tests.conftest import create_platform_admin as _platform_admin
 from tests.conftest import result_data as _data
 
 User = get_user_model()
@@ -315,10 +316,3 @@ def _execute(schema: Any, query: str, variables: dict[str, Any] | None = None, *
     request = RequestFactory().post("/graphql/console/")
     request.user = user or AnonymousUser()
     return execute_schema(schema, query, variables, request=request)
-
-
-def _platform_admin(username: str) -> Any:
-    """Create a superuser holding the platform-admin role tuple."""
-
-    admin = User.objects.create_superuser(username=username, email=f"{username}@example.com", password="admin")
-    return admin

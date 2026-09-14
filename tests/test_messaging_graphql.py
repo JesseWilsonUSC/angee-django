@@ -46,6 +46,7 @@ from tests.conftest import (
 from tests.conftest import (
     File as StorageFile,
 )
+from tests.conftest import create_platform_admin as _platform_admin
 from tests.conftest import result_data as _data
 from tests.messaging_models import Channel
 from tests.test_agents_graphql import AGENTS_GRAPHQL_MODELS
@@ -3057,11 +3058,6 @@ def _storage_drive(tmp_path: Path, *, owner: Any) -> Any:
     )
 
 
-def _platform_admin(username: str) -> Any:
-    """Create a superuser holding the universal admin role."""
-
-    admin = User.objects.create_superuser(username=username, email=f"{username}@example.com", password="admin")
-    return admin
 
 
 def _request(user: Any) -> Any:

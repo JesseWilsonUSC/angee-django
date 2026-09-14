@@ -60,7 +60,7 @@ describe("IAM overview page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Grant" }));
     fireEvent.click(screen.getByRole("combobox", { name: "Role" }));
     expect(await screen.findByRole("option", { name: "angee / Reader" })).toBeTruthy();
-    expect(screen.queryByRole("option", { name: "angee / Admin" })).toBeNull();
+    expect(screen.getByRole("option", { name: "angee / Admin" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "angee / Removed" })).toBeNull();
   });
 });
@@ -69,7 +69,7 @@ function overviewData(): unknown {
   return {
     iam_roles: [
       { id: "angee/role:reader", role_id: "reader", namespace: "angee", label: "Reader", declared: true, grantable: true },
-      { id: "angee/role:admin", role_id: "admin", namespace: "angee", label: "Admin", declared: true, grantable: false },
+      { id: "angee/role:admin", role_id: "admin", namespace: "angee", label: "Admin", declared: true, grantable: true },
       { id: "angee/role:removed", role_id: "removed", namespace: "angee", label: "Removed", declared: false, grantable: false },
     ],
     iam_overview: {
