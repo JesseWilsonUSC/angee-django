@@ -5,6 +5,7 @@ import {
   Field,
   Form,
   List,
+  type RecordPanelContext,
 } from "@angee/ui";
 
 import { usePartiesT } from "./i18n";
@@ -48,7 +49,7 @@ export function addressFields({
 }
 
 /** Canonical create/edit address collection shared by every Party subtype. */
-export function PartyAddresses({ recordId }: { recordId: string }): React.ReactElement {
+export function PartyAddresses({ recordId, form }: Pick<RecordPanelContext, "recordId" | "form">): React.ReactElement {
   const t = usePartiesT();
   const labels: AddressFieldLabels = {
     label: t("address.label"),
@@ -66,6 +67,7 @@ export function PartyAddresses({ recordId }: { recordId: string }): React.ReactE
       resource={ADDRESS}
       baseFilter={{ party: { exact: recordId } }}
       createDefaults={{ party: recordId }}
+      hideCreate={form.formReadOnly}
     >
       <List resource={ADDRESS} order={{ is_primary: "DESC" }}>
         <Column field="label" />
@@ -78,7 +80,7 @@ export function PartyAddresses({ recordId }: { recordId: string }): React.ReactE
         <Column field="country" />
         <Column field="is_primary" />
       </List>
-      <Form resource={ADDRESS}>
+      <Form resource={ADDRESS} readOnly={form.formReadOnly}>
         {addressFields({ labels })}
       </Form>
     </DrawerResourceList>

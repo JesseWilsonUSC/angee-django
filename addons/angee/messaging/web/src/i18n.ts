@@ -186,6 +186,8 @@ export const enMessagingMessages: Record<string, string> = {
   "messages.thread": "Thread",
   "messages.channelType": "Channel",
   "messages.groupEnvelope": "Envelope",
+  "messages.loadingBody": "Loading message",
+  "messages.bodyUnavailable": "Message body is unavailable.",
   "messages.hide": "Hide",
   "messages.remove": "Remove",
   "messages.removeTitle": "Remove message?",

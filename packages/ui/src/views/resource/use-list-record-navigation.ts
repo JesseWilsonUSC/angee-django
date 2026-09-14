@@ -13,6 +13,13 @@ interface PendingRecordNavigation {
   scope: ListViewNavigationScope;
   edge: "first" | "last";
 }
+interface ResolvedRecordPosition {
+  recordId: string;
+  binding: string;
+  sourceScope: string;
+  precedingIds: ReadonlySet<string>;
+  followingIds: readonly string[];
+}
 export interface UseListRecordNavigationOptions {
   resource: string;
   /** Public id of the open record; null disables the headless list query. */
@@ -30,6 +37,7 @@ export interface UseListRecordNavigationOptions {
   /** Clear an active record when its collection becomes empty. */
   onClearSelection?: () => void;
 }
+export type RecordResolutionNavigationResult = "advanced" | "end" | "empty" | "unscoped";
 export interface UseListRecordNavigationResult<TRow extends Row> {
   navigationScope: ListViewNavigationScope | null;
   /** Keep the one native local Table owner mounted while an inline record is open. */
@@ -37,6 +45,8 @@ export interface UseListRecordNavigationResult<TRow extends Row> {
   navigation: RecordNavigation | null;
   onListStateChange: (state: ResourceListSnapshot<TRow>) => void;
   selectRecord: (id: string, scope?: ListViewNavigationScope) => void;
+  /** Refetch the exact server query after resolution and select its next surviving row. */
+  onRecordResolved: () => Promise<RecordResolutionNavigationResult>;
 }
 
 /**
@@ -63,11 +73,15 @@ export function useListRecordNavigation<TRow extends Row>({
   const [localEdge, setLocalEdge] = React.useState<{ recordId: string; binding: string; sourceScope: string; page: number; edge: "first" | "last" } | null>(null);
   const [pending, setPending] = React.useState<PendingRecordNavigation | null>(null);
   const firstSelectionRef = React.useRef<string | null>(null);
+  const resolvedPositionRef = React.useRef<ResolvedRecordPosition | null>(null);
   const navigationScope = isClientRowModel(model?.resource) ? null : controlledScope === undefined ? captured?.binding === binding ? captured.scope : null : controlledScope;
   const localSnapshot = local?.binding === binding && (controlledScope === undefined || isClientRowModel(model?.resource)) ? local.snapshot : null;
   const scopeIdentity = stableSerialize(navigationScope);
+  const activeRecordRef = React.useRef({ recordId, binding, scopeIdentity });
+  activeRecordRef.current = { recordId, binding, scopeIdentity };
   const current = useResourceListQuery({ resource: model?.resource, scope: navigationScope, fields: idFields, enabled: Boolean(recordId) });
   const target = useResourceListQuery({ resource: model?.resource, scope: pending?.scope ?? null, fields: idFields, enabled: Boolean(recordId && pending?.recordId === recordId && pending.binding === binding && pending.sourceScope === scopeIdentity) });
+  const refetchCurrent = current.query.refetch;
 
   const onListStateChange = React.useCallback((state: ResourceListSnapshot<TRow>) => {
     if (state.navigationScope) {
@@ -130,6 +144,37 @@ export function useListRecordNavigation<TRow extends Row>({
   const pageSize = navigationScope?.pageSize ?? localSnapshot?.pageSize ?? 1;
   const failed = navigationScope ? current.query.isError : Boolean(localSnapshot?.error);
   const index = recordId && rows ? rows.findIndex((row) => readId(row) === recordId) : -1;
+  React.useLayoutEffect(() => {
+    if (!navigationScope || !recordId || index < 0 || current.query.isFetching || current.query.isError) return;
+    resolvedPositionRef.current = {
+      recordId,
+      binding,
+      sourceScope: scopeIdentity,
+      precedingIds: new Set((rows ?? []).slice(0, index).map(readId).filter((id): id is string => Boolean(id))),
+      followingIds: (rows ?? []).slice(index + 1).map(readId).filter((id): id is string => Boolean(id)),
+    };
+  }, [binding, current.query.isError, current.query.isFetching, index, navigationScope, readId, recordId, rows, scopeIdentity]);
+  const onRecordResolved = React.useCallback(async () => {
+    const position = resolvedPositionRef.current;
+    if (!navigationScope || !recordId || !position
+        || position.recordId !== recordId || position.binding !== binding
+        || position.sourceScope !== scopeIdentity) return "unscoped";
+    const refreshed = await refetchCurrent();
+    if (refreshed.isError) throw refreshed.error ?? new Error("The collection could not be refreshed.");
+    const active = activeRecordRef.current;
+    if (active.recordId !== recordId || active.binding !== binding || active.scopeIdentity !== scopeIdentity) return "advanced";
+    const refreshedRows = refreshed.data?.data ?? [];
+    if (refreshed.data?.total === 0) return "empty";
+    const refreshedIds = refreshedRows.map(readId).filter((id): id is string => Boolean(id));
+    const refreshedSet = new Set(refreshedIds);
+    const knownSuccessor = position.followingIds.find((id) => refreshedSet.has(id));
+    const nextId = knownSuccessor ?? refreshedIds.find(
+      (id) => id !== recordId && !position.precedingIds.has(id),
+    );
+    if (!nextId) return "end";
+    selectRecord(nextId, navigationScope);
+    return "advanced";
+  }, [binding, navigationScope, readId, recordId, refetchCurrent, scopeIdentity, selectRecord]);
   if (recordId && (navigationScope || localSnapshot) && !failed) {
     const position = index < 0 ? undefined : (page - 1) * pageSize + index + 1;
     navigation = { current: position, total };
@@ -149,5 +194,12 @@ export function useListRecordNavigation<TRow extends Row>({
       if (index < (rows?.length ?? 0) - 1 || (hasNextPage && (navigationScope || onSetPage))) navigation.onNext = () => move(1);
     }
   }
-  return { navigationScope, retainLocalList: !navigationScope && Boolean(localSnapshot), navigation, onListStateChange, selectRecord };
+  return {
+    navigationScope,
+    retainLocalList: !navigationScope && Boolean(localSnapshot),
+    navigation,
+    onListStateChange,
+    selectRecord,
+    onRecordResolved,
+  };
 }

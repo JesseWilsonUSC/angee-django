@@ -250,9 +250,10 @@ test("dirty approval values use the shared leave guard before changing selection
   expect(screen.queryByText("Unsaved changes - leave without saving?")).toBeNull();
 });
 
-test("resolution advances from the middle using the native filtered collection cursor", async () => {
+test("resolution awaits the live collection successor instead of the captured pager callback", async () => {
   const earlier = vi.fn();
   const later = vi.fn();
+  const resolved = vi.fn(async () => "advanced" as const);
   const close = vi.fn();
   const router = createRouter({ routeTree: createRootRoute(), history: createMemoryHistory({ initialEntries: ["/"] }) });
   render(
@@ -262,7 +263,7 @@ test("resolution advances from the middle using the native filtered collection c
           recordId="decision-2"
           navigation={{ current: 2, total: 3, onPrev: earlier, onNext: later }}
           onClose={close}
-          onResolved={later}
+          onResolved={resolved}
           onDirtyChange={vi.fn()}
           requestLeave={async () => true}
         />
@@ -271,14 +272,16 @@ test("resolution advances from the middle using the native filtered collection c
   );
 
   fireEvent.click(await screen.findByRole("button", { name: "Complete" }));
-  await waitFor(() => expect(later).toHaveBeenCalledOnce());
+  await waitFor(() => expect(resolved).toHaveBeenCalledOnce());
+  expect(later).not.toHaveBeenCalled();
   expect(earlier).not.toHaveBeenCalled();
   expect(close).not.toHaveBeenCalled();
 });
 
-test("resolution at the end of the native collection returns to the queue without wrapping", async () => {
+test("resolution at the end reports remaining earlier work without wrapping", async () => {
   const earlier = vi.fn();
   const close = vi.fn();
+  const resolved = vi.fn(async () => "end" as const);
   const router = createRouter({ routeTree: createRootRoute(), history: createMemoryHistory({ initialEntries: ["/"] }) });
   render(
     <RouterContextProvider router={router}><ModalsHost><ToastProvider>
@@ -287,7 +290,7 @@ test("resolution at the end of the native collection returns to the queue withou
           recordId="decision-3"
           navigation={{ current: 3, total: 3, onPrev: earlier }}
           onClose={close}
-          onResolved={close}
+          onResolved={resolved}
           onDirtyChange={vi.fn()}
           requestLeave={async () => true}
         />
@@ -296,6 +299,34 @@ test("resolution at the end of the native collection returns to the queue withou
   );
 
   fireEvent.click(await screen.findByRole("button", { name: "Complete" }));
-  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(await screen.findByText("End of this review queue")).toBeTruthy();
+  expect(resolved).toHaveBeenCalledOnce();
+  expect(close).not.toHaveBeenCalled();
   expect(earlier).not.toHaveBeenCalled();
+});
+
+test("resolution shows queue completion only when the refreshed query is empty", async () => {
+  const close = vi.fn();
+  const resolved = vi.fn(async () => "empty" as const);
+  const router = createRouter({ routeTree: createRootRoute(), history: createMemoryHistory({ initialEntries: ["/"] }) });
+  render(
+    <RouterContextProvider router={router}><ModalsHost><ToastProvider>
+      <AppRuntimeProvider runtime={{ widgets: defaultWidgets }}>
+        <RoutedDecisionTask
+          recordId="decision-1"
+          navigation={{ current: 1, total: 1 }}
+          onClose={close}
+          onResolved={resolved}
+          onDirtyChange={vi.fn()}
+          requestLeave={async () => true}
+        />
+      </AppRuntimeProvider>
+    </ToastProvider></ModalsHost></RouterContextProvider>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Complete" }));
+  expect(await screen.findByText("Queue complete")).toBeTruthy();
+  expect(screen.getByText("There are no pending approvals in this view.")).toBeTruthy();
+  expect(resolved).toHaveBeenCalledOnce();
+  expect(close).not.toHaveBeenCalled();
 });

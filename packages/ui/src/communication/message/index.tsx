@@ -174,6 +174,7 @@ export interface MessagePart {
   disposition?: string | null;
   cid?: string | null;
   file?: MessagePartFile | null;
+  parent?: Pick<MessagePart, "id" | "type"> | null;
 }
 
 export interface MessagePartsViewProps extends Omit<HTMLAttributes<HTMLDivElement>, "children"> {
@@ -201,10 +202,11 @@ export function MessagePartsView({
   className,
   ...props
 }: MessagePartsViewProps): ReactElement | null {
-  if (!parts.some(hasRenderableMessagePart)) return null;
+  const visibleParts = preferredMessageParts(parts);
+  if (!visibleParts.some(hasRenderableMessagePart)) return null;
   return (
     <div className={cn("space-y-2 whitespace-normal text-13 leading-relaxed text-current", className)} {...props}>
-      {parts.map((part, index) =>
+      {visibleParts.map((part, index) =>
         hasRenderableMessagePart(part) ? (
           <MessagePartItem
             key={messagePartKey(part, index)}
@@ -219,6 +221,27 @@ export function MessagePartsView({
       )}
     </div>
   );
+}
+
+/** MIME multipart/alternative children are ordered from least to most faithful.
+ * Render only the last representation this view supports, while retaining files
+ * and every part outside an alternative container. */
+function preferredMessageParts(parts: readonly MessagePart[]): readonly MessagePart[] {
+  const preferredByParent = new Map<string, MessagePart>();
+  for (const part of parts) {
+    const parentId = part.parent?.id;
+    if (!parentId || normaliseMime(part.parent?.type) !== "multipart/alternative") continue;
+    if (!(part.fragment?.text ?? "").trim()) continue;
+    const mime = normaliseMime(part.type);
+    if (mime === "text/plain" || mime === "text/html") preferredByParent.set(parentId, part);
+  }
+  if (preferredByParent.size === 0) return parts;
+  return parts.filter((part) => {
+    const parentId = part.parent?.id;
+    if (!parentId || !preferredByParent.has(parentId) || !(part.fragment?.text ?? "").trim()) return true;
+    const mime = normaliseMime(part.type);
+    return (mime !== "text/plain" && mime !== "text/html") || preferredByParent.get(parentId) === part;
+  });
 }
 
 function defaultMessagePartFileUrl(file: MessagePartFile): string | null | undefined {

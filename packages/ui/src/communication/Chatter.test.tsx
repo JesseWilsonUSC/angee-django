@@ -21,6 +21,8 @@ import {
 } from "../runtime";
 import { Chatter } from "./Chatter";
 import { ChatterProvider, useChatterContent, type ChatterContent } from "./chatter-context";
+import { useRecordPeek } from "./record-peek";
+import { registerForm, type RegisteredFormProps } from "../views/form/registered-form";
 
 beforeAll(() => {
   Element.prototype.getAnimations ??= () => [];
@@ -184,7 +186,38 @@ describe("Chatter", () => {
     expect(screen.getByText("Decision form")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add comment" })).toBeTruthy();
   });
+
+  test("record peeks render the registered canonical form in read-only mode", async () => {
+    const seen = vi.fn();
+    const CanonicalForm = (props: RegisteredFormProps) => {
+      seen(props);
+      return <p>Canonical supplier details</p>;
+    };
+    render(chatterContentView(<RecordPeekHarness />, "comments", {
+      forms: { "parties.Party": registerForm("parties.Party", CanonicalForm) },
+    }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Review note" }), {
+      target: { value: "Retain this review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Inspect supplier" }));
+    expect(await screen.findByText("Canonical supplier details")).toBeTruthy();
+    expect(seen).toHaveBeenCalledWith(expect.objectContaining({
+      resource: "parties.Party", id: "pty_1", readOnly: true, hideRecordChrome: true,
+    }));
+    expect((screen.getByRole("textbox", { name: "Review note" }) as HTMLInputElement).value)
+      .toBe("Retain this review");
+  });
 });
+
+function RecordPeekHarness(): React.ReactElement {
+  const open = useRecordPeek();
+  return <>
+    <input aria-label="Review note" />
+    <button type="button" onClick={() => open({ model: "parties.Party", id: "pty_1" })}>
+      Inspect supplier
+    </button>
+  </>;
+}
 
 function PublishedContent({ content }: { content: ChatterContent }): null {
   useChatterContent(content);
@@ -234,10 +267,10 @@ function renderChatter(runtime: Partial<AppRuntime>): void {
   render(<RouterProvider router={router} />);
 }
 
-function chatterContentView(children: React.ReactNode, defaultTab: string): React.ReactElement {
+function chatterContentView(children: React.ReactNode, defaultTab: string, runtime: Partial<AppRuntime> = {}): React.ReactElement {
   return (
     <RouterContextProvider router={createRouter({ routeTree: createRootRoute(), history: createMemoryHistory({ initialEntries: ["/"] }) })}>
-      <AppRuntimeProvider runtime={{ icons: baseIcons }}>
+      <AppRuntimeProvider runtime={{ icons: baseIcons, ...runtime }}>
         <ChatterProvider defaultTab={defaultTab}>
           {children}
           <Chatter />

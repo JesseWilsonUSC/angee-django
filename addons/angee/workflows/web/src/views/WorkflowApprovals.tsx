@@ -12,10 +12,13 @@ import {
   LoadingPanel,
   ResourceList,
   RecordPager,
+  PageToolbar,
+  useBreadcrumbLeafLabel,
   errorMessage,
   useUnsavedChangesNavigationGuard,
   type RecordPanelContext,
   type RecordNavigation,
+  type ResourceRecordRenderContext,
 } from "@angee/ui";
 
 import { ScopedWorkflowDecisionDocument, TargetedTabWorkflowDecisionDocument, TargetedWorkflowDecisionDocument, WorkflowDecisionDocument, type PendingWorkflowDecision } from "../documents.public";
@@ -107,13 +110,13 @@ export function WorkflowApprovals({ runId, executionId, attemptId, target, inclu
           defaultFilter={{ verdict: { exact: "PENDING" } }}
           defaultGroup={{ field: "step_run.run.workflow" }}
           groupOptions={[
-            { id: "workflow", label: t("inbox.groupWorkflow"), group: { field: "step_run.run.workflow" } },
+            { id: "step_run.run.workflow", label: t("inbox.groupWorkflow"), group: { field: "step_run.run.workflow" } },
             { id: "action", label: t("inbox.groupAction"), group: { field: "action" } },
           ]}
-          renderRecord={({ recordId, navigation, onClose }) => recordId ? (
-            <RoutedDecisionTask recordId={recordId} navigation={navigation}
+          renderRecord={({ recordId, navigation, onClose, onRecordResolved }) => recordId ? (
+            <RoutedDecisionTask key={recordId} recordId={recordId} navigation={navigation}
               onClose={onClose}
-              onResolved={navigation?.onNext ?? onClose}
+              onResolved={onRecordResolved}
               onDirtyChange={setDirty} requestLeave={requestLeave} />
           ) : null}
         >
@@ -121,6 +124,7 @@ export function WorkflowApprovals({ runId, executionId, attemptId, target, inclu
             icon: "workflow-inbox", title: t("inbox.queueComplete"), description: t("inbox.queueCompleteDescription"),
           }}>
             <Column field="step_run.step" header={t("inbox.colDecision")} />
+            <Column field="target_label" header={t("inbox.colRecord")} />
             <Column field="step_run.run.workflow" header={t("inbox.colWorkflow")} />
             <Column field="verdict" widget="statusBadge" />
             <Column field="priority" />
@@ -205,16 +209,18 @@ export function RoutedDecisionTask({ recordId, navigation, onClose, onResolved, 
   recordId: string;
   navigation: RecordNavigation | null;
   onClose: () => void;
-  onResolved: () => void;
+  onResolved: ResourceRecordRenderContext["onRecordResolved"] | (() => void);
   onDirtyChange: (dirty: boolean) => void;
   requestLeave: () => Promise<boolean>;
 }): React.ReactElement {
   const t = useWorkflowsT();
+  const [queueEnd, setQueueEnd] = React.useState<"end" | "empty" | null>(null);
   const decision = useAuthoredQuery(
     WorkflowDecisionDocument,
     { id: recordId },
     { dataProviderName: "public", models: [DECISION_MODEL], records: [{ model: DECISION_MODEL, id: recordId }] },
   );
+  useBreadcrumbLeafLabel(decision.data?.workflow_decisions[0]?.step_name);
   const afterLeave = React.useCallback((action: () => void) => {
     void requestLeave().then((leave) => {
       if (leave) {
@@ -229,23 +235,24 @@ export function RoutedDecisionTask({ recordId, navigation, onClose, onResolved, 
     onNext: navigation.onNext ? () => afterLeave(navigation.onNext!) : undefined,
   } : null;
   return <div className="flex h-full min-h-0 flex-col bg-sheet-1">
-    <div className="flex items-center gap-2 border-b border-border-subtle px-4 py-2">
+    <PageToolbar density="compact" sticky start={
       <Button type="button" variant="ghost" onClick={() => afterLeave(onClose)}>
         <Glyph name="chevron-left" />{t("inbox.back")}
       </Button>
-      <div className="ml-auto flex items-center gap-2">
-        {guardedNavigation ? <RecordPager navigation={guardedNavigation} /> : null}
-        {guardedNavigation?.onNext ? (
-          <Button type="button" variant="ghost" onClick={guardedNavigation.onNext}>
-            {t("inbox.nextDecision")}<Glyph name="chevron-right" />
-          </Button>
-        ) : null}
-      </div>
-    </div>
+    } end={guardedNavigation ? <RecordPager navigation={guardedNavigation} /> : null} />
+    <div className="min-h-0 flex-1 overflow-hidden">
+    {queueEnd ? <EmptyState icon="workflow-inbox" title={t(queueEnd === "empty" ? "inbox.queueComplete" : "inbox.queueEnd")}
+      description={t(queueEnd === "empty" ? "inbox.queueCompleteDescription" : "inbox.queueEndDescription")}
+      actions={<Button type="button" onClick={onClose}>{t("inbox.back")}</Button>} /> :
     <DecisionTaskResult context={{ recordId, reload: () => undefined }} approval={decision.data?.workflow_decisions[0]}
       onDirtyChange={onDirtyChange} fetching={decision.isFetching} error={decision.error}
       refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null}
-      onResolved={onResolved} />
+      onResolved={async () => {
+        const result = await onResolved();
+        if (result === "end" || result === "empty") setQueueEnd(result);
+        else if (result === "unscoped") onClose();
+      }} />}
+    </div>
   </div>;
 }
 
@@ -314,7 +321,7 @@ function DecisionTaskResult({ context, approval, fetching, error, refetch, onDir
   onDirtyChange: (dirty: boolean) => void;
   onBack?: () => void;
   onSkip?: () => void;
-  onResolved?: () => void;
+  onResolved?: () => void | Promise<void>;
 }): React.ReactElement {
   const t = useWorkflowsT();
   const [retainedState, setRetainedState] = React.useState({
@@ -353,11 +360,11 @@ function DecisionTaskResult({ context, approval, fetching, error, refetch, onDir
       onSkip={onSkip}
       onDirtyChange={onDirtyChange}
       available={!error && Boolean(approval)}
-      onResolved={() => {
+      onResolved={async () => {
         onDirtyChange(false);
-        void refetch();
+        await refetch();
         context.reload();
-        onResolved?.();
+        await onResolved?.();
       }}
       reconcile={refetch}
     />

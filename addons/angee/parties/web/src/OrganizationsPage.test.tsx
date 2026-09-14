@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { Field, pageElementProps, parsePageFields, type FormProps, type ResourceListProps } from "@angee/ui";
+import { Field, pageElementProps, parsePageFields, type FormProps } from "@angee/ui";
 
 vi.mock("./i18n", () => ({ usePartiesT: () => (key: string) => key }));
 vi.mock("@angee/ui", async (importOriginal) => {
@@ -7,7 +7,7 @@ vi.mock("@angee/ui", async (importOriginal) => {
   return { ...actual, useSlot: vi.fn(() => []) };
 });
 import { useSlot } from "@angee/ui";
-import { OrganizationForm, OrganizationsPage } from "./OrganizationsPage";
+import { OrganizationForm } from "./OrganizationsPage";
 import { ORGANIZATION_FORM_FIELDS_SLOT } from "./slots";
 
 function formFields() {
@@ -18,8 +18,10 @@ function formFields() {
 }
 
 function recordTabIds() {
-  const page = OrganizationsPage();
-  return ((page.props as ResourceListProps).recordTabs ?? []).map((tab) => tab.id);
+  const formView = OrganizationForm({ resource: "parties.Organization", id: "party-1" });
+  const form = pageElementProps<FormProps>(formView, "form");
+  if (!form) throw new Error("Expected the native organization form");
+  return (form.recordTabs ?? []).map((tab) => tab.id);
 }
 
 describe("organization form extensions", () => {

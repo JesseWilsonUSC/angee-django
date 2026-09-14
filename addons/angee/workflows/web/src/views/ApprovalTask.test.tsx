@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { AppRuntimeProvider, createRouteHref, defaultWidgets } from "@angee/ui";
 
@@ -70,12 +70,12 @@ afterEach(() => {
 });
 
 describe("ApprovalTask", () => {
-  test("puts the resolution before closed source data and preserves resolution mutation variables", async () => {
+  test("puts the resolution before collapsed processing details and preserves resolution mutation variables", async () => {
     const onResolved = vi.fn();
     render(<ApprovalTask approval={approval} onResolved={onResolved} />);
 
     const resolution = screen.getByLabelText("Resolution payload");
-    const sourceTrigger = screen.getByRole("button", { name: "Source data" });
+    const sourceTrigger = screen.getByRole("button", { name: "Processing details" });
     expect(resolution.compareDocumentPosition(sourceTrigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(sourceTrigger.getAttribute("aria-expanded")).toBe("false");
 
@@ -108,9 +108,50 @@ describe("ApprovalTask", () => {
       source_attempt_id: "attempt-3",
     }} onResolved={() => undefined} /></AppRuntimeProvider>);
 
+    fireEvent.click(screen.getByRole("button", { name: "Processing details" }));
     expect(screen.getByRole("link", { name: "Open source run" }).getAttribute("href")).toBe("/runs/run-1");
     expect(screen.getByRole("link", { name: "Execution execution-2" }).getAttribute("href")).toContain("execution=execution-2");
     expect(screen.getByRole("link", { name: "Attempt attempt-3" }).getAttribute("href")).toContain("attempt=attempt-3");
+  });
+
+  test("records one decision and retries only the queue refresh after continuation failure", async () => {
+    const onResolved = vi.fn()
+      .mockRejectedValueOnce(new Error("queue unavailable"))
+      .mockResolvedValueOnce(undefined);
+    let submitAgain: (() => Promise<void>) | undefined;
+    function Specialized({ resolve, readOnly }: WorkflowDecisionContentProps) {
+      submitAgain = () => resolve("COMPLETE", { approved: true });
+      return <button type="button" disabled={readOnly} onClick={() => void submitAgain?.()}>Record decision</button>;
+    }
+    render(<AppRuntimeProvider runtime={{
+      widgets: defaultWidgets,
+      slots: [{
+        slot: WORKFLOW_DECISION_CONTENT_SLOT,
+        model: "workflows.Decision",
+        impl: "review",
+        id: "test.post-commit-refresh",
+        content: Specialized,
+      }],
+    }}><ApprovalTask approval={{ ...approval, decision_schema: { type: "object", properties: {} } }} onResolved={onResolved} /></AppRuntimeProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Record decision" }));
+
+    expect(await screen.findByText("Decision recorded")).toBeTruthy();
+    expect(screen.getByText("The decision was recorded, but the approval queue could not refresh.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Record decision" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: /Complete/ })).toBeNull();
+    expect(mocks.decide).toHaveBeenCalledOnce();
+    expect(onResolved).toHaveBeenCalledOnce();
+
+    await act(async () => { await submitAgain?.(); });
+    expect(mocks.decide).toHaveBeenCalledOnce();
+    expect(onResolved).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry queue refresh" }));
+    await waitFor(() => expect(onResolved).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText("Decision recorded")).toBeNull());
+    expect(mocks.decide).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: /Complete/ })).toBeNull();
   });
 
   test("keeps edited structured values when the server returns a field error", async () => {

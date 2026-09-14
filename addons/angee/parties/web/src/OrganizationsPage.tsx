@@ -33,21 +33,19 @@ const organizationsList = (
 
 /** Organizations (the organisation-kind contacts): full create/edit/list/detail. */
 export function OrganizationsPage(): React.ReactElement {
-  const t = usePartiesT();
-  const tabs = organizationTabs(t);
   return (
-    <ResourceList resource={MODEL} form={organizationForm} placement="inline" routed recordTabs={tabs}>
+    <ResourceList resource={MODEL} form={organizationForm} placement="inline" routed>
       {organizationsList}
     </ResourceList>
   );
 }
 
 /** The canonical organization form, reused by routed and inline relation flows. */
-export function OrganizationForm({ resource: _resource, ...props }: RegisteredFormProps): React.ReactElement {
+export function OrganizationForm({ resource: _resource, recordTabs, ...props }: RegisteredFormProps): React.ReactElement {
   const t = usePartiesT();
   const extraFields = useSlot(ORGANIZATION_FORM_FIELDS_SLOT);
   return (
-    <Form {...props} resource={MODEL}>
+    <Form {...props} resource={MODEL} recordTabs={recordTabs ?? organizationTabs(t)}>
       <Field name="display_name" title />
       <Group label={t("organization.group.details")} columns={2}>
         <Field name="legal_name" label={t("organization.field.legalName")} />

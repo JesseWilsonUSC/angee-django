@@ -141,6 +141,7 @@ export function ResourceListBody<TRow extends Row = Row>({
     selectRecord,
     retainLocalList,
     navigation: recordNavigation,
+    onRecordResolved,
     onListStateChange: handleListStateChange,
   } = useListRecordNavigation<TRow>({
     resource,
@@ -299,7 +300,7 @@ export function ResourceListBody<TRow extends Row = Row>({
     />
   ) : null;
   const recordContent = renderRecord && !resolvedCreating
-    ? renderRecord({ recordId: editId, navigation: recordNavigation, onClose: clearSelection })
+    ? renderRecord({ recordId: editId, navigation: recordNavigation, onClose: clearSelection, onRecordResolved })
     : recordForm;
 
   if (placement === "split") {

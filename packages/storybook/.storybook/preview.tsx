@@ -122,6 +122,9 @@ const storybookRoutes = [
 ] as const;
 
 const withAngeeProviders: Decorator = (Story, context) => {
+  // Full routed application stories own the native router/refine/runtime stack.
+  // Nesting the workshop stack would give them two navigation and toast owners.
+  if (context.parameters.angeeOwnRuntime === true) return <Story />;
   // Shell studies supply their own menu/route fixture without nesting a second
   // Refine or router root. Other stories keep the standard workshop context.
   const resources: ResourceProps[] = context.parameters.angeeResources ?? previewResources;

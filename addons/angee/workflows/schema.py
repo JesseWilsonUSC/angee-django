@@ -1079,6 +1079,11 @@ class DecisionTargetFields:
         return WorkflowArtifactTarget.for_decision(self, info)
 
     @strawberry_django.field(only=["target_model", "target_id", "target_tab"])
+    def target_label(self, info: strawberry.Info) -> str | None:
+        reference = WorkflowArtifactTarget.for_decision(self, info)
+        return reference.label if reference else None
+
+    @strawberry_django.field(only=["target_model", "target_id", "target_tab"])
     def target_model(self, info: strawberry.Info) -> str | None:
         reference = WorkflowArtifactTarget.for_decision(self, info)
         return reference.model if reference else None

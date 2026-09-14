@@ -340,6 +340,32 @@ function FormViewInstance(props: FormViewProps): React.ReactElement {
     </form>
   );
 
+  if (recordPresentation === "workspace" && !tabbed) {
+    return (
+      <div className={cn("flex h-full min-h-0 flex-col bg-sheet", className)}>
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onKeyDown={handleFormKeyDown}
+          onSubmit={(event) => {
+            void submitForm(event);
+          }}
+        >
+          {controlBand}
+          <div className="flex-none border-b border-border-subtle px-4 py-3">
+            <FormViewRecordHeader surface={surface} compact title={formTitle} />
+            <ErrorBanner description={saveError} title={t("form.saveFailed")} />
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto">
+            <div className={cn(FORM_VIEW_COLUMN_CLASS, "grid gap-6 py-6")}>
+              {overviewWithFormExtras}
+            </div>
+          </div>
+        </form>
+        {recordExtrasPanel}
+      </div>
+    );
+  }
+
   if (recordPresentation === "workspace" && tabbed) {
     return (
       <Tabs

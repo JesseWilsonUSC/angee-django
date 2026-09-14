@@ -7,6 +7,7 @@ import { useResourceRecordHrefLookup } from "../runtime";
 import { Button } from "../ui/button";
 import { TextLink } from "../ui/text-link";
 import { FormView } from "../views/form/FormView";
+import { RegisteredFormView, useRegisteredForm } from "../views/form/registered-form";
 import { recordTargetHref } from "../views/resource/record-navigation-context";
 import { useChatter, useChatterContent } from "./chatter-context";
 
@@ -71,6 +72,8 @@ function RecordPeek({ references, openRecord, goBack }: {
   const t = useUiT();
   const recordHref = useResourceRecordHrefLookup();
   const reference = references.at(-1);
+  const registeredForm = useRegisteredForm(reference?.model ?? "");
+  const RecordForm = registeredForm ? RegisteredFormView : FormView;
   const context = React.useMemo(() => reference ? { reference, openRecord } : null, [reference, openRecord]);
   if (!reference || !context) return null;
   const baseHref = recordHref(reference.model, reference.id);
@@ -86,7 +89,7 @@ function RecordPeek({ references, openRecord, goBack }: {
         </React.Fragment>)}
         {href ? <TextLink href={href} target="_blank" className="ml-auto">{t("chatter.openRecord")}</TextLink> : null}
       </nav>
-      <FormView key={`${reference.model}:${reference.id}:${reference.tab ?? ""}`} resource={reference.model} id={reference.id} readOnly hideRecordChrome recordPresentation="workspace"
+      <RecordForm key={`${reference.model}:${reference.id}:${reference.tab ?? ""}`} resource={reference.model} id={reference.id} readOnly hideRecordChrome recordPresentation="workspace"
         defaultRecordTab={reference.tab ?? undefined}
         className="min-h-96" />
     </ControlBandProvider>

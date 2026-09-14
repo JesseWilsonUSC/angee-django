@@ -33,7 +33,7 @@ function linkState(row: LinkRow, t: ReturnType<typeof usePartiesT>): React.React
  * anti-link (the pair is never re-proposed), so both stay visible here instead of
  * silently vanishing.
  */
-export function IdentityTab({ recordId }: RecordPanelContext): React.ReactElement {
+export function IdentityTab({ recordId, form }: RecordPanelContext): React.ReactElement {
   const t = usePartiesT();
   const rowActions = usePartyHandleRowActions<LinkRow>("remaining");
   const recordHref = useResourceRecordHrefLookup();
@@ -96,7 +96,7 @@ export function IdentityTab({ recordId }: RecordPanelContext): React.ReactElemen
           ...(focusedHandle ? { id: { exact: focusedHandle } } : {}),
         }}
         columns={columns}
-        rowActions={rowActions}
+        rowActions={form.formReadOnly ? [] : rowActions}
         emptyContent={t("identity.empty")}
       />
     </div>

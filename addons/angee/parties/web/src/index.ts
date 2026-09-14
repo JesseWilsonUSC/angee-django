@@ -6,6 +6,7 @@ import { enPartiesMessages } from "./i18n";
 import { directoryForm } from "./DirectoriesPage";
 import { organizationForm } from "./OrganizationsPage";
 import { personForm } from "./PersonForm";
+import { partyForm } from "./PartyForm";
 import { partyPickerWidget } from "./PartyPicker";
 
 // One rail root ("Parties") whose children are the People and Organizations
@@ -111,6 +112,7 @@ const parties = defineBaseAddon({
   i18n: { parties: enPartiesMessages },
   forms: {
     "parties.Directory": directoryForm,
+    "parties.Party": partyForm,
     "parties.Organization": organizationForm,
     "parties.Person": personForm,
   },

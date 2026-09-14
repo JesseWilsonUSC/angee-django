@@ -14,6 +14,7 @@ import type { ListViewNavigationScope } from "../resource-view-surface";
 import type { BoardLaneSource } from "../resource-view-types";
 import type { Occurrence } from "../../calendar/CalendarView";
 import type { RecordNavigation } from "../RecordPager";
+import type { RecordResolutionNavigationResult } from "../use-list-record-navigation";
 import type { AnyCalendarWindowSource } from "../../calendar/use-calendar-window";
 import { type ActionDescriptor, type FacetDescriptor, type GroupDescriptor } from "../../page";
 import { ResourceListBody } from "./body";
@@ -25,6 +26,8 @@ export interface ResourceRecordRenderContext {
   recordId: string | null;
   navigation: RecordNavigation | null;
   onClose: () => void;
+  /** Reconcile the live query without confusing its end with an empty collection. */
+  onRecordResolved: () => Promise<RecordResolutionNavigationResult>;
 }
 
 export interface ResourceListSplitLayout {
