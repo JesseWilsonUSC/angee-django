@@ -2533,6 +2533,7 @@ class Decision(AuditMixin, AngeeDataModel):
     """One awaited resolution slot for a suspended step-run."""
 
     runtime = True
+    rebac_grantable = {"reader": "share"}
     _form_schema_state_attribute = "_workflows_form_schema_state"
 
     sqid_prefix = "wdc_"

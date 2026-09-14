@@ -13,7 +13,15 @@ from django.core.exceptions import ValidationError
 from django.db import connection, transaction
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
-from rebac import system_context
+from rebac import (
+    RelationshipTuple,
+    actor_context,
+    system_context,
+    to_object_ref,
+    to_subject_ref,
+    write_relationships,
+)
+from rebac.errors import PermissionDenied
 
 from angee.workflows import engine
 from angee.workflows import models as workflow_models
@@ -39,6 +47,45 @@ from tests.workflows import (
 )
 
 User = get_user_model()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_decision_requester_may_share_exact_read_without_delegating_action_or_share(
+    workflow_engine_tables: None,
+) -> None:
+    """A requester may expose retained evidence without making the reader an assignee."""
+
+    del workflow_engine_tables
+    requester = User.objects.create_user(username="decision-share-requester")
+    assignee = User.objects.create_user(username="decision-share-assignee")
+    reader = User.objects.create_user(username="decision-share-reader")
+    outsider = User.objects.create_user(username="decision-share-outsider")
+    workflow = workflow_with_steps(
+        steps=({"key": "wait", "step_class": "wait", "config": {"until": "2099-01-01T00:00:00Z"}},),
+        edges=(),
+    )
+    run = start_run(workflow)
+    with system_context(reason="test exact Decision sharing fixture"):
+        step_run = StepRun.objects.get(run=run)
+        decision = Decision.objects.create(
+            step_run=step_run, action="review", created_by=requester,
+        )
+        write_relationships([
+            RelationshipTuple(to_object_ref(decision), "requester", to_subject_ref(requester)),
+            RelationshipTuple(to_object_ref(decision), "assignee", to_subject_ref(assignee)),
+        ])
+    with actor_context(requester):
+        decision.grant_record_access("reader", reader)
+
+    assert decision.with_actor(reader).has_access("read")
+    assert not decision.with_actor(reader).has_access("act")
+    assert not decision.with_actor(reader).has_access("write")
+    with actor_context(reader), pytest.raises(PermissionDenied):
+        decision.with_actor(reader).grant_record_access("reader", outsider)
+    assert not decision.with_actor(outsider).has_access("read")
+    with actor_context(requester):
+        decision.with_actor(requester).revoke_record_access("reader", reader)
+    assert not decision.with_actor(reader).has_access("read")
 
 
 @pytest.mark.django_db(transaction=True)

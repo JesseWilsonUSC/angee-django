@@ -132,6 +132,8 @@ class WorkflowRecoveryEvidence(workflow_models.WorkflowRecoveryEvidence):
 class Decision(workflow_models.Decision):
     """Concrete decision model for source-addon runtime tests."""
 
+    rebac_grantable = {"reader": "share"}
+
     class Meta(workflow_models.Decision.Meta):
         abstract = False
         app_label = "workflows"
