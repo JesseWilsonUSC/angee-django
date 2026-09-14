@@ -53,8 +53,10 @@ test.describe("shared record access", () => {
     await expect(share).toBeDisabled();
 
     const firstTask = page.getByRole("checkbox", { name: "Select row" }).first();
-    if (!(await firstTask.isVisible().catch(() => false))) {
-      await page.locator("tbody tr button[aria-expanded]").first().click();
+    const firstGroup = page.locator("tbody tr button[aria-expanded]").first();
+    await expect(firstGroup).toBeVisible({ timeout: 20_000 });
+    if ((await firstGroup.getAttribute("aria-expanded")) === "false") {
+      await firstGroup.click();
     }
     await expect(firstTask).toBeVisible({ timeout: 20_000 });
     await firstTask.click();
