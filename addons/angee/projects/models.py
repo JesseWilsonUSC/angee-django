@@ -461,6 +461,7 @@ class Task(AuditMixin, ThreadedModelMixin, HistoryMixin, AngeeDataModel):
     runtime = True
     sqid_prefix = "tsk_"
     thread_tracking_fields = ("status", "assignee", "due_date", "priority")
+    rebac_grantable = {"reader": "share", "editor": "share"}
 
     class TaskStatus(models.TextChoices):
         """Coarse task lifecycle states."""

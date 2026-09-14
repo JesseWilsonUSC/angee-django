@@ -22,7 +22,7 @@ import { requireDataResource, useAggregateOperation } from "../resource-operatio
 import { useResourceToolbarProps } from "../resource-toolbar-props";
 import { useResourceViewToolbarInputs } from "../resource-view-toolbar-inputs";
 import { PAGE_SIZE_OPTIONS } from "../page-size";
-import { ResourceViewActions } from "../resource-view-actions";
+import { ResourceViewUtilities } from "../resource-view-utilities";
 import type { ResourceViewFilter } from "../resource-view-model";
 interface ListViewContentProps<TRow extends Row> {
   source?: ListViewProps<TRow>["source"];
@@ -174,8 +174,8 @@ export function ListViewContent<TRow extends Row = Row>({
     },
     [cardActions, renderRowActions],
   );
-  const contributedActions = (
-    <ResourceViewActions
+  const contributedUtilities = (
+    <ResourceViewUtilities
       value={{
         resource: modelMetadata?.resource.modelLabel ?? resource,
         filter: effectiveFilter,
@@ -185,13 +185,11 @@ export function ListViewContent<TRow extends Row = Row>({
       }}
     />
   );
-  const actions = toolbarActions || contributedActions
-    ? <>{toolbarActions}{contributedActions}</>
-    : undefined;
   const toolbar = useResourceToolbarProps({
     maxGroupDepth,
     wrap: toolbarWrap,
-    actions,
+    actions: toolbarActions,
+    utilityActions: contributedUtilities,
     availableViews,
     pager: toolbarInputs.pager,
     view: resourceView.state.view,

@@ -5,9 +5,9 @@ import { makeContext, useSlot, type SlotContribution } from "../../runtime";
 import { useRecordChromeContextMaybe, type RecordChromeContext } from "./record-chrome-context";
 import type { ResourceViewFilter } from "./resource-view-model";
 
-export const RESOURCE_VIEW_ACTIONS_SLOT = "resource-view.actions";
+export const RESOURCE_VIEW_UTILITIES_SLOT = "resource-view.utilities";
 
-export interface ResourceViewActionContext {
+export interface ResourceViewUtilityContext {
   resource: string;
   filter?: ResourceViewFilter;
   fields: readonly string[];
@@ -18,22 +18,22 @@ export interface ResourceViewActionContext {
   record?: RecordChromeContext | null;
 }
 
-const ResourceViewActionContextBinding = makeContext<ResourceViewActionContext>(
-  "ResourceViewActionContext",
+const ResourceViewUtilityContextBinding = makeContext<ResourceViewUtilityContext>(
+  "ResourceViewUtilityContext",
 );
 
-export function useResourceViewActionContext(): ResourceViewActionContext {
-  return ResourceViewActionContextBinding.use();
+export function useResourceViewUtilityContext(): ResourceViewUtilityContext {
+  return ResourceViewUtilityContextBinding.use();
 }
 
-export function useResourceViewActions(resource: string): readonly SlotContribution[] {
-  const entries = useSlot(RESOURCE_VIEW_ACTIONS_SLOT);
+export function useResourceViewUtilities(resource: string): readonly SlotContribution[] {
+  const entries = useSlot(RESOURCE_VIEW_UTILITIES_SLOT);
   return React.useMemo(() => {
     const result = entries.filter((entry) => entry.model === undefined || entry.model === resource);
     const ids = new Set<string>();
     for (const entry of result) {
       if (ids.has(entry.id)) {
-        throw new Error(`Resource view action "${entry.id}" is contributed more than once for "${resource}".`);
+        throw new Error(`Resource view utility "${entry.id}" is contributed more than once for "${resource}".`);
       }
       ids.add(entry.id);
     }
@@ -41,27 +41,27 @@ export function useResourceViewActions(resource: string): readonly SlotContribut
   }, [entries, resource]);
 }
 
-export function ResourceViewActions({
+export function ResourceViewUtilities({
   value,
 }: {
-  value: ResourceViewActionContext;
+  value: ResourceViewUtilityContext;
 }): React.ReactElement | null {
-  const entries = useResourceViewActions(value.resource);
+  const entries = useResourceViewUtilities(value.resource);
   const record = useRecordChromeContextMaybe();
   if (entries.length === 0) return null;
   return (
-    <ResourceViewActionContextBinding.Provider value={{ ...value, record }}>
+    <ResourceViewUtilityContextBinding.Provider value={{ ...value, record }}>
       <SlotOutlet entries={entries} />
-    </ResourceViewActionContextBinding.Provider>
+    </ResourceViewUtilityContextBinding.Provider>
   );
 }
 
-export function resourceViewActionsSlot(model?: string): {
-  slot: typeof RESOURCE_VIEW_ACTIONS_SLOT;
+export function resourceViewUtilitiesSlot(model?: string): {
+  slot: typeof RESOURCE_VIEW_UTILITIES_SLOT;
   model?: string;
 } {
   return {
-    slot: RESOURCE_VIEW_ACTIONS_SLOT,
+    slot: RESOURCE_VIEW_UTILITIES_SLOT,
     ...(model ? { model } : {}),
   };
 }
