@@ -35,8 +35,9 @@ export function MyWorkPage(): React.ReactElement {
     <div className="flex min-h-full flex-col">
       <PageHeader title={t("myWork.title")} description={t("myWork.description")} />
       <PageBody className="flex flex-col gap-6">
+        {/* One plain list under the page title; the activities section below
+            appears only when something is due. */}
         <section className="flex flex-col gap-2">
-          <SectionEyebrow as="h2">{t("myWork.tasks")}</SectionEyebrow>
           <List<TaskActionRow>
             resource={TASK_MODEL}
             scope="local"
@@ -72,16 +73,19 @@ export function MyWorkPage(): React.ReactElement {
             <Column field="due_date" header={t("common.dueDate")} />
           </List>
         </section>
-        <section className="flex flex-col gap-2">
-          <div>
-            <SectionEyebrow as="h2">{t("myWork.activities")}</SectionEyebrow>
-            <p className="text-13 text-fg-muted">{t("myWork.activitiesHint")}</p>
-          </div>
-          <ActivityAgendaList
-            windowStart={window.start}
-            windowEnd={window.end}
-          />
-        </section>
+        <ActivityAgendaList
+          windowStart={window.start}
+          windowEnd={window.end}
+          whenPopulated={(list) => (
+            <section className="flex flex-col gap-2">
+              <div>
+                <SectionEyebrow as="h2">{t("myWork.activities")}</SectionEyebrow>
+                <p className="text-13 text-fg-muted">{t("myWork.activitiesHint")}</p>
+              </div>
+              {list}
+            </section>
+          )}
+        />
       </PageBody>
     </div>
   );

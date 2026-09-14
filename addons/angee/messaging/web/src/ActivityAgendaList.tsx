@@ -26,13 +26,21 @@ interface ActivityAgendaRow extends StringIdRow {
 export interface ActivityAgendaListProps {
   windowStart: string;
   windowEnd: string;
+  /**
+   * Render the list inside the caller's own section, and only once the agenda
+   * has rows: a page that shows activities beside other work drops the whole
+   * section instead of an empty panel. Omitted, the list renders as before,
+   * with its empty state.
+   */
+  whenPopulated?: (list: React.ReactElement) => React.ReactNode;
 }
 
 /** Messaging-owned activity query, row projection, and record-link rendering. */
 export function ActivityAgendaList({
   windowStart,
   windowEnd,
-}: ActivityAgendaListProps): React.ReactElement {
+  whenPopulated,
+}: ActivityAgendaListProps): React.ReactElement | null {
   const t = useMessagingT();
   const recordHref = useResourceRecordHrefLookup();
   const agenda = useAuthoredQuery(
@@ -74,7 +82,7 @@ export function ActivityAgendaList({
     [recordHref, t],
   );
 
-  return (
+  const list = (
     <RowsListView
       rows={rows}
       columns={columns}
@@ -84,4 +92,6 @@ export function ActivityAgendaList({
       emptyContent={t("agenda.empty")}
     />
   );
+  if (!whenPopulated) return list;
+  return rows.length > 0 ? <>{whenPopulated(list)}</> : null;
 }
