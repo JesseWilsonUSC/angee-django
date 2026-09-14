@@ -49,7 +49,16 @@ export function addressFields({
 }
 
 /** Canonical create/edit address collection shared by every Party subtype. */
-export function PartyAddresses({ recordId, form }: Pick<RecordPanelContext, "recordId" | "form">): React.ReactElement {
+type PartyAddressesProps = Pick<RecordPanelContext, "recordId"> & (
+  | { form: RecordPanelContext["form"]; readOnly?: never }
+  | { form?: never; readOnly: boolean }
+);
+
+export function PartyAddresses(props: PartyAddressesProps): React.ReactElement {
+  const { recordId } = props;
+  const formReadOnly = props.form !== undefined
+    ? props.form.formReadOnly
+    : props.readOnly;
   const t = usePartiesT();
   const labels: AddressFieldLabels = {
     label: t("address.label"),
@@ -67,7 +76,7 @@ export function PartyAddresses({ recordId, form }: Pick<RecordPanelContext, "rec
       resource={ADDRESS}
       baseFilter={{ party: { exact: recordId } }}
       createDefaults={{ party: recordId }}
-      hideCreate={form.formReadOnly}
+      hideCreate={formReadOnly}
     >
       <List resource={ADDRESS} order={{ is_primary: "DESC" }}>
         <Column field="label" />
@@ -80,7 +89,7 @@ export function PartyAddresses({ recordId, form }: Pick<RecordPanelContext, "rec
         <Column field="country" />
         <Column field="is_primary" />
       </List>
-      <Form resource={ADDRESS} readOnly={form.formReadOnly}>
+      <Form resource={ADDRESS} readOnly={formReadOnly}>
         {addressFields({ labels })}
       </Form>
     </DrawerResourceList>

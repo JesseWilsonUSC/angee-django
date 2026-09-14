@@ -460,6 +460,7 @@ export function useFormViewSurface({
     id,
     isCreate,
     record: save.displayRecord,
+    formReadOnly: save.formReadOnly,
   });
 
   React.useEffect(() => {
