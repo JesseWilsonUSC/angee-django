@@ -20,6 +20,11 @@ import { Field } from "@angee/ui";
  * card in its lane -- they pass `stage` through `createDefaults`, which does not
  * need a declared field.
  *
+ * Queue is absent for the same reason it need not be chosen: a board or cycle
+ * passes its queue through `createDefaults`, and a task created anywhere else is
+ * filed in the creator's own queue. It stays readable on the record, under
+ * Work details.
+ *
  * Every name here is in `project_tasks_insert_input`, so nothing declared is
  * uncreatable. Labels and enum options are left to the SDL metadata rather than
  * hard-coded (`fieldsWithMetadataDefaults` fills options for a bare enum field),
@@ -30,7 +35,6 @@ export const taskCreateForm: ReactElement = (
     <Field name="title" title />
     <Field name="note" widget="textarea" />
     <Field name="project" />
-    <Field name="queue" />
     <Field name="assignee" />
     <Field name="priority" />
     <Field name="due_date" />
