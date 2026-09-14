@@ -98,15 +98,17 @@ describe("projects addon manifest", () => {
     // This assertion was `toBeUndefined()` and pinned that behaviour.
     expect(projects.menus?.[0]?.route).toBe("projects.projects");
     expect(projects.menus?.[0]?.children?.map((item) => item.route)).toEqual([
-      "projects.my-work",
       "projects.projects",
+      "projects.my-work",
       "projects.tasks",
       "projects.board",
     ]);
-    // My Work stays first, and the list child is named for what it is, so no two
-    // entries in the group share a label.
+    // The list leads, so the header's route is also the first child's: landing on
+    // Projects selects the top entry, as in the other apps. The list child is
+    // named for what it is, so no two entries in the group share a label.
+    expect(projects.menus?.[0]?.children?.[0]?.route).toBe(projects.menus?.[0]?.route);
     const labels = projects.menus?.[0]?.children?.map((item) => item.label) ?? [];
-    expect(labels[0]).toBe("My Work");
+    expect(labels[0]).toBe("All projects");
     expect(labels).toContain("All projects");
     expect(new Set(labels).size).toBe(labels.length);
     expect(labels).not.toContain(projects.menus?.[0]?.label);
