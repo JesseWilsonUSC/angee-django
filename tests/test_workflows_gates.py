@@ -551,6 +551,52 @@ def test_nested_decision_schema_validates_objects_and_array_rows_before_round_tr
     assert decision.resolution == resolution
 
 
+def test_decision_mapping_schema_enforces_authored_constraints_after_normalization(
+    monkeypatch: Any,
+) -> None:
+    """Full JSON Schema sees coerced submitted fields, before relation authorization."""
+
+    relation_checks: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        engine,
+        "_validate_relation_fields",
+        lambda _schema, resolution, _actor: relation_checks.append(resolution),
+    )
+    schema = {
+        "type": "object",
+        "required": ["amount"],
+        "properties": {
+            "amount": {"type": "integer"},
+            "payment_term_id": {"type": "string"},
+            "due_date": {"type": "string"},
+            "note": {"type": "string"},
+        },
+        "oneOf": [
+            {"required": ["payment_term_id"]},
+            {"required": ["due_date"]},
+        ],
+    }
+
+    with pytest.raises(ValidationError):
+        engine._validate_mapping_schema(
+            schema,
+            {"amount": "7", "payment_term_id": "net-30", "due_date": "2030-01-01"},
+        )
+    assert relation_checks == []
+
+    validated = engine._validate_mapping_schema(
+        schema,
+        {"amount": "7", "payment_term_id": "net-30"},
+    )
+    assert validated == {
+        "amount": 7,
+        "payment_term_id": "net-30",
+        "due_date": None,
+        "note": None,
+    }
+    assert relation_checks == [validated]
+
+
 def test_decision_relation_permission_defaults_to_write_and_allows_declared_read(monkeypatch: Any) -> None:
     """Relation selection changes scope only through a valid explicit permission."""
 

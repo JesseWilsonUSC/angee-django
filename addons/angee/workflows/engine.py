@@ -21,6 +21,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
+from jsonschema import Draft202012Validator
 from pydantic import JsonValue, create_model
 from pydantic import ValidationError as PydanticValidationError
 from rebac import PermissionDenied, SubjectRef, current_actor, system_context
@@ -998,7 +999,7 @@ def _validate_mapping_schema(
     *,
     actor: Any = None,
 ) -> dict[str, Any]:
-    """Validate a JSON-authored decision schema through a pydantic model."""
+    """Normalize a JSON-authored resolution, then enforce its full schema."""
 
     if not schema:
         return dict(resolution)
@@ -1010,6 +1011,16 @@ def _validate_mapping_schema(
         parsed = model.model_validate(resolution)
     except PydanticValidationError as error:
         raise _resolution_validation_error(error) from error
+    submitted = cast(dict[str, Any], parsed.model_dump(exclude_unset=True))
+    schema_errors: dict[str, list[str]] = {}
+    for error in sorted(
+        Draft202012Validator(schema).iter_errors(submitted),
+        key=lambda item: (tuple(str(part) for part in item.path), item.message),
+    ):
+        field = ".".join(str(component) for component in error.path) or "payload"
+        schema_errors.setdefault(field, []).append(error.message)
+    if schema_errors:
+        raise ValidationError(schema_errors)
     validated = cast(dict[str, Any], parsed.model_dump(exclude_none=False))
     _validate_relation_fields(schema, validated, actor)
     return validated
