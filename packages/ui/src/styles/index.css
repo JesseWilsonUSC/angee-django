@@ -408,7 +408,7 @@
   right: 0;
   bottom: 0;
   left: var(--rail-current-w, var(--spacing-rail-w));
-  z-index: 40;
+  z-index: var(--z-index-drawer);
 }
 
 .console-content-main {
