@@ -77,6 +77,8 @@ export function ChatterProvider({
   // when the pane collapses (including via drag). `null` collapsed means no
   // controller is registered, so the chrome falls back to `localCollapsed`.
   const controllerRef = useRef<ChatterPaneController | null>(null);
+  const desiredCollapsedRef = useRef(defaultCollapsed);
+  const registeredControllerRef = useRef(false);
   const [controllerCollapsed, setControllerCollapsed] = useState<
     boolean | null
   >(null);
@@ -88,6 +90,10 @@ export function ChatterProvider({
   const registerSecondaryController = useCallback(
     (controller: ChatterPaneController | null) => {
       controllerRef.current = controller;
+      if (controller && !registeredControllerRef.current) {
+        registeredControllerRef.current = true;
+        if (!desiredCollapsedRef.current && controller.collapsed) controller.expand();
+      }
       // Same-value state updates bail out, so the Workbench may republish its
       // controller every render (its identity changes each tick) without looping.
       setControllerCollapsed(controller ? controller.collapsed : null);
@@ -96,6 +102,7 @@ export function ChatterProvider({
   );
 
   const setCollapsed = useCallback((next: boolean) => {
+    desiredCollapsedRef.current = next;
     const controller = controllerRef.current;
     if (controller) {
       if (next) controller.collapse();
@@ -106,8 +113,13 @@ export function ChatterProvider({
   }, []);
   const toggleCollapsed = useCallback(() => {
     const controller = controllerRef.current;
-    if (controller) controller.toggle();
-    else setLocalCollapsed((current) => !current);
+    if (controller) {
+      desiredCollapsedRef.current = !controller.collapsed;
+      controller.toggle();
+    } else setLocalCollapsed((current) => {
+      desiredCollapsedRef.current = !current;
+      return !current;
+    });
   }, []);
   const setContent = useCallback(
     (owner: symbol, content: ChatterContent | null) => {

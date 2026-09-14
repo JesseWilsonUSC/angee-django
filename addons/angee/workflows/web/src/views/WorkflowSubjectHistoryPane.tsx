@@ -6,7 +6,7 @@ import {
   recordTargetHref, routeSearchParam, useResourceRecordHrefLookup, useRouteHref, useRouteSearch,
 } from "@angee/ui";
 
-import { DECISION_SEARCH_KEY, decisionHref, subjectDecisionRunId } from "../decision-navigation";
+import { DECISION_SEARCH_KEY, WORKFLOW_RUN_SEARCH_KEY, decisionHref, subjectDecisionRunId, subjectPendingDecision } from "../decision-navigation";
 import { WorkflowSubjectHistoryPaneDocument } from "../documents.console";
 import { WorkflowDecisionDocument } from "../documents.public";
 import { useWorkflowsT } from "../i18n";
@@ -23,6 +23,7 @@ export function WorkflowSubjectHistoryPane({ subjectDeclaration, subjectId, acti
   const assignmentSubjects = useAssignmentSubjects();
   const search = useRouteSearch();
   const decisionId = routeSearchParam(search, DECISION_SEARCH_KEY) ?? null;
+  const followedRunId = routeSearchParam(search, WORKFLOW_RUN_SEARCH_KEY) ?? null;
   const recipientLabels = React.useMemo(
     () => new Map(assignmentSubjects.options.map((option) => [option.value, option.label])),
     [assignmentSubjects.options],
@@ -58,7 +59,9 @@ export function WorkflowSubjectHistoryPane({ subjectDeclaration, subjectId, acti
   const runs = history?.runs ?? [];
   const selected = selectedDecision.data?.workflow_decisions[0];
   const selectedRunId = selected && subjectDecisionRunId(selected.source_run_id, runs);
-  const pending = decisionId ? undefined : history?.pending_decisions?.[0];
+  const pending = decisionId ? undefined : subjectPendingDecision(
+    history?.pending_decisions ?? [], followedRunId,
+  );
   const pendingRunId = pending?.step_run?.run?.id;
   if (!runs.length) {
     return <div className="space-y-4 p-3">

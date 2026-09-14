@@ -259,11 +259,11 @@ function ConsoleWorkbench({
     onPrimaryController(effectivePrimaryController);
     return () => onPrimaryController(null);
   }, [effectivePrimaryController, onPrimaryController]);
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     setCompactPrimaryOpen(false);
     setCompactChatterOpen(false);
   }, [pathname, largeViewport]);
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (!showChatter || largeViewport) return;
     registerSecondaryController(compactChatterController);
     return () => registerSecondaryController(null);

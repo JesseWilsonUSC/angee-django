@@ -19,7 +19,7 @@ import { RunWorkflowMenu } from "./RunWorkflowMenu";
 export { WORKFLOW_TRIGGER_FORM_FIELDS_SLOT } from "./slots";
 
 import { CHATTER_TAB_SEARCH_KEY } from "@angee/ui";
-import { DECISION_SEARCH_KEY } from "./decision-navigation";
+import { DECISION_SEARCH_KEY, WORKFLOW_RUN_SEARCH_KEY } from "./decision-navigation";
 export { DECISION_SEARCH_KEY, decisionHref, decisionSearch } from "./decision-navigation";
 
 const WORKFLOWS_ID = "workflows";
@@ -77,7 +77,7 @@ const workflowsMenu: readonly BaseMenuItem[] = [
 
 const workflows = defineBaseAddon({
   id: WORKFLOWS_ID,
-  recordSearchKeys: [CHATTER_TAB_SEARCH_KEY, DECISION_SEARCH_KEY],
+  recordSearchKeys: [CHATTER_TAB_SEARCH_KEY, DECISION_SEARCH_KEY, WORKFLOW_RUN_SEARCH_KEY],
   routes: workflowsRoutes,
   menus: workflowsMenu,
   i18n: { workflows: enWorkflowsMessages },
@@ -112,3 +112,4 @@ export type { WorkflowApprovalsProps } from "./views/WorkflowApprovals";
 export { useWorkflowsT } from "./i18n";
 export { workflowTriggerAssignmentForm } from "./views/WorkflowTriggersPanel";
 export { WorkflowSubjectHistoryPane } from "./views/WorkflowSubjectHistoryPane";
+export { useWorkflowSubjectActionResult } from "./useWorkflowSubjectActionResult";
