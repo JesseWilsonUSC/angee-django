@@ -209,12 +209,12 @@ export function RoutedDecisionTask({ recordId, navigation, onClose, onResolved, 
   onDirtyChange: (dirty: boolean) => void;
   requestLeave: () => Promise<boolean>;
 }): React.ReactElement {
+  const t = useWorkflowsT();
   const decision = useAuthoredQuery(
     WorkflowDecisionDocument,
     { id: recordId },
     { dataProviderName: "public", models: [DECISION_MODEL], records: [{ model: DECISION_MODEL, id: recordId }] },
   );
-  const next = navigation?.onNext ?? onClose;
   const afterLeave = React.useCallback((action: () => void) => {
     void requestLeave().then((leave) => {
       if (leave) {
@@ -229,11 +229,23 @@ export function RoutedDecisionTask({ recordId, navigation, onClose, onResolved, 
     onNext: navigation.onNext ? () => afterLeave(navigation.onNext!) : undefined,
   } : null;
   return <div className="flex h-full min-h-0 flex-col bg-sheet-1">
-    {guardedNavigation ? <div className="flex justify-end border-b border-border-subtle px-4 py-2"><RecordPager navigation={guardedNavigation} /></div> : null}
+    <div className="flex items-center gap-2 border-b border-border-subtle px-4 py-2">
+      <Button type="button" variant="ghost" onClick={() => afterLeave(onClose)}>
+        <Glyph name="chevron-left" />{t("inbox.back")}
+      </Button>
+      <div className="ml-auto flex items-center gap-2">
+        {guardedNavigation ? <RecordPager navigation={guardedNavigation} /> : null}
+        {guardedNavigation?.onNext ? (
+          <Button type="button" variant="ghost" onClick={guardedNavigation.onNext}>
+            {t("inbox.nextDecision")}<Glyph name="chevron-right" />
+          </Button>
+        ) : null}
+      </div>
+    </div>
     <DecisionTaskResult context={{ recordId, reload: () => undefined }} approval={decision.data?.workflow_decisions[0]}
       onDirtyChange={onDirtyChange} fetching={decision.isFetching} error={decision.error}
       refetch={async () => (await decision.refetch()).data?.workflow_decisions[0] ?? null}
-      onBack={() => afterLeave(onClose)} onSkip={() => afterLeave(next)} onResolved={onResolved} />
+      onResolved={onResolved} />
   </div>;
 }
 

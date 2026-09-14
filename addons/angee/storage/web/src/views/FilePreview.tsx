@@ -47,5 +47,10 @@ export function FileRecordPreview({ id, page }: { id: string; page?: number | nu
   const file = query.data?.files_by_pk;
   if (query.error) return <ErrorBanner title={t("preview.loadError")} description={query.error.message} />;
   if (!file) return query.isFetching ? <LoadingPanel message={t("loadingFile")} /> : <EmptyState icon="file" title={t("file.notFoundTitle")} />;
-  return <FilePreview file={file} page={page} />;
+  return <div className="flex h-full min-h-0 flex-col">
+    <div className="shrink-0 border-b border-border-subtle px-3 py-2 text-xs text-fg-muted">
+      <p className="truncate" title={file.filename}>{file.title || file.filename}</p>
+    </div>
+    <div className="min-h-0 flex-1"><FilePreview file={file} page={page} /></div>
+  </div>;
 }

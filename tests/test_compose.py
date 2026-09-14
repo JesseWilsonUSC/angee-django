@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -156,7 +157,8 @@ def test_runtime_renders_resource_sources(tmp_path: Path) -> None:
     # `runtime/gql/<schema>/*` are owned by the `angee-web-codegen` CLI.
     assert Path("web/app.ts") not in sources
     assert '"package": "@angee/resources"' in sources[Path("web/manifest.json")]
-    assert '@source "../../web/node_modules/@angee/resources/src";' in sources[Path("web/tailwind.sources.css")]
+    addon_source = Path(os.path.relpath(tmp_path / "resources" / "web", tmp_path / "web")).as_posix()
+    assert f'@source "{addon_source}/src";' in sources[Path("web/tailwind.sources.css")]
 
 
 def test_runtime_model_render_plan_keeps_model_owned_meta(tmp_path: Path) -> None:

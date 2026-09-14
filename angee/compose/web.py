@@ -104,11 +104,17 @@ class WebRuntime:
         """Return the Tailwind source include consumed by host CSS."""
 
         packages = (*self.manifest["corePackages"], *self.manifest["addonPackages"])
+        def source_path(entry: Mapping[str, str]) -> str:
+            root = entry.get("root")
+            if root is not None:
+                return f'{root}/{entry["sourceRoot"]}'
+            return f'{self.web_root}/node_modules/{entry["package"]}/{entry["sourceRoot"]}'
+
         return "\n".join(
             [
                 f"/* {GENERATED_SENTINEL} */",
                 "",
-                *(f'@source "{self.web_root}/node_modules/{entry["package"]}/src";' for entry in packages),
+                *(f'@source "{source_path(entry)}";' for entry in packages),
                 f'@source "{self.web_root}/src";',
                 "",
             ]

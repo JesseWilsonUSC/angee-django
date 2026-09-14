@@ -67,17 +67,12 @@ export function ApprovalTask({ approval, available = true, onBack, onResolved, r
           ) : <span />}
           {onSkip ? <Button type="button" variant="ghost" onClick={onSkip}>{t("inbox.skip")}<Glyph name="chevron-right" /></Button> : null}
         </div> : null}
-        <div className="space-y-2">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-fg">{approval.step_name || approval.action}</h2>
-              <p className="mt-1 text-13 text-fg-muted">
-                {[approval.target_reference?.label, approval.workflow_name || t("inbox.workflowFallback")]
-                  .filter(Boolean).join(" · ")}
-              </p>
-            </div>
-            <Badge tone={statusTone(approval.verdict)}>{approval.verdict}</Badge>
-          </div>
+        <div className="flex items-center justify-between gap-3 text-xs text-fg-muted">
+          <p className="min-w-0 truncate">
+            {[approval.workflow_name || t("inbox.workflowFallback"), approval.step_name || approval.action]
+              .filter(Boolean).join(" · ")}
+          </p>
+          <Badge tone={statusTone(approval.verdict)}>{approval.verdict}</Badge>
         </div>
         {!available ? <ErrorBanner description={t("inbox.decisionUnavailable")} />
           : !active ? <div className="space-y-1 text-sm text-fg-muted">
@@ -101,10 +96,12 @@ export function ApprovalTask({ approval, available = true, onBack, onResolved, r
               {t("inbox.sourceMetadata")}: {approval.action} · {approval.priority}
             </div>
             <JsonValueView value={approval.payload} />
+            <div className="mt-3 space-y-2">
+              <DecisionSourceLinks approval={approval} />
+              <DecisionTargetLink approval={approval} />
+            </div>
           </Collapsible.Panel>
         </Collapsible>
-        <DecisionSourceLinks approval={approval} />
-        <DecisionTargetLink approval={approval} />
       </div>
     </PageAside>
   );
@@ -204,6 +201,7 @@ function FormSpecApprovalResolution({ approval, active, editable, onResolved, re
     <div className="space-y-4">
       {editable && !Content ? <ApprovalVerdictButtons fetching={resolution.fetching} onResolve={resolve} /> : null}
       {Content ? <Content {...contentProps} /> : <>
+      <h2 className="text-xl font-semibold text-fg">{approval.step_name || approval.action}</h2>
       {contextFields.length ? <section className="space-y-3">
         <h3 className="text-xs font-semibold text-fg-muted">{t("inbox.decisionContext")}</h3>
         {contextFields.map((field) => (
@@ -243,6 +241,7 @@ function JsonApprovalResolution({ approval, active, editable, onResolved, reconc
   }
   return (
     <section className="space-y-3">
+      <h2 className="text-xl font-semibold text-fg">{approval.step_name || approval.action}</h2>
       <FieldRoot invalid={Boolean(error || validationError)}>
         <FieldLabel>{t("inbox.resolution")}</FieldLabel>
         <JsonEditor

@@ -233,7 +233,7 @@ function FormViewInstance(props: FormViewProps): React.ReactElement {
     event.preventDefault();
     void submitForm();
   };
-  const controlBand = (
+  const controlBand = readOnly && props.hideRecordChrome && !toolbarStartNode && !toolbar ? null : (
     <ControlBand className={cn("overflow-x-auto overflow-y-hidden", formIsDirty ? "bg-brand-soft" : undefined)}>
       <div className="flex min-w-max shrink-0 items-center gap-2">
         {toolbarStartNode}
