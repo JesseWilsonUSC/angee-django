@@ -88,10 +88,10 @@ describe("IAM overview page", () => {
     expect(screen.getByRole("link", { name: /Relationships/ }).getAttribute("href")).toBe(
       "/iam/relationships",
     );
-    expect(screen.getByRole("link", { name: /Privileged grants/ }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: /^Privileged/ }).getAttribute("href")).toBe(
       "/iam/grants",
     );
-    expect(screen.getByRole("link", { name: /Unassigned users/ }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: /^No direct role/ }).getAttribute("href")).toBe(
       "/iam/users",
     );
 
