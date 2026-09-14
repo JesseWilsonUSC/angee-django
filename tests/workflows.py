@@ -31,6 +31,8 @@ from tests.conftest import _clear_model_tables, _create_missing_tables
 class Workflow(AbstractWorkflow):
     """Concrete workflow model for source-addon tests."""
 
+    rebac_grantable = AbstractWorkflow.rebac_grantable
+
     class Meta(AbstractWorkflow.Meta):
         abstract = False
         app_label = "workflows"
@@ -70,6 +72,8 @@ class Trigger(AbstractTrigger):
 
 class WorkflowRun(workflow_models.WorkflowRun):
     """Concrete workflow run model for source-addon engine tests."""
+
+    rebac_grantable = workflow_models.WorkflowRun.rebac_grantable
 
     class Meta(workflow_models.WorkflowRun.Meta):
         abstract = False
