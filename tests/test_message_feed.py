@@ -153,7 +153,8 @@ def test_cursor_position_survives_anchor_changes(change: str) -> None:
         elif change == "edit":
             Message._base_manager.filter(pk=anchor.pk).update(sent_at=T0 - timedelta(days=1))
         elif change == "revoke":
-            Message._base_manager.filter(pk=anchor.pk).update(created_by=other)
+            private = Thread._base_manager.create(created_by=other, platform="email")
+            Message._base_manager.filter(pk=anchor.pk).update(thread=private)
         else:
             elsewhere = Thread._base_manager.create(created_by=owner, platform="email")
             Message._base_manager.filter(pk=anchor.pk).update(thread=elsewhere)
@@ -226,7 +227,8 @@ def test_each_page_rechecks_message_and_root_permissions() -> None:
     thread, rows = _messages(owner)
     first = _page("thread", owner, thread)
     with system_context(reason="test feed permission loss"):
-        Message._base_manager.filter(pk=rows[2].pk).update(created_by=other)
+        private = Thread._base_manager.create(created_by=other, platform="email")
+        Message._base_manager.filter(pk=rows[2].pk).update(thread=private)
     second = _page("thread", owner, thread, before=first["older_cursor"])
     assert _ids(second) == [str(rows[1].sqid), str(rows[0].sqid)]
     assert second["count"] == 4
@@ -415,8 +417,9 @@ def test_revalidation_partitions_current_scope_search_and_moved_rows(kind: str) 
     root = {"thread": thread, "party": party, "circle": circle}[kind]
     ids = [str(row.sqid) for row in rows]
     with system_context(reason="test retained row changes"):
+        private = Thread._base_manager.create(created_by=other, platform="email")
         rows[0].delete()
-        Message._base_manager.filter(pk=rows[1].pk).update(created_by=other)
+        Message._base_manager.filter(pk=rows[1].pk).update(thread=private, created_by=other)
         Message._base_manager.filter(pk=rows[2].pk).update(preview="excluded")
         Message._base_manager.filter(pk=rows[3].pk).update(sent_at=T0 - timedelta(days=10), preview="needle moved")
     result = result_data(_revalidate(kind, owner, root, [*ids, ids[-1]], search="  needle\t"))["result"]

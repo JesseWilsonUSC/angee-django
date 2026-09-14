@@ -322,27 +322,30 @@ def test_navigator_name_fallbacks_and_recipient_overlap_keep_exact_totals():
                 assert (result.count, result.message_count) == (count, messages)
 
 
-def test_accounts_require_both_readable_account_and_eligible_readable_message():
+def test_accounts_require_readable_account_and_include_channel_readable_messages():
     owner = User.objects.create_user(username="explorer-account-owner")
     other = User.objects.create_user(username="explorer-account-other")
     with system_context(reason="seed source account eligibility"):
         accounts = {
             name: make_integration(f"explorer-{name}", owner=owner, created_by=owner)
-            for name in ("eligible", "draft", "public", "private-message", "empty")
+            for name in ("eligible", "draft", "public", "owned-channel-other-author", "empty")
         }
         hidden = make_integration("explorer-hidden", owner=other, created_by=other)
         public = Thread._base_manager.create(created_by=owner, modality="public_thread")
         for name, account in accounts.items():
             if name != "empty":
                 Message._base_manager.create(
-                    created_by=other if name == "private-message" else owner,
+                    created_by=other if name == "owned-channel-other-author" else owner,
                     channel=account,
                     status="draft" if name == "draft" else "synced",
                     thread=public if name == "public" else None,
                 )
         Message._base_manager.create(created_by=owner, channel=hidden, status="synced")
     with actor_context(owner):
-        assert [account.pk for account in Message.objects.all().explorer().accounts()] == [accounts["eligible"].pk]
+        assert [account.pk for account in Message.objects.all().explorer().accounts()] == [
+            accounts["eligible"].pk,
+            accounts["owned-channel-other-author"].pk,
+        ]
 
 
 def test_recency_classifies_latest_identity_activity_and_keeps_older_messages(monkeypatch):

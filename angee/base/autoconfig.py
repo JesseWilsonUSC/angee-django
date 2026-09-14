@@ -10,7 +10,7 @@ SETTINGS = {
     "REBAC_FIELD_READ_MODE": "redact",
     "REBAC_ALLOW_SUDO": True,
     # Admin reach is expressed in the schema (const-backed `admin` relations
-    # -> angee/role:admin), so superusers go through REBAC like everyone else.
+    # -> angee/role:admin), so all actors use grants unless a host opts into the native bypass.
     "REBAC_SUPERUSER_BYPASS": False,
 }
 """Django settings contributed when the model foundation is installed."""

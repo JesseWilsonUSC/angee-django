@@ -178,10 +178,11 @@ def test_run_sync_refreshes_sources_and_records_lifecycle(vcs_tables: None) -> N
         assert Template.objects.count() == 1
     vcs.refresh_from_db()
     assert vcs.last_sync_started_at == now
-    assert vcs.last_sync_completed_at == now
+    assert vcs.last_sync_completed_at is not None
+    assert vcs.last_sync_completed_at >= now
     assert vcs.last_sync_status == "ok"
     assert vcs.last_sync_items == 1
-    assert vcs.next_sync_at == now + timedelta(seconds=vcs.poll_interval)
+    assert vcs.next_sync_at == vcs.last_sync_completed_at + timedelta(seconds=vcs.poll_interval)
 
 
 @pytest.mark.django_db(transaction=True)

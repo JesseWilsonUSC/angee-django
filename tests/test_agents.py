@@ -17,7 +17,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import httpx
-import httpx2
 import pytest
 from anthropic.types import Message, TextBlock, Usage
 from django.core.management import call_command
@@ -326,10 +325,10 @@ def test_ollama_backend_keeps_an_explicit_gateway_credential() -> None:
     assert freshened == [True]
 
 
-def test_ollama_backend_inherits_openai_protocol_without_inheriting_identity_defaults() -> None:
-    """The compatible subclass inherits the protocol while owning its provider identity."""
+def test_ollama_backend_owns_protocol_details_and_provider_identity() -> None:
+    """The compatible subclass owns its JSON envelope and provider identity."""
 
-    assert OllamaInferenceBackend._build_model is OpenAIInferenceBackend._build_model
+    assert OllamaInferenceBackend._build_model is not OpenAIInferenceBackend._build_model
     assert OllamaInferenceBackend.effective_defaults() == {
         "name": "Ollama",
         "status": "draft",
@@ -841,28 +840,12 @@ def inference_http(monkeypatch, request):
         )
         return httpx.Response(200, json=response.model_dump(mode="json"), request=request)
 
-    async def respond_anthropic(self, request):
-        """Serve the Anthropic SDK through its isolated, SDK-owned HTTP stack."""
-
-        content = b"".join([chunk async for chunk in request.stream])
-        requests.append(httpx.Request(request.method, str(request.url), headers=request.headers, content=content))
-        if isinstance(scenario, int):
-            return httpx2.Response(
-                scenario,
-                json={"error": {"message": "provider rejected request", "type": "test"}},
-                request=request,
-            )
-        response = _FakeAnthropicMessages(None).create()
-        return httpx2.Response(200, json=response.model_dump(mode="json"), request=request)
-
     def client_class(path):
         cls = import_string(path)
 
         def build(**kwargs):
             if "http_client" not in kwargs:
-                kwargs["http_client"] = (
-                    httpx2.AsyncClient() if path.startswith("anthropic.") else httpx.AsyncClient()
-                )
+                kwargs["http_client"] = httpx.AsyncClient()
             kwargs.setdefault("base_url", "https://provider.invalid/v1")
             kwargs["max_retries"] = 0
             client = cls(**kwargs)
@@ -872,7 +855,6 @@ def inference_http(monkeypatch, request):
         return build
 
     monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", respond)
-    monkeypatch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", respond_anthropic)
     monkeypatch.setattr("angee.agents.sdk_backends.import_string", client_class)
     return requests, clients
 

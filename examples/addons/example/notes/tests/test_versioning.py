@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TransactionTestCase
 from rebac import actor_context, system_context, to_subject_ref
+from rebac.roles import grant as grant_role
 
 from angee.graphql.schema import GraphQLSchemas
 
@@ -81,6 +82,7 @@ class NotesVersioningTests(TransactionTestCase):
                 email="admin-delete@example.com",
                 password="!",
             )
+            grant_role(actor=admin, role="angee/role:admin")
             note = Note.objects.create(
                 title="Admin delete target",
                 body="private flag",

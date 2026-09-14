@@ -22,6 +22,7 @@ from tests.conftest import (
     assert_private_hasura_insert_access,
     execute_schema,
 )
+from tests.conftest import create_platform_admin as _platform_admin
 from tests.conftest import result_data as _data
 
 Address = messaging_models.Address
@@ -389,11 +390,6 @@ def _schema(name: str) -> Any:
     return GraphQLSchemas([SchemaAddon({name: parts})]).build(name)
 
 
-def _platform_admin(username: str) -> Any:
-    """Create a superuser holding the universal admin role."""
-
-    admin = User.objects.create_superuser(username=username, email=f"{username}@example.com", password="admin")
-    return admin
 
 
 def test_contact_resources_accept_declared_consumer_fields(

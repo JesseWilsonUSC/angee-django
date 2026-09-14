@@ -20,6 +20,7 @@ from django.core.management import call_command
 from django.db import connection, models, transaction
 from django.test import RequestFactory
 from rebac import actor_context, system_context
+from rebac.roles import grant as grant_role
 
 from angee.addons import addon_manifest
 from angee.agents.backends import InferenceBackend, InferenceModelSpec
@@ -919,3 +920,14 @@ def restore_composed_permission_bindings(monkeypatch: pytest.MonkeyPatch) -> Non
             monkeypatch.setitem(config.__dict__, key, config.__dict__.get(key))
             if not existed:
                 del config.__dict__[key]
+
+
+def create_platform_admin(username: str, **fields: Any) -> Any:
+    """Create a regular user with an explicit platform-admin membership grant."""
+
+    fields.setdefault("email", f"{username}@example.com")
+    fields.setdefault("password", "admin")
+    with system_context(reason="test.platform_admin"):
+        user = get_user_model().objects.create_user(username=username, **fields)
+        grant_role(actor=user, role="angee/role:admin")
+    return user

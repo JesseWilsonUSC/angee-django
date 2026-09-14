@@ -19,6 +19,7 @@ from angee.workflows.definitions import (
     NodePatch,
     StaleDefinitionError,
 )
+from tests.conftest import create_platform_admin
 from tests.workflows import Edge, Step, Workflow
 
 User = get_user_model()
@@ -287,7 +288,7 @@ def test_key_swap_is_explicit_and_map_config_is_never_rewritten(workflow_tables:
 
 def test_command_honors_actor_scoping_and_snapshot_reads_immutable_versions(workflow_tables: None) -> None:
     del workflow_tables
-    admin = User.objects.create_superuser(username="definition-admin", email="definition@example.com")
+    admin = create_platform_admin(username="definition-admin", email="definition@example.com")
     outsider = User.objects.create_user(username="definition-outsider")
     workflow, entry, _tail, _edge = _draft()
 

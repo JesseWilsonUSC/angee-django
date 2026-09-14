@@ -23,6 +23,7 @@ from angee.workflows import models as workflow_models
 from angee.workflows.attempts import AttemptResultKind
 from angee.workflows.steps import DecisionSpec, HandlerStep, StepResult
 from tests.conftest import SchemaAddon, execute_schema, result_data
+from tests.conftest import create_platform_admin as _platform_admin
 from tests.workflows import (
     Decision,
     StepRun,
@@ -1379,9 +1380,6 @@ def _user_for_subject(decision: Any, relation: str) -> Any:
     return User.objects.sudo(reason="test workflows decision actor lookup").get(**{id_attr: subject_id})
 
 
-def _platform_admin(username: str) -> Any:
-    admin = User.objects.create_superuser(username=username, email=f"{username}@example.com", password="admin")
-    return admin
 
 
 def _schema(name: str) -> Any:

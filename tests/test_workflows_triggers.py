@@ -21,15 +21,17 @@ from rebac import actor_context, system_context, to_subject_ref
 from rebac.errors import MissingActorError
 from rebac.errors import PermissionDenied as RebacPermissionDenied
 
-from angee.base.models import AngeeDataModel, AngeeModel
+from angee.base.models import AngeeDataModel
 from angee.graphql.events import ChangePayload
 from angee.graphql.schema import SCHEMA_PART_KEYS, GraphQLSchemas
 from angee.graphql.subscriptions import changes
 from angee.integrate.models import Bridge
 from angee.workflows import models as workflow_models
 from angee.workflows.steps import HandlerStep, StepResult
-from tests.conftest import SchemaAddon, execute_schema, result_data
+from tests.conftest import SchemaAddon, execute_schema, make_integration, result_data
+from tests.conftest import create_platform_admin as _platform_admin
 from tests.iam_models import Group
+from tests.integrate_models import Integration
 from tests.workflows import (
     WORKFLOW_RUNTIME_MODELS,
     Edge,
@@ -94,12 +96,14 @@ class UnpublishedTriggerSubject(models.Model):
         db_table = "test_workflows_unpublished_trigger_subject"
 
 
-class BackfillBridge(Bridge, AngeeModel):
+class BackfillBridge(Bridge, Integration):
     """Concrete bridge whose sync creates a subject row."""
 
-    class Meta:
+    class Meta(Bridge.Meta):
+        abstract = False
         app_label = "integrate"
         db_table = "test_workflows_backfill_bridge"
+        rebac_resource_type = "tests/backfill_bridge"
 
     def sync(self) -> int:
         """Materialize one row through the Bridge sync owner."""
@@ -631,7 +635,7 @@ def test_bridge_sync_marked_saves_are_skipped_but_live_saves_fire(
     _event_trigger(condition={"state": "ready"})
     now = timezone.now()
     with system_context(reason="test workflows trigger bridge sync"):
-        bridge = BackfillBridge.objects.create(poll_interval=60)
+        bridge = make_integration("trigger-backfill", model=BackfillBridge, poll_interval=60)
         bridge.run_sync(now=now)
 
     assert _run_count() == 0
@@ -1459,10 +1463,3 @@ def _run_count() -> int:
 
     with system_context(reason="test workflows trigger run count"):
         return WorkflowRun.objects.count()
-
-
-def _platform_admin(username: str) -> Any:
-    """Create a superuser holding the platform-admin role tuple."""
-
-    admin = User.objects.create_superuser(username=username, email=f"{username}@example.com", password="admin")
-    return admin

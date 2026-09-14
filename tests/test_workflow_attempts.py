@@ -40,6 +40,13 @@ from tests.workflows import Decision, StepArtifact, StepAttempt, StepRun, Workfl
 User = get_user_model()
 
 
+def _subject(username: str) -> str:
+    """Create a real user and return its canonical REBAC subject."""
+
+    user = User.objects.create_user(username=f"decision-{username}-{uuid.uuid4().hex}")
+    return f"auth/user:{user.pk}"
+
+
 def test_json_presence_rejects_coercive_or_nonfinite_values() -> None:
     assert validate_json_presence(JsonPresence(True, None)).value is None
     invalid = (
@@ -748,8 +755,9 @@ def test_revoked_suspension_retains_exact_declarations_without_live_decisions(
         at=timezone.now(),
     )
     expires_at = timezone.now() + timedelta(hours=1)
+    reviewer = _subject("revoked-reviewer")
     spec = DecisionSpec(
-        assignees=("auth/user:reviewer",),
+        assignees=(reviewer,),
         action="approve",
         payload={"nullable": None},
         expires_at=expires_at,
@@ -785,15 +793,17 @@ def test_applicable_suspension_creates_ordered_decisions_rebac_and_timer_intents
     StepAttempt.objects.admit_invocation(attempt.pk, lease_token=attempt.lease_token, at=timezone.now())
     escalate_at = timezone.now() + timedelta(minutes=5)
     expires_at = timezone.now() + timedelta(minutes=10)
+    first = _subject("ordered-first")
+    second = _subject("ordered-second")
     specs = (
         DecisionSpec(
-            assignees=("auth/user:first",),
+            assignees=(first,),
             action="approve",
             priority=3,
             escalate_at=escalate_at,
         ),
         DecisionSpec(
-            assignees=("auth/user:second",),
+            assignees=(second,),
             action="approve",
             priority=3,
             expires_at=expires_at,
@@ -856,12 +866,13 @@ def test_cancel_expires_applied_suspension_without_revoking_completed_attempt(
 ) -> None:
     attempt = StepAttempt.objects.claim(scheduled_step_run, claimed_at=timezone.now()).attempt
     StepAttempt.objects.admit_invocation(attempt.pk, lease_token=attempt.lease_token, at=timezone.now())
+    reviewer = _subject("cancel-reviewer")
     StepAttempt.objects.finalize(
         attempt.pk,
         lease_token=attempt.lease_token,
         result=AttemptResult(
             AttemptResultKind.SUSPEND,
-            decisions=(DecisionSpec(assignees=("auth/user:reviewer",), action="approve"),),
+            decisions=(DecisionSpec(assignees=(reviewer,), action="approve"),),
             waiting_kind="approval",
         ),
         recorded_at=timezone.now(),
@@ -903,9 +914,11 @@ def test_decision_relationship_failure_rolls_back_entire_suspension(
             raise RuntimeError("relationship backend failed")
 
     monkeypatch.setattr(workflow_managers, "write_relationships", fail_second_batch)
+    first = _subject("rollback-first")
+    second = _subject("rollback-second")
     specs = (
-        DecisionSpec(assignees=("auth/user:first",), action="approve"),
-        DecisionSpec(assignees=("auth/user:second",), action="approve"),
+        DecisionSpec(assignees=(first,), action="approve"),
+        DecisionSpec(assignees=(second,), action="approve"),
     )
 
     with pytest.raises(RuntimeError, match="relationship backend failed"):
@@ -1032,6 +1045,7 @@ def test_decision_create_capability_cannot_mutate_unrelated_provenance_from_sign
             )
 
     post_save.connect(attempt_bypass, sender=Decision, weak=False)
+    reviewer = _subject(f"signal-{bypass}")
     try:
         with pytest.raises(TypeError, match="Decision suspension provenance"):
             StepAttempt.objects.finalize(
@@ -1039,7 +1053,7 @@ def test_decision_create_capability_cannot_mutate_unrelated_provenance_from_sign
                 lease_token=attempt.lease_token,
                 result=AttemptResult(
                     AttemptResultKind.SUSPEND,
-                    decisions=(DecisionSpec(assignees=("auth/user:reviewer",), action="approve"),),
+                    decisions=(DecisionSpec(assignees=(reviewer,), action="approve"),),
                     waiting_kind="approval",
                 ),
                 recorded_at=timezone.now(),

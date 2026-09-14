@@ -50,6 +50,7 @@ from tests.conftest import (
     execute_schema,
 )
 from tests.conftest import _create_missing_tables as _create_connection_tables
+from tests.conftest import create_platform_admin as _platform_admin
 from tests.conftest import result_data as _data
 from tests.test_agents_graphql import AGENTS_GRAPHQL_MODELS
 from tests.test_messaging import MESSAGING_TEST_MODELS
@@ -651,7 +652,7 @@ def test_oauth_client_crud_are_admin_only(
     """Console CRUD is denied to non-admins and allowed for platform admins."""
 
     user = User.objects.create_user(username="plain", email="plain@example.com")
-    admin = User.objects.create_superuser(
+    admin = _platform_admin(
         username="admin",
         email="admin@example.com",
         password="admin",
@@ -1213,7 +1214,7 @@ def test_console_external_accounts_render_provider_projection(
     — see memory ``rebac-select-related-actor-scope-trap``.
     """
 
-    admin = User.objects.create_superuser(
+    admin = _platform_admin(
         username="ea-list-admin",
         email="ea-list-admin@example.com",
         password="x",
@@ -1422,7 +1423,7 @@ def test_public_user_change_subscription_only_yields_the_actor(
 ) -> None:
     """The self feed is stricter than row read and exposes only projected values."""
 
-    actor = User.objects.create_superuser(username="preference-actor")
+    actor = _platform_admin(username="preference-actor")
     other = User.objects.create_user(username="preference-other")
     actor_ref = to_subject_ref(actor)
     assert (
@@ -1921,15 +1922,6 @@ def _user_with_password_hash(username: str, password_hash: str) -> Any:
     return user
 
 
-def _platform_admin(username: str) -> Any:
-    """Create a superuser holding the platform-admin role tuple."""
-
-    admin = User.objects.create_superuser(
-        username=username,
-        email=f"{username}@example.com",
-        password="admin",
-    )
-    return admin
 
 
 def _user_public_id(user: Any) -> str:

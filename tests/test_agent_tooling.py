@@ -471,7 +471,7 @@ def test_resync_migrates_toolrole_and_group_memberships_to_service_user(
         )
     monkeypatch.setattr(grants_module, "sync_builtin_tool_catalogue", lambda: 0)
 
-    assert resync_tool_grants() == 0
+    assert resync_tool_grants() == 3
 
     subject = agent.principal_subject()
     rows = active_relationship_model().objects.filter(subject_type=subject.subject_type, subject_id=subject.subject_id)

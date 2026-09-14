@@ -1,0 +1,4 @@
+rows:
+  - resource: angee/role:admin
+    relation: member
+    subject: angee.iam.user_admin

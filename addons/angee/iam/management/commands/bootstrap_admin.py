@@ -9,7 +9,8 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import transaction
-from rebac import system_context
+from rebac import ObjectRef, app_settings, system_context
+from rebac.memberships import grant as grant_membership
 
 
 class Command(BaseCommand):
@@ -70,6 +71,10 @@ class Command(BaseCommand):
                 update_fields = _promote_existing_admin(user, email=email, password=password)
                 if update_fields:
                     user.save(update_fields=sorted(update_fields))
+            role = app_settings.REBAC_UNIVERSAL_ADMIN_ROLE
+            if not role:
+                raise CommandError("bootstrap_admin requires REBAC_UNIVERSAL_ADMIN_ROLE.")
+            grant_membership(subject=user, container=ObjectRef.parse(role))
 
         action = "created" if created else "ensured"
         self.stdout.write(self.style.SUCCESS(f"bootstrap admin: {action} '{username}'"))

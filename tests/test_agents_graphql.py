@@ -50,6 +50,7 @@ from tests.conftest import (
     make_integration,
 )
 from tests.conftest import _create_missing_tables as _create_tables
+from tests.conftest import create_platform_admin as _platform_admin
 from tests.conftest import result_data as _data
 from tests.test_agents import InferenceModel, InferenceProvider, Skill, _provider
 from tests.test_integrate_vcs import REPOS, VCS_TEST_MODELS, Repository, Source, Template, _vcs_bridge
@@ -1985,11 +1986,6 @@ def _request(user: Any) -> Any:
     return request
 
 
-def _platform_admin(username: str) -> Any:
-    """Create a superuser holding the platform-admin role tuple."""
-
-    admin = User.objects.create_superuser(username=username, email=f"{username}@example.com", password="admin")
-    return admin
 
 
 def _public_id(sqid: str) -> str:

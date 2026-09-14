@@ -25,6 +25,7 @@ def test_bootstrap_admin_creates_platform_admin(monkeypatch: Any) -> None:
     assert user.is_staff is True
     assert user.is_superuser is True
     assert user.password == "first-secret"
+    assert manager.granted_user is user
 
 
 def test_bootstrap_admin_promotes_existing_user_without_resetting_password(monkeypatch: Any) -> None:
@@ -43,6 +44,7 @@ def test_bootstrap_admin_promotes_existing_user_without_resetting_password(monke
     assert existing.is_superuser is True
     assert existing.password == "kept-secret"
     assert existing.saved_update_fields == ["email", "is_active", "is_staff", "is_superuser"]
+    assert manager.granted_user is existing
 
 
 def _patch_command_owners(monkeypatch: Any, manager: "_Manager") -> None:
@@ -52,6 +54,11 @@ def _patch_command_owners(monkeypatch: Any, manager: "_Manager") -> None:
     monkeypatch.setattr(bootstrap_admin, "get_user_model", lambda: _User)
     monkeypatch.setattr(bootstrap_admin.transaction, "atomic", nullcontext)
     monkeypatch.setattr(bootstrap_admin, "system_context", lambda *, reason: nullcontext())
+    monkeypatch.setattr(
+        bootstrap_admin,
+        "grant_membership",
+        lambda *, subject, container: setattr(manager, "granted_user", subject),
+    )
 
 
 class _MissingUser(Exception):
@@ -64,6 +71,7 @@ class _Manager:
     def __init__(self, user: "_User | None" = None) -> None:
         self.user = user
         self.system_reason: str | None = None
+        self.granted_user: _User | None = None
 
     def system_context(self, *, reason: str) -> "_QuerySet":
         """Record the system-scope reason and return this manager."""

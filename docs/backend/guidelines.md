@@ -458,9 +458,11 @@ data through REBAC, never a queryset bypass.
   backend may grant codenames through normal Django chaining, so removing the
   REBAC backend alone is not a global fail-closed guarantee.
 - **Read derived facts from their owner.** Native live ORM backing exposes
-  user kind/activity, active superuser authority, roster roles and selected
-  tools without tuple mirrors. `User.is_superuser` is the sole source of
-  `angee/role:admin#member`; the hub displays this role as read-only.
+  user kind/activity, roster roles and selected tools without tuple mirrors.
+  Platform administration is an ordinary `angee/role:admin#member` grant to a
+  user or group, managed through IAM. Bootstrap explicitly creates that grant;
+  `User.is_superuser` never creates or replaces role membership. Hosts may
+  separately opt into the library's native superuser bypass.
   Bulk inserts and updates therefore take effect without a reconciliation
   command. Human-only workflow completion and proposal evaluation intersect
   authority with `iam/kind:person#active_member`, including admin authority;
