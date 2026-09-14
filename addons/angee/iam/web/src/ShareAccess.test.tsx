@@ -78,6 +78,11 @@ const resource = {
     subjects: [{ type: "auth/user", relation: null, resource: "iam.User" }],
   }],
 };
+const taskResource = {
+  ...resource,
+  modelLabel: "projects.Task",
+  resourceType: "projects/task",
+};
 
 describe("shared record access chrome", () => {
   beforeEach(() => {
@@ -127,15 +132,19 @@ describe("shared record access chrome", () => {
     expect(mocks.dialogProps?.label).toBeUndefined();
   });
 
-  test("nested collections share their enclosing record", () => {
+  test("nested collections share their selected records", () => {
     mocks.list.resource = "projects.Task";
     mocks.list.selectedIds = new Set(["task-1"]);
     mocks.list.record = mocks.record;
+    mocks.models.set("projects.Task", { resource: taskResource });
 
     render(<ShareListChrome />);
 
-    expect(mocks.dialogProps).toMatchObject({ label: "Welcome", targetIds: ["note-1"] });
-    expect(mocks.queryVariables).toEqual({ targetType: "notes/note", targetIds: ["note-1"] });
+    expect(mocks.dialogProps).toMatchObject({ targetIds: ["task-1"] });
+    expect(mocks.queryVariables).toEqual({
+      targetType: "projects/task",
+      targetIds: ["task-1"],
+    });
   });
 
   test("omits Share when the model declares no grant surface", () => {
