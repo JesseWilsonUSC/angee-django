@@ -17,6 +17,7 @@ from angee.base.identity import public_id_for
 from angee.graphql import sharing
 from angee.graphql.data import metadata
 from angee.graphql.sharing import RecordAccessType
+from angee.projects.models import Task
 from angee.storage.models import Drive
 from angee.workflows.models import Workflow
 
@@ -39,6 +40,7 @@ def test_group_access_projects_canonical_subject_identity() -> None:
 
 def test_share_declarations_and_lineage_head_guard() -> None:
     assert AbstractAgent.get_rebac_grantable() == {"reader": "share", "editor": "share"}
+    assert Task.get_rebac_grantable() == {"reader": "share", "editor": "share"}
     assert Drive.get_rebac_grantable() == {"editor": "write", "viewer": "write"}
     assert Workflow.get_rebac_grantable() == {"editor": "write", "viewer": "write"}
     Workflow.validate_record_access_target(SimpleNamespace(published_from_id=None))

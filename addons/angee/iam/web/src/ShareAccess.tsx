@@ -13,7 +13,7 @@ import {
   ManageAccessDialog,
   useActionResultRun,
   useRecordChromeContext,
-  useResourceViewActionContext,
+  useResourceViewUtilityContext,
   type RecordAccessEntry,
 } from "@angee/ui";
 
@@ -30,7 +30,7 @@ export function ShareRecordChrome(): React.ReactElement {
 }
 
 export function ShareListChrome(): React.ReactElement {
-  const list = useResourceViewActionContext();
+  const list = useResourceViewUtilityContext();
   if (list.record) {
     return <ShareAccess
       resource={list.record.resource}

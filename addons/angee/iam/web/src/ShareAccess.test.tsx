@@ -63,7 +63,7 @@ vi.mock("@angee/ui", () => ({
   },
   useActionResultRun: () => async (run: () => unknown) => run(),
   useRecordChromeContext: () => mocks.record,
-  useResourceViewActionContext: () => mocks.list,
+  useResourceViewUtilityContext: () => mocks.list,
 }));
 
 import { ShareListChrome, ShareRecordChrome } from "./ShareAccess";

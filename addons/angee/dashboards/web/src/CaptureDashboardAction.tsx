@@ -7,7 +7,7 @@ import {
   firstDashboardSlot,
   parseDashboardSnapshot,
   useDashboardRegistry,
-  useResourceViewActionContext,
+  useResourceViewUtilityContext,
   type DashboardSummary,
   type DashboardWidgetKind,
   type WidgetSpec,
@@ -51,7 +51,7 @@ function CaptureDestination({ store, dashboard }: {
   dashboard: DashboardSummary;
 }): React.ReactElement {
   const t = useDashboardsT();
-  const context = useResourceViewActionContext();
+  const context = useResourceViewUtilityContext();
   const binding = store.useDashboard(dashboard.target);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<Error | null>(null);

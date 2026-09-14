@@ -12,6 +12,14 @@ test.describe("shared record access", () => {
     await notes.gotoReady();
 
     await expect(notes.shareButton).toBeDisabled();
+    const filterBox = await page.getByRole("searchbox", { name: "Filter records" }).boundingBox();
+    const shareBox = await notes.shareButton.boundingBox();
+    const pagerBox = await page.getByRole("button", { name: "Previous page" }).boundingBox();
+    expect(filterBox).not.toBeNull();
+    expect(shareBox).not.toBeNull();
+    expect(pagerBox).not.toBeNull();
+    expect(filterBox!.x).toBeLessThan(shareBox!.x);
+    expect(shareBox!.x).toBeLessThan(pagerBox!.x);
     await notes.selectRecords(2);
     await expect(notes.shareButton).toBeEnabled();
     await notes.shareButton.click();
@@ -34,6 +42,27 @@ test.describe("shared record access", () => {
     await expect(dialog).toHaveCSS("z-index", "101");
     await page.getByRole("option", { name: "reader", exact: true }).click();
     await expect(access).toContainText("reader");
+  });
+
+  test("tasks inherit the shared collection and record access surfaces", async ({
+    page,
+  }) => {
+    await page.goto("/projects/tasks");
+    const share = page.getByRole("button", { name: "Share", exact: true });
+    await expect(share).toBeVisible({ timeout: 20_000 });
+    await expect(share).toBeDisabled();
+
+    const firstTask = page.getByRole("checkbox", { name: "Select row" }).first();
+    if (!(await firstTask.isVisible().catch(() => false))) {
+      await page.locator("tbody tr button[aria-expanded]").first().click();
+    }
+    await expect(firstTask).toBeVisible({ timeout: 20_000 });
+    await firstTask.click();
+    await expect(share).toBeEnabled();
+    await share.click();
+    await expect(page.getByRole("dialog", {
+      name: "Share 1 selected record",
+    })).toBeVisible();
   });
 
   test("record chrome shows one shared action and offers agent service users", async ({

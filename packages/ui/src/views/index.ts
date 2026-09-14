@@ -320,13 +320,13 @@ export {
 export * from "./resource/resource-view-model";
 export * from "./resource/resource-view-context";
 export {
-  RESOURCE_VIEW_ACTIONS_SLOT,
-  ResourceViewActions,
-  resourceViewActionsSlot,
-  useResourceViewActionContext,
-  useResourceViewActions,
-  type ResourceViewActionContext,
-} from "./resource/resource-view-actions";
+  RESOURCE_VIEW_UTILITIES_SLOT,
+  ResourceViewUtilities,
+  resourceViewUtilitiesSlot,
+  useResourceViewUtilities,
+  useResourceViewUtilityContext,
+  type ResourceViewUtilityContext,
+} from "./resource/resource-view-utilities";
 export type { StringIdRow } from "./resource/resource-view-surface";
 export {
   Action,

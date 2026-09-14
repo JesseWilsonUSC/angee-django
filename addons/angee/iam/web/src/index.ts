@@ -1,6 +1,6 @@
 import { AUTH_LOGIN_METHOD_SLOT } from "@angee/app/auth";
 import { defineBaseAddon, resourcePageRoutes } from "@angee/app";
-import { FORM_VIEW_RECORD_CHROME_SLOT, RESOURCE_VIEW_ACTIONS_SLOT, formViewSectionsSlot, type BaseMenuItem } from "@angee/ui";
+import { FORM_VIEW_RECORD_CHROME_SLOT, RESOURCE_VIEW_UTILITIES_SLOT, formViewSectionsSlot, type BaseMenuItem } from "@angee/ui";
 import { lazyRouteComponent } from "@tanstack/react-router";
 import { createElement } from "react";
 
@@ -86,7 +86,7 @@ const iam = defineBaseAddon({
   i18n: { iam: enIamMessages },
   slots: [
     { slot: FORM_VIEW_RECORD_CHROME_SLOT, id: "iam.share-record", sequence: 20, content: createElement(ShareRecordChrome) },
-    { slot: RESOURCE_VIEW_ACTIONS_SLOT, id: "iam.share-list", sequence: 20, content: createElement(ShareListChrome) },
+    { slot: RESOURCE_VIEW_UTILITIES_SLOT, id: "iam.share-list", sequence: 20, content: createElement(ShareListChrome) },
     {
       slot: AUTH_LOGIN_METHOD_SLOT,
       id: "iam.oauth-login",

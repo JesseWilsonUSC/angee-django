@@ -1,7 +1,7 @@
 import { defineBaseAddon, type BaseAddonRoute } from "@angee/app";
 import {
   DASHBOARD_STORE_SLOT,
-  resourceViewActionsSlot,
+  resourceViewUtilitiesSlot,
   type BaseMenuItem,
   type DashboardDefinition,
 } from "@angee/ui";
@@ -115,7 +115,7 @@ const dashboards = defineBaseAddon({
       content: dashboardStore,
     },
     {
-      ...resourceViewActionsSlot(),
+      ...resourceViewUtilitiesSlot(),
       id: "dashboards.capture",
       sequence: 80,
       content: <CaptureDashboardAction />,

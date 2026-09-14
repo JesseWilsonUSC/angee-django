@@ -2,7 +2,7 @@ import { AUTH_LOGIN_METHOD_SLOT } from "@angee/app/auth";
 import { expectValidBaseAddon } from "@angee/app/testing";
 import {
   FORM_VIEW_RECORD_CHROME_SLOT,
-  RESOURCE_VIEW_ACTIONS_SLOT,
+  RESOURCE_VIEW_UTILITIES_SLOT,
   formViewSectionsSlot,
   MenuTree,
   type BaseMenuItem,
@@ -104,7 +104,7 @@ describe("iam addon manifest", () => {
     expect(record?.sequence).toBe(20);
     expect(record?.content).toBeDefined();
     const list = iam.slots?.find((slot) => slot.id === "iam.share-list");
-    expect(list?.slot).toBe(RESOURCE_VIEW_ACTIONS_SLOT);
+    expect(list?.slot).toBe(RESOURCE_VIEW_UTILITIES_SLOT);
     expect(list?.sequence).toBe(20);
     expect(list?.content).toBeDefined();
   });

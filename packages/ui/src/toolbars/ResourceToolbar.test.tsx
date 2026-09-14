@@ -85,6 +85,24 @@ describe("ResourceToolbar under the calendar kind", () => {
 });
 
 describe("ResourceToolbar list-kind regression", () => {
+  test("places shared utilities between the query controls and pager", () => {
+    renderToolbar({
+      view: "list",
+      utilityActions: <button type="button">Share</button>,
+    });
+
+    const filter = screen.getByLabelText("Filter records");
+    const share = screen.getByRole("button", { name: "Share" });
+    const pager = screen.getByLabelText("Previous page");
+    expect(share.parentElement?.className).toContain("resource-toolbar-utilities");
+    expect(
+      filter.compareDocumentPosition(share) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      share.compareDocumentPosition(pager) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   test("a single-axis collection replaces its group through the native picker", () => {
     const onGroupStackChange = vi.fn();
     renderToolbar({

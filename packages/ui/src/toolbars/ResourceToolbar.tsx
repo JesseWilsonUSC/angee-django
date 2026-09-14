@@ -60,6 +60,9 @@ export interface ResourceToolbarProps {
   onCreate?: () => void;
   /** Extra controls rendered in the toolbar's leading slot, beside the filter. */
   actions?: ReactNode;
+  /** Cross-resource utilities rendered after the query controls and before the
+   * pager. Global collection actions such as Share compose here. */
+  utilityActions?: ReactNode;
   /** View-contributed controls (period nav + mode switch + title) for the active
    * kind — the calendar contributes these; list/board contribute none. */
   viewControls?: ResourceToolbarViewControls;
@@ -214,6 +217,7 @@ export function ResourceToolbar({
   createLabel,
   onCreate,
   actions,
+  utilityActions,
   viewControls,
   availableViews,
   viewSwitcher,
@@ -310,6 +314,7 @@ export function ResourceToolbar({
         </div>
       ) : null}
       <div className="resource-toolbar-utilities">
+        {utilityActions}
         {queryDirty && onQueryReset ? (
           <Button
             type="button"
