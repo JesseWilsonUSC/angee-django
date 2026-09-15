@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     canonicalResource: "integrate.Integration",
     recordId: "chn_1",
     record: { lifecycle: "DISCONNECTED" },
+    formReadOnly: false,
   } as RecordChromeContext,
   pairing: {
     state: "STARTING",

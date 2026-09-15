@@ -149,6 +149,7 @@ function StoredDashboardPage({ target, store }: {
                     dataProviderName: "console",
                     recordId: state.persistedId,
                     record: { id: state.persistedId, displayName: state.name, name: state.name },
+                    formReadOnly: !state.capabilities.canEdit,
                   }} />
                   <DropdownMenu.Root>
                     <DropdownMenu.Trigger
