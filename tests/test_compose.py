@@ -157,7 +157,8 @@ def test_runtime_renders_resource_sources(tmp_path: Path) -> None:
     # `runtime/gql/<schema>/*` are owned by the `angee-web-codegen` CLI.
     assert Path("web/app.ts") not in sources
     assert '"package": "@angee/resources"' in sources[Path("web/manifest.json")]
-    addon_source = Path(os.path.relpath(tmp_path / "resources" / "web", tmp_path / "web")).as_posix()
+    resources_web = Path(apps.get_app_config("resources").path).resolve() / "web"
+    addon_source = Path(os.path.relpath(resources_web, tmp_path / "runtime" / "web")).as_posix()
     assert f'@source "{addon_source}/src";' in sources[Path("web/tailwind.sources.css")]
 
 

@@ -715,6 +715,7 @@ def test_deliver_artifact_wakes_all_exact_external_waits_without_approvals(
     del workflow_engine_tables, no_workflow_queue
     dependency = User.objects.create_user(username="external-artifact-dependency")
     unrelated = User.objects.create_user(username="unrelated-artifact-dependency")
+    reviewer = User.objects.create_user(username="artifact-reviewer")
     now = timezone.now()
 
     def wait_on_dependency(self: HandlerStep, step_run: Any, *, now: Any) -> StepResult:
@@ -738,7 +739,7 @@ def test_deliver_artifact_wakes_all_exact_external_waits_without_approvals(
                 "step_class": "gate",
                 "config": {
                     "action": "approve",
-                    "slots": [{"assignee": "auth/user:artifact-reviewer"}],
+                    "slots": [{"assignee": f"auth/user:{reviewer.pk}"}],
                 },
             },
         ),
