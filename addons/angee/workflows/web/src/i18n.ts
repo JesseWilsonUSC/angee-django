@@ -384,7 +384,6 @@ export const enWorkflowsMessages: Record<string, string> = {
   "inbox.emptyDescription": "Pending workflow approvals assigned to you appear here.",
   "inbox.back": "Back to approvals",
   "inbox.skip": "Skip",
-  "inbox.nextDecision": "Next decision",
   "inbox.groupWorkflow": "Workflow",
   "inbox.groupAction": "Decision type",
   "inbox.colDecision": "Decision",

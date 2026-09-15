@@ -1,5 +1,4 @@
 export const enWorkflowsOcrMessages = {
-  "title": "Extraction evidence",
   "loading": "Loading extraction evidence…",
   "unavailable": "Extraction evidence is unavailable.",
   "evidence": "Evidence",
