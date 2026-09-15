@@ -209,15 +209,23 @@ def test_decision_target_projection_reuses_one_authorized_lookup_per_viewer_requ
             return decision
 
     schema = strawberry.Schema(query=Query, config=StrawberryConfig(auto_camel_case=False))
-    document = "{ decision { target_model target_id target_tab target_reference { model id tab } } }"
+    document = (
+        "{ decision { target_model target_id target_tab target_label"
+        " target_reference { model id tab label } } }"
+    )
     for actor, expected in ((owner, str(target.sqid)), (stranger, None), (owner, str(target.sqid))):
         context = SimpleNamespace(request=SimpleNamespace(user=actor))
         result = schema.execute_sync(document, context_value=context)
         assert result.errors is None
         row = result.data["decision"]
         assert row["target_id"] == expected
+        # target_label reuses the same memoized projection as target_reference,
+        # so selecting the flat label column adds no per-row authorized lookup.
+        assert row["target_label"] == ("Private target" if expected else None)
         assert row["target_reference"] == (
-            {"model": target._meta.label, "id": expected, "tab": "details"} if expected else None
+            {"model": target._meta.label, "id": expected, "tab": "details", "label": "Private target"}
+            if expected
+            else None
         )
         assert lookup.call_count == 1
         lookup.reset_mock()

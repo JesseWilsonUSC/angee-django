@@ -321,8 +321,7 @@ const provider = {
   getApiUrl: () => "test://files",
   getList: async ({ meta, pagination }: GetListParams) => {
     const where = meta?.gqlVariables?.where;
-    const rows = storageData.files
-      .filter((row) => matchesProviderWhere(row, where))
+    const rows = storageData.files.filter((row) => matchesNativeWhere(row, where))
       .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
     const size = pagination?.pageSize ?? 50;
     const start = ((pagination?.currentPage ?? 1) - 1) * size;
@@ -331,24 +330,17 @@ const provider = {
   getOne: vi.fn(), create: vi.fn(), update: vi.fn(), deleteOne: vi.fn(),
 } as DataProvider;
 
-function matchesProviderWhere(
-  row: ReturnType<typeof file>,
-  where: unknown,
-): boolean {
+function matchesNativeWhere(row: Record<string, unknown>, where: unknown): boolean {
   if (!where || typeof where !== "object" || Array.isArray(where)) return true;
-  return Object.entries(where).every(([field, comparison]) => {
+  return Object.entries(where as Record<string, unknown>).every(([field, lookup]) => {
     if (field === "_and") {
-      return Array.isArray(comparison)
-        && comparison.every((clause) => matchesProviderWhere(row, clause));
+      return (Array.isArray(lookup) ? lookup : [lookup]).every((part) => matchesNativeWhere(row, part));
     }
-    if (!comparison || typeof comparison !== "object" || Array.isArray(comparison)) {
-      return true;
-    }
-    return !("_eq" in comparison)
-      || row[field as keyof typeof row] === comparison._eq;
+    if (!lookup || typeof lookup !== "object" || Array.isArray(lookup)) return row[field] === lookup;
+    const comparison = lookup as Record<string, unknown>;
+    return !("_eq" in comparison) || row[field] === comparison._eq;
   });
 }
-
 function pageTree() {
   return (
     <Refine resources={[...refineResourcesFromDataResources([fileResource])]} dataProvider={{ default: provider, console: provider }} options={{ disableTelemetry: true, reactQuery: { clientConfig: { defaultOptions: { queries: { retry: false, gcTime: 0 } } } } }}>

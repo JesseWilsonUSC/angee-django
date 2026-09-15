@@ -9,6 +9,7 @@ inside ``advance()``.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import traceback
 from collections.abc import Callable, Iterable, Mapping
@@ -21,6 +22,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
+from jsonschema import Draft202012Validator
 from pydantic import JsonValue, create_model
 from pydantic import ValidationError as PydanticValidationError
 from rebac import PermissionDenied, SubjectRef, current_actor, system_context
@@ -32,6 +34,7 @@ from rebac.types import RelationshipTuple
 
 from angee.base.actors import actor_user_id
 from angee.base.identity import canonical_subject_ref, instance_from_public_id
+from angee.base.refs import canonical_record_target
 from angee.base.scoping import read_scoped_queryset
 from angee.jobs.enqueue import enqueue_task
 from angee.workflows.attempts import (
@@ -64,6 +67,7 @@ from angee.workflows.models import (
     RunStatus,
     StepRunStatus,
     Verdict,
+    WaitingKind,
 )
 from angee.workflows.steps import DecisionSpec, MapStep, StepResult, TransientStepError
 from angee.workflows.testing import FixtureRole, WorkflowScope
@@ -78,6 +82,7 @@ DECISION_VERBS: dict[str, Verdict] = {
     "reject": VERDICT_REJECTED,
     "escalate": VERDICT_ESCALATED,
 }
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +183,74 @@ def deliver(run_id: int, *, now: datetime | None = None) -> dict[str, int]:
     return {"woken": woken}
 
 
+def deliver_artifact(resource: Any, *, now: datetime | None = None) -> dict[str, int]:
+    """Wake exact external waits whose current attempt retained ``resource``.
+
+    Resource owners use this seam when one durable domain fact changes.  Unlike
+    :func:`deliver`, it does not wake unrelated approval or timer rows that happen
+    to share a workflow run with the external dependency.
+    """
+
+    timestamp = now or timezone.now()
+    target = canonical_record_target(resource)
+    run_model = _model("WorkflowRun")
+    step_run_model = _model("StepRun")
+    artifact_model = _model("StepArtifact")
+    woken = 0
+    delivered_run_ids: list[int] = []
+    with system_context(reason="workflows.engine.deliver_artifact"), transaction.atomic():
+        candidate_step_ids = list(artifact_model.objects.filter(
+            target_content_type_id=target.content_type.pk,
+            target_object_id=target.object_id,
+            attempt__step_run__current_attempt_id=models.F("attempt_id"),
+            attempt__step_run__status=StepRunStatus.WAITING,
+            attempt__step_run__waiting_kind=WaitingKind.EXTERNAL,
+        ).order_by().values_list("attempt__step_run_id", flat=True).distinct())
+        candidate_run_ids = list(step_run_model.objects.filter(
+            pk__in=candidate_step_ids,
+        ).order_by().values_list("run_id", flat=True).distinct())
+        runs = {
+            run.pk: run for run in run_model.objects.lock_if_supported().filter(
+                pk__in=candidate_run_ids,
+            ).order_by("pk")
+        }
+        step_runs = list(step_run_model.objects.lock_if_supported().filter(
+            pk__in=candidate_step_ids,
+            status=StepRunStatus.WAITING,
+            waiting_kind=WaitingKind.EXTERNAL,
+        ).select_related("current_attempt").order_by("run_id", "pk"))
+        touched: set[int] = set()
+        for step_run in step_runs:
+            run = runs.get(step_run.run_id)
+            if run is None or run.status in RunStatus.TERMINAL or step_run.current_attempt_id is None:
+                continue
+            if not artifact_model.objects.filter(
+                attempt_id=step_run.current_attempt_id,
+                target_content_type_id=target.content_type.pk,
+                target_object_id=target.object_id,
+            ).exists():
+                continue
+            if _is_retained_step_run(step_run):
+                _model("StepAttempt").objects.wake_current(step_run.pk, at=timestamp)
+            else:
+                step_run.wake(at=timestamp)
+            touched.add(run.pk)
+            woken += 1
+        for run_id in sorted(touched):
+            run = runs[run_id]
+            run.deliveries += 1
+            run.save(update_fields=["deliveries", "updated_at"])
+            if run.status == RunStatus.WAITING:
+                run.resume()
+            delivered_run_ids.append(run_id)
+        def enqueue_delivered() -> None:
+            for run_id in delivered_run_ids:
+                enqueue_advance(run_id)
+
+        transaction.on_commit(enqueue_delivered)
+    return {"runs": len(delivered_run_ids), "woken": woken}
+
+
 def advance(run_id: int, *, now: datetime | None = None) -> dict[str, int]:
     """Create and synchronously consume one durable orchestration pulse."""
 
@@ -198,29 +271,39 @@ def advance_dispatch(
 
     timestamp = now or timezone.now()
     dispatch_model = _model("WorkflowDispatch")
-    with system_context(reason="workflows.engine.advance_dispatch"), transaction.atomic():
-        with dispatch_model.objects._owner_transition(
-            dispatch_id=dispatch_id, lease_token=None, at=timestamp, using=dispatch_model.objects.db
-        ) as preflight:
-            if preflight.disposition != DispatchPreflightDisposition.READY:
-                return {"claimed": 0}
-            if expected_run_id is not None and preflight.envelope.target_id != expected_run_id:
-                raise ValidationError({"dispatch": "ADVANCE envelope target does not match its durable intent."})
-            if preflight.envelope.kind != WorkflowDispatchKind.ADVANCE:
-                raise ValidationError({"dispatch": "ADVANCE envelope kind does not match its durable intent."})
-            run = _model("WorkflowRun").objects.select_related("workflow").get(
-                pk=preflight.envelope.target_id
-            )
-            claimed_ids: list[int] = []
-            if run.status not in RunStatus.TERMINAL:
-                _activate_run_if_needed(run, timestamp=timestamp)
-                _route_completed_steps(run)
-                if _process_map_steps(run, timestamp=timestamp):
+    admitted = False
+    try:
+        with system_context(reason="workflows.engine.advance_dispatch"), transaction.atomic():
+            with dispatch_model.objects._owner_transition(
+                dispatch_id=dispatch_id, lease_token=None, at=timestamp, using=dispatch_model.objects.db
+            ) as preflight:
+                if preflight.disposition != DispatchPreflightDisposition.READY:
+                    return {"claimed": 0}
+                if expected_run_id is not None and preflight.envelope.target_id != expected_run_id:
+                    raise ValidationError({"dispatch": "ADVANCE envelope target does not match its durable intent."})
+                if preflight.envelope.kind != WorkflowDispatchKind.ADVANCE:
+                    raise ValidationError({"dispatch": "ADVANCE envelope kind does not match its durable intent."})
+                admitted = True
+                run = _model("WorkflowRun").objects.select_related("workflow").get(
+                    pk=preflight.envelope.target_id
+                )
+                claimed_ids: list[int] = []
+                if run.status not in RunStatus.TERMINAL:
+                    _activate_run_if_needed(run, timestamp=timestamp)
                     _route_completed_steps(run)
-                    if not _fail_if_budget_exceeded(run):
-                        claimed_ids = _claim_due_steps(run, timestamp=timestamp, retained=True)
-                        _update_run_status(run, timestamp=timestamp)
-            dispatch_model.objects._consume_locked(dispatch_id, at=timestamp)
+                    if _process_map_steps(run, timestamp=timestamp):
+                        _route_completed_steps(run)
+                        if not _fail_if_budget_exceeded(run):
+                            claimed_ids = _claim_due_steps(run, timestamp=timestamp, retained=True)
+                            _update_run_status(run, timestamp=timestamp)
+                dispatch_model.objects._consume_locked(dispatch_id, at=timestamp)
+    except Exception as error:
+        if admitted:
+            try:
+                dispatch_model.objects.record_advance_error(dispatch_id, error=error)
+            except Exception:  # noqa: BLE001 - preserve the original advancement failure.
+                logger.exception("Could not retain workflow ADVANCE failure visibility.")
+        raise
     return {"claimed": len(claimed_ids)}
 
 
@@ -448,6 +531,26 @@ def expire_pending_decisions(run: Any, *, resolved_by: str) -> int:
         step_runs = step_run_model.objects.lock_if_supported().filter(run=locked_run).order_by("pk")
         for step_run in step_runs:
             expired += _expire_pending_decisions(step_run, resolved_by=resolved_by)
+            expired += _model("Decision").objects.expire_orphaned_suspensions(
+                step_run.pk, resolved_by=resolved_by
+            )
+    return expired
+
+
+def expire_orphaned_decisions(run: Any, *, resolved_by: str) -> int:
+    """Expire only pending retained Decisions whose suspension is no longer active."""
+
+    run_model = _model("WorkflowRun")
+    step_run_model = _model("StepRun")
+    run_id = run.pk if hasattr(run, "pk") else int(run)
+    expired = 0
+    with system_context(reason="workflows.engine.expire_orphaned_decisions"), transaction.atomic():
+        locked_run = run_model.objects.lock_if_supported().get(pk=run_id)
+        step_runs = step_run_model.objects.lock_if_supported().filter(run=locked_run).order_by("pk")
+        for step_run in step_runs:
+            expired += _model("Decision").objects.expire_orphaned_suspensions(
+                step_run.pk, resolved_by=resolved_by
+            )
     return expired
 
 
@@ -998,20 +1101,55 @@ def _validate_mapping_schema(
     *,
     actor: Any = None,
 ) -> dict[str, Any]:
-    """Validate a JSON-authored decision schema through a pydantic model."""
+    """Normalize a JSON-authored resolution, then enforce its full schema."""
 
     if not schema:
         return dict(resolution)
     if schema.get("type", "object") != "object":
         raise ValidationError({"payload": "Decision schema root type must be object."})
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        raise ValidationError({"payload": "Decision schema properties must be an object."})
+    context_fields = {
+        str(field_name)
+        for field_name, field_schema in properties.items()
+        if isinstance(field_schema, dict) and field_schema.get("layout") == "context"
+    }
+    submitted_context = context_fields.intersection(resolution)
+    if submitted_context:
+        raise ValidationError({
+            field_name: "Decision context cannot be submitted as a resolution."
+            for field_name in sorted(submitted_context)
+        })
+    resolution_schema = dict(schema)
+    resolution_schema["properties"] = {
+        field_name: field_schema
+        for field_name, field_schema in properties.items()
+        if str(field_name) not in context_fields
+    }
+    if isinstance(schema.get("required"), list):
+        resolution_schema["required"] = [
+            field_name for field_name in schema["required"]
+            if str(field_name) not in context_fields
+        ]
     # Human-paced decisions rebuild per attempt; memoize by schema-dict hash before bulk or programmatic reuse.
-    model = _mapping_schema_model(schema, name="DecisionResolution")
+    model = _mapping_schema_model(resolution_schema, name="DecisionResolution")
     try:
         parsed = model.model_validate(resolution)
     except PydanticValidationError as error:
         raise _resolution_validation_error(error) from error
+    submitted = cast(dict[str, Any], parsed.model_dump(exclude_unset=True))
+    schema_errors: dict[str, list[str]] = {}
+    for error in sorted(
+        Draft202012Validator(resolution_schema).iter_errors(submitted),
+        key=lambda item: (tuple(str(part) for part in item.path), item.message),
+    ):
+        field = ".".join(str(component) for component in error.path) or "payload"
+        schema_errors.setdefault(field, []).append(error.message)
+    if schema_errors:
+        raise ValidationError(schema_errors)
     validated = cast(dict[str, Any], parsed.model_dump(exclude_none=False))
-    _validate_relation_fields(schema, validated, actor)
+    _validate_relation_fields(resolution_schema, validated, actor)
     return validated
 
 

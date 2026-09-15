@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   missingCurrent: false,
   executionStatus: "FAILED",
   runStatus: "RUNNING",
+  runError: null as string | null,
   payloadVariables: [] as unknown[],
   resources: [] as Array<Record<string, unknown>>,
   mutation: vi.fn(),
@@ -99,7 +100,7 @@ vi.mock("@angee/refine", async (importOriginal) => {
       };
       return {
         data: mocks.loading ? undefined : {
-          workflow_runs_by_pk: { id: "run-1", origin: "TEST", occurrence_id: "occurrence-1", status: mocks.runStatus, waiting_kind: null, next_wake_at: null, error: mocks.runStatus === "FAILED" ? "run fallback" : null, workflow: { id: "workflow-1", name: "Flow", status: "TEST", version: 0, draft_revision: 4 } },
+          workflow_runs_by_pk: { id: "run-1", origin: "TEST", occurrence_id: "occurrence-1", status: mocks.runStatus, waiting_kind: null, next_wake_at: null, error: mocks.runError ?? (mocks.runStatus === "FAILED" ? "run fallback" : null), workflow: { id: "workflow-1", name: "Flow", status: "TEST", version: 0, draft_revision: 4 } },
           failed_step_runs: mocks.runStatus === "FAILED" ? [{
             id: "execution-failed", system_kind: "", map_index: -1, error: "execution fallback",
             step: { id: "step-1", key: "resolve", name: "Resolve source" },
@@ -159,6 +160,7 @@ beforeEach(() => {
   mocks.missingCurrent = false;
   mocks.executionStatus = "FAILED";
   mocks.runStatus = "RUNNING";
+  mocks.runError = null;
   mocks.payloadVariables.length = 0;
   mocks.resources.length = 0;
   mocks.mutation.mockReset();
@@ -186,6 +188,28 @@ test("a failed run leads with the failed step, retained error, inspection, and n
   await waitFor(() => expect(mocks.resources.some((props) =>
     props.resource === "workflows.StepAttempt" && props.defaultRecordTab === "failure",
   )).toBe(true));
+});
+
+test("an active run exposes a durable advancement error without failed-run actions", async () => {
+  mocks.loading = false;
+  mocks.runStatus = "RUNNING";
+  mocks.runError = "Workflow advancement wfd_problem could not continue: Map evidence is invalid.";
+  const router = createRouter({ routeTree: createRootRoute({ component: () => <RunTimelinePanel runId="run-1" /> }), history: createMemoryHistory({ initialEntries: ["/"] }) });
+  await router.load();
+  const view = render(<RouterProvider router={router} />);
+
+  expect(await screen.findByRole("heading", { name: "Run advancement could not continue" })).toBeTruthy();
+  expect(screen.getByText(mocks.runError)).toBeTruthy();
+  expect(screen.getByText("The queued work will retry automatically. If this continues, ask the workflow owner to resolve the error.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Reprocess run" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Inspect failed execution" })).toBeNull();
+
+  view.unmount();
+  mocks.runStatus = "CANCELED";
+  const canceledRouter = createRouter({ routeTree: createRootRoute({ component: () => <RunTimelinePanel runId="run-1" /> }), history: createMemoryHistory({ initialEntries: ["/"] }) });
+  await canceledRouter.load();
+  render(<RouterProvider router={canceledRouter} />);
+  expect(screen.queryByRole("heading", { name: "Run advancement could not continue" })).toBeNull();
 });
 
 test("loading can resolve into the bounded graph and current attempt flow without changing hooks", async () => {

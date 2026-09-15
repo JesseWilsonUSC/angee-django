@@ -15,6 +15,8 @@ import {
 
 export interface PreviewPaneProps {
   file: PreviewFile;
+  /** One-based source page; supported by document renderers. */
+  page?: number | null;
   /** Explicit content type; when omitted it is derived from the file. */
   mime?: string | null;
   /** Rendered when no provider resolves or a renderer crashes. */
@@ -30,6 +32,7 @@ export interface PreviewPaneProps {
  */
 export function PreviewPane({
   file,
+  page,
   mime,
   fallback,
 }: PreviewPaneProps): ReactElement {
@@ -58,7 +61,7 @@ export function PreviewPane({
       fallback={empty}
       resetKey={instanceKey}
     >
-      <Renderer key={instanceKey} file={file} mime={resolvedMime} />
+      <Renderer key={instanceKey} file={file} mime={resolvedMime} page={page} />
     </LazyBoundary>
   );
 }

@@ -1,4 +1,3 @@
-import { decisionHref } from "../decision-navigation";
 import * as React from "react";
 import { useAuthoredMutation, type DocumentVariables } from "@angee/refine";
 import {
@@ -6,29 +5,55 @@ import {
   Glyph, JsonEditor, JsonValueView, LabeledDescriptorField, LazyBoundary, TextLink, formSpecInitialValues,
   PageAside,
   errorMessage, jsonValueFromUnknown, statusTone, useDottedPathFieldErrors, useFormSpecFields, useResourceRecordHrefLookup, useRouteHref, validationErrorMap,
-  type DottedPathFieldErrorMap,
-  type JsonValue,
+  useModelSlot,
+  useRecordPeek,
+  type DottedPathFieldErrorMap, type FormSpecFieldDescriptor, type JsonValue, type RecordPeekReference,
 } from "@angee/ui";
 import { useNavigate } from "@tanstack/react-router";
+import { decisionHref } from "../decision-navigation";
 import { DecideWorkflowDecisionDocument, type PendingWorkflowDecision } from "../documents.public";
 import { useWorkflowsT } from "../i18n";
+import { WORKFLOW_DECISION_CONTENT_SLOT } from "../slots";
 
 const DECISION_MODEL = "workflows.Decision";
-type ApprovalVerdict = DocumentVariables<typeof DecideWorkflowDecisionDocument>["verdict"];
+export type ApprovalVerdict = DocumentVariables<typeof DecideWorkflowDecisionDocument>["verdict"];
+export type WorkflowDecisionRecordReference = RecordPeekReference;
+export interface WorkflowDecisionContentProps {
+  approval: PendingWorkflowDecision;
+  contextFields: readonly FormSpecFieldDescriptor[];
+  contextValues: Readonly<Record<string, unknown>>;
+  inputFields: readonly FormSpecFieldDescriptor[];
+  values: Readonly<Record<string, unknown>>;
+  setValue: (name: string, value: unknown) => void;
+  messagesFor: (name: string) => readonly string[];
+  resolve: (verdict: ApprovalVerdict, values?: Readonly<Record<string, unknown>>) => Promise<void>;
+  editable: boolean;
+  fetching: boolean;
+  readOnly: boolean;
+  openRecord?: (reference: WorkflowDecisionRecordReference) => void;
+  openEvidence?: (reference: WorkflowDecisionRecordReference) => void;
+}
 export interface ApprovalTaskProps {
   approval: PendingWorkflowDecision;
   available?: boolean;
   onBack?: () => void;
-  onResolved: () => void;
+  onResolved: () => void | Promise<void>;
   reconcile?: (decisionId: string) => Promise<PendingWorkflowDecision | null>;
   onDirtyChange?: (dirty: boolean) => void;
+  onSkip?: () => void;
+  onOpenRecord?: WorkflowDecisionContentProps["openRecord"];
+  onOpenEvidence?: WorkflowDecisionContentProps["openEvidence"];
 }
 
 /** The workflow-owned approval task, shared by approval and run surfaces. */
-export function ApprovalTask({ approval, available = true, onBack, onResolved, reconcile, onDirtyChange }: ApprovalTaskProps): React.ReactElement {
+export function ApprovalTask({ approval, available = true, onBack, onResolved, reconcile, onDirtyChange, onSkip, onOpenRecord, onOpenEvidence }: ApprovalTaskProps): React.ReactElement {
   const t = useWorkflowsT();
+  const openRecord = useRecordPeek();
   const active = approval.verdict === "PENDING";
   const editable = active && available;
+  const [committedVerdict, setCommittedVerdict] = React.useState<string | null>(null);
+  const displayedVerdict = committedVerdict ?? approval.verdict;
+  React.useEffect(() => setCommittedVerdict(null), [approval.id]);
   React.useEffect(() => {
     if (!editable) onDirtyChange?.(false);
     return () => onDirtyChange?.(false);
@@ -36,28 +61,35 @@ export function ApprovalTask({ approval, available = true, onBack, onResolved, r
   return (
     <PageAside collapse="never" gutter="compact" className="h-full w-full bg-sheet-1">
       <div className="space-y-4">
-        {onBack ? (
-          <Button type="button" variant="ghost" onClick={onBack}>
-            <Glyph name="chevron-left" />
-            {t("inbox.back")}
-          </Button>
-        ) : null}
-        <div className="space-y-2">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-fg">{approval.step_name || approval.action}</h2>
-              <p className="mt-1 text-13 text-fg-muted">{approval.workflow_name || t("inbox.workflowFallback")}</p>
-            </div>
-            <Badge tone={statusTone(approval.verdict)}>{approval.verdict}</Badge>
-          </div>
+        {onBack || onSkip ? <div className="flex items-center justify-between gap-2">
+          {onBack ? (
+            <Button type="button" variant="ghost" onClick={onBack}>
+              <Glyph name="chevron-left" />
+              {t("inbox.back")}
+            </Button>
+          ) : <span />}
+          {onSkip ? <Button type="button" variant="ghost" onClick={onSkip}>{t("inbox.skip")}<Glyph name="chevron-right" /></Button> : null}
+        </div> : null}
+        <div className="flex items-center justify-between gap-3 text-xs text-fg-muted">
+          <p className="min-w-0 truncate">
+            {[approval.workflow_name || t("inbox.workflowFallback"), approval.step_name || approval.action]
+              .filter(Boolean).join(" · ")}
+          </p>
+          <Badge tone={statusTone(displayedVerdict)}>{displayedVerdict}</Badge>
         </div>
         {!available ? <ErrorBanner description={t("inbox.decisionUnavailable")} />
-          : !active ? <p className="text-sm text-fg-muted">{t("inbox.decisionNoLongerPending")}</p> : null}
+          : !active ? <div className="space-y-1 text-sm text-fg-muted">
+            <p>{t("inbox.decisionNoLongerPending")}</p>
+            <p>{t("inbox.decisionResolvedBy", {
+              actor: approval.resolved_by || t("inbox.unknownActor"),
+              date: new Date(approval.updated_at).toLocaleString(),
+            })}</p>
+          </div> : null}
         {approval.decision_schema == null ? (
-          <JsonApprovalResolution key={approval.id} approval={approval} active={active} editable={editable} onResolved={onResolved} reconcile={reconcile} onDirtyChange={onDirtyChange} />
+          <JsonApprovalResolution key={approval.id} approval={approval} active={active} editable={editable} onResolved={onResolved} reconcile={reconcile} onDirtyChange={onDirtyChange} onCommitted={setCommittedVerdict} />
         ) : (
           <LazyBoundary pending={null} fallback={<ErrorBanner description={t("inbox.invalidFormSpec")} />} resetKey={approval.id}>
-            <FormSpecApprovalResolution key={approval.id} approval={approval} active={active} editable={editable} onResolved={onResolved} reconcile={reconcile} onDirtyChange={onDirtyChange} />
+            <FormSpecApprovalResolution key={approval.id} approval={approval} active={active} editable={editable} onResolved={onResolved} reconcile={reconcile} onDirtyChange={onDirtyChange} onCommitted={setCommittedVerdict} onOpenRecord={onOpenRecord ?? openRecord} onOpenEvidence={onOpenEvidence ?? openRecord} />
           </LazyBoundary>
         )}
         <Collapsible variant="section">
@@ -67,10 +99,12 @@ export function ApprovalTask({ approval, available = true, onBack, onResolved, r
               {t("inbox.sourceMetadata")}: {approval.action} · {approval.priority}
             </div>
             <JsonValueView value={approval.payload} />
+            <div className="mt-3 space-y-2">
+              <DecisionSourceLinks approval={approval} />
+              <DecisionTargetLink approval={approval} />
+            </div>
           </Collapsible.Panel>
         </Collapsible>
-        <DecisionSourceLinks approval={approval} />
-        <DecisionTargetLink approval={approval} />
       </div>
     </PageAside>
   );
@@ -118,57 +152,98 @@ function AvailableDecisionSourceLinks({ approval, sourceRunId }: { approval: Pen
 
 type ReconcileApproval = ApprovalTaskProps["reconcile"];
 
-function FormSpecApprovalResolution({ approval, active, editable, onResolved, reconcile, onDirtyChange }: {
-  approval: PendingWorkflowDecision; active: boolean; editable: boolean; onResolved: () => void; reconcile?: ReconcileApproval; onDirtyChange?: (dirty: boolean) => void;
+function FormSpecApprovalResolution({ approval, active, editable, onResolved, reconcile, onDirtyChange, onCommitted, onOpenRecord, onOpenEvidence }: {
+  approval: PendingWorkflowDecision; active: boolean; editable: boolean; onResolved: ApprovalTaskProps["onResolved"]; reconcile?: ReconcileApproval; onDirtyChange?: (dirty: boolean) => void;
+  onCommitted: (verdict: string) => void;
+  onOpenRecord?: WorkflowDecisionContentProps["openRecord"];
+  onOpenEvidence?: WorkflowDecisionContentProps["openEvidence"];
 }): React.ReactElement {
   const t = useWorkflowsT();
   const fields = useFormSpecFields(approval.decision_schema);
-  const [values, setValues] = React.useState<Record<string, unknown>>(() => formSpecInitialValues(fields, active ? approval.payload : approval.resolution));
-  React.useEffect(() => {
-    if (!active) setValues(formSpecInitialValues(fields, approval.resolution));
-  }, [active, approval.resolution, fields]);
-  const fieldNames = React.useMemo(() => fields.map((field) => field.name), [fields]);
+  const contextFields = React.useMemo(() => fields.filter((field) => field.layout === "context"), [fields]);
+  const inputFields = React.useMemo(() => fields.filter((field) => field.layout !== "context"), [fields]);
+  const contextValues = React.useMemo(
+    () => formSpecInitialValues(contextFields, approval.payload),
+    [approval.payload, contextFields],
+  );
+  const [values, setValues] = React.useState<Record<string, unknown>>(
+    () => formSpecInitialValues(inputFields, active ? approval.payload : approval.resolution),
+  );
+  const fieldNames = React.useMemo(() => inputFields.map((field) => field.name), [inputFields]);
   const validationErrors = useDottedPathFieldErrors(fieldNames);
   const [error, setError] = React.useState<string | null>(null);
-  const resolution = useApprovalResolver(onResolved, reconcile);
-  async function resolve(verdict: ApprovalVerdict): Promise<void> {
+  const resolution = useApprovalResolver(onResolved, reconcile, onCommitted);
+  const resolutionEditable = editable && !resolution.committed;
+  const contributions = useModelSlot({
+    slot: WORKFLOW_DECISION_CONTENT_SLOT,
+    model: DECISION_MODEL,
+    impl: approval.action,
+  });
+  // SlotContribution.content is intentionally `unknown` at the framework level
+  // (no composer parses a rendered surface's private contract), so this surface
+  // owns the WORKFLOW_DECISION_CONTENT_SLOT contract: the function narrowing plus
+  // this cast is the trust boundary for a contributed decision-content component.
+  const contributedContent = contributions[0]?.content;
+  const Content = typeof contributedContent === "function"
+    ? contributedContent as React.ComponentType<WorkflowDecisionContentProps>
+    : undefined;
+  const setValue = React.useCallback((name: string, value: unknown) => {
+    validationErrors.clearField(name);
+    onDirtyChange?.(true);
+    setValues((current) => ({ ...current, [name]: value }));
+  }, [onDirtyChange, validationErrors]);
+  async function resolve(verdict: ApprovalVerdict, submittedValues: Readonly<Record<string, unknown>> = values): Promise<void> {
     setError(null); validationErrors.clear();
     try {
-      validationErrors.replace(await resolution.resolve(
-        approval.id,
-        verdict,
-        jsonValueFromUnknown(values) ?? {},
-      ));
+      validationErrors.replace(await resolution.resolve(approval.id, verdict, jsonValueFromUnknown(submittedValues) ?? {}));
     } catch (cause) {
       setError(errorMessage(cause, t("inbox.actionFailed")));
     }
   }
+  const contentProps: WorkflowDecisionContentProps = {
+    approval, contextFields, contextValues, inputFields, values, setValue,
+    messagesFor: validationErrors.messagesFor,
+    resolve, editable: resolutionEditable, fetching: resolution.fetching, readOnly: !resolutionEditable,
+    openRecord: onOpenRecord, openEvidence: onOpenEvidence,
+  };
   return (
-    <section className="space-y-3">
-      <h3 className="text-xs font-semibold text-fg-muted">{t("inbox.yourDecision")}</h3>
-      {fields.map((field) => (
+    <div className="space-y-4">
+      {resolutionEditable && !Content ? <ApprovalVerdictButtons fetching={resolution.fetching} onResolve={resolve} /> : null}
+      {Content ? <Content {...contentProps} /> : <>
+      <h2 className="text-xl font-semibold text-fg">{approval.step_name || approval.action}</h2>
+      {contextFields.length ? <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-fg-muted">{t("inbox.decisionContext")}</h3>
+        {contextFields.map((field) => (
+          <LabeledDescriptorField key={field.name} field={field} value={contextValues[field.name]}
+            readOnly messages={[]} onChange={() => undefined} />
+        ))}
+      </section> : null}
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-fg-muted">{t("inbox.yourDecision")}</h3>
+      {inputFields.map((field) => (
         <LabeledDescriptorField key={field.name} field={field} value={values[field.name]}
-          readOnly={field.readOnly || !editable || resolution.fetching} messages={validationErrors.messagesFor(field.name)}
-          onChange={(value) => { validationErrors.clearField(field.name); onDirtyChange?.(true); setValues((current) => ({ ...current, [field.name]: value })); }} />
+          readOnly={field.readOnly || !resolutionEditable || resolution.fetching} messages={validationErrors.messagesFor(field.name)}
+          onChange={(value) => setValue(field.name, value)} />
       ))}
+      </section>
+      </>}
+      <PostCommitContinuationBanner resolution={resolution} />
       <ErrorBanner description={error ?? resolution.error?.message ?? validationErrors.formSummary} />
-      {editable ? <ApprovalVerdictButtons fetching={resolution.fetching} onResolve={resolve} /> : null}
-    </section>
+    </div>
   );
 }
 
-function JsonApprovalResolution({ approval, active, editable, onResolved, reconcile, onDirtyChange }: {
-  approval: PendingWorkflowDecision; active: boolean; editable: boolean; onResolved: () => void; reconcile?: ReconcileApproval; onDirtyChange?: (dirty: boolean) => void;
+function JsonApprovalResolution({ approval, active, editable, onResolved, reconcile, onDirtyChange, onCommitted }: {
+  approval: PendingWorkflowDecision; active: boolean; editable: boolean; onResolved: ApprovalTaskProps["onResolved"]; reconcile?: ReconcileApproval; onDirtyChange?: (dirty: boolean) => void;
+  onCommitted: (verdict: string) => void;
 }): React.ReactElement {
   const t = useWorkflowsT();
-  const [payload, setPayload] = React.useState<JsonValue>(() => active ? {} : approval.resolution ?? {});
+  const [payload, setPayload] = React.useState<JsonValue>(() => active ? {} : jsonValueFromUnknown(approval.resolution) ?? {});
   const [jsonValid, setJsonValid] = React.useState(true);
-  React.useEffect(() => {
-    if (!active) setPayload(approval.resolution ?? {});
-  }, [active, approval.resolution]);
   const validationErrors = useDottedPathFieldErrors();
   const [error, setError] = React.useState<string | null>(null);
-  const resolution = useApprovalResolver(onResolved, reconcile);
+  const resolution = useApprovalResolver(onResolved, reconcile, onCommitted);
+  const resolutionEditable = editable && !resolution.committed;
   const validationError = validationErrors.formSummary;
   async function resolve(verdict: ApprovalVerdict): Promise<void> {
     setError(null); validationErrors.clear();
@@ -178,23 +253,25 @@ function JsonApprovalResolution({ approval, active, editable, onResolved, reconc
   }
   return (
     <section className="space-y-3">
+      <h2 className="text-xl font-semibold text-fg">{approval.step_name || approval.action}</h2>
       <FieldRoot invalid={Boolean(error || validationError)}>
         <FieldLabel>{t("inbox.resolution")}</FieldLabel>
         <JsonEditor
           value={payload}
           field={{ label: t("inbox.resolution") }}
-          readOnly={!editable || resolution.fetching}
+          readOnly={!resolutionEditable || resolution.fetching}
           onValidityChange={setJsonValid}
           onChange={(value) => {
             validationErrors.clear();
             onDirtyChange?.(true);
-            setPayload(value);
+            setPayload(jsonValueFromUnknown(value) ?? {});
           }}
         />
         <FieldDescription>{t("json.label")}</FieldDescription>
       </FieldRoot>
+      <PostCommitContinuationBanner resolution={resolution} />
       <ErrorBanner description={error ?? resolution.error?.message ?? validationError} />
-      {editable ? <ApprovalVerdictButtons disabled={!jsonValid} fetching={resolution.fetching} onResolve={resolve} /> : null}
+      {resolutionEditable ? <ApprovalVerdictButtons disabled={!jsonValid} fetching={resolution.fetching} onResolve={resolve} /> : null}
     </section>
   );
 }
@@ -208,9 +285,10 @@ function ApprovalVerdictButtons({ disabled = false, fetching, onResolve }: { dis
   </div>;
 }
 
-function useApprovalResolver(onResolved: () => void, reconcile?: ReconcileApproval): {
+function useApprovalResolver(onResolved: ApprovalTaskProps["onResolved"], reconcile: ReconcileApproval | undefined, onCommitted: (verdict: string) => void): {
   resolve: (approval: string, verdict: ApprovalVerdict, payload: JsonValue) => Promise<DottedPathFieldErrorMap>;
-  fetching: boolean; error: Error | null;
+  retryContinuation: () => Promise<void>;
+  committed: boolean; continuationError: Error | null; fetching: boolean; error: Error | null;
 } {
   const t = useWorkflowsT();
   const [decide, state] = useAuthoredMutation(DecideWorkflowDecisionDocument, {
@@ -219,9 +297,23 @@ function useApprovalResolver(onResolved: () => void, reconcile?: ReconcileApprov
   });
   const ambiguous = React.useRef(false);
   const inFlight = React.useRef(false);
+  const committedRef = React.useRef(false);
   const [resolving, setResolving] = React.useState(false);
+  const [committed, setCommitted] = React.useState(false);
+  const [continuationError, setContinuationError] = React.useState<Error | null>(null);
+  const retryContinuation = React.useCallback(async () => {
+    setResolving(true);
+    setContinuationError(null);
+    try {
+      await onResolved();
+    } catch (cause) {
+      setContinuationError(cause instanceof Error ? cause : new Error(String(cause)));
+    } finally {
+      setResolving(false);
+    }
+  }, [onResolved]);
   const resolve = React.useCallback(async (approval: string, verdict: ApprovalVerdict, payload: JsonValue): Promise<DottedPathFieldErrorMap> => {
-    if (inFlight.current) return {};
+    if (inFlight.current || committedRef.current) return {};
     inFlight.current = true;
     setResolving(true);
     try {
@@ -263,13 +355,32 @@ function useApprovalResolver(onResolved: () => void, reconcile?: ReconcileApprov
           ambiguous.current = true;
           throw new Error(t("inbox.invalidResolutionResponse"));
         }
-        onResolved();
+        committedRef.current = true;
+        onCommitted(expectedVerdict);
+        setCommitted(true);
+        await retryContinuation();
       }
       return errors;
     } finally {
       inFlight.current = false;
       setResolving(false);
     }
-  }, [decide, onResolved, reconcile, t]);
-  return { resolve, fetching: state.fetching || resolving, error: state.error };
+  }, [decide, onCommitted, reconcile, retryContinuation, t]);
+  return {
+    resolve, retryContinuation, committed, continuationError,
+    fetching: state.fetching || resolving, error: state.error,
+  };
+}
+
+function PostCommitContinuationBanner({ resolution }: {
+  resolution: ReturnType<typeof useApprovalResolver>;
+}): React.ReactElement | null {
+  const t = useWorkflowsT();
+  if (!resolution.committed || !resolution.continuationError) return null;
+  return <ErrorBanner
+    title={t("inbox.resolutionRecorded")}
+    description={t("inbox.queueRefreshFailed")}
+    actions={<Button type="button" variant="secondary" loading={resolution.fetching}
+      onClick={() => void resolution.retryContinuation()}>{t("inbox.retryQueueRefresh")}</Button>}
+  />;
 }

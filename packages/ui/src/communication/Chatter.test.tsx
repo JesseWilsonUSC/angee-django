@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import * as React from "react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   Outlet,
+  RouterContextProvider,
   RouterProvider,
   createMemoryHistory,
   createRootRoute,
@@ -18,7 +20,9 @@ import {
   type ChatterViewContext,
 } from "../runtime";
 import { Chatter } from "./Chatter";
-import { ChatterProvider } from "./chatter-context";
+import { ChatterProvider, useChatterContent, type ChatterContent } from "./chatter-context";
+import { useRecordPeek } from "./record-peek";
+import { registerForm, type RegisteredFormProps } from "../views/form/registered-form";
 
 beforeAll(() => {
   Element.prototype.getAnimations ??= () => [];
@@ -133,7 +137,121 @@ describe("Chatter", () => {
     expect(hiddenRender).not.toHaveBeenCalled();
     expect(blockedRender).not.toHaveBeenCalled();
   });
+
+  test("lazily opens record peeks without discarding an unsaved workflow input", async () => {
+    const recordsMounted = vi.fn();
+    renderChatterContent(
+      <PublishedContent content={{
+        tabs: [
+          { id: "workflow", label: "Workflow", children: <label>Reason<input aria-label="Reason" defaultValue="" /></label> },
+          { id: "records", label: "Records", children: <MountProbe onMount={recordsMounted}>Invoice evidence</MountProbe> },
+        ],
+      }} />,
+      "workflow",
+    );
+
+    const input = await screen.findByRole("textbox", { name: "Reason" });
+    fireEvent.change(input, { target: { value: "keep this draft" } });
+    expect(recordsMounted).not.toHaveBeenCalled();
+    expect(screen.queryByText("Invoice evidence")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Records" }));
+    expect(await screen.findByText("Invoice evidence")).toBeTruthy();
+    expect(recordsMounted).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("tab", { name: "Workflow" }));
+    expect((screen.getByRole("textbox", { name: "Reason" }) as HTMLInputElement).value).toBe("keep this draft");
+    expect(recordsMounted).toHaveBeenCalledOnce();
+  });
+
+  test("lets active panel content shrink to the chatter viewport", async () => {
+    renderChatterContent(
+      <PublishedContent content={{
+        tabs: [{ id: "workflow", label: "Workflow", children: <span>Compact decision</span> }],
+      }} />,
+      "workflow",
+    );
+
+    const panelContent = (await screen.findByText("Compact decision"))
+      .closest<HTMLElement>('[role="presentation"]');
+    expect(panelContent).not.toBeNull();
+    expect(panelContent?.style.minWidth).toBe("0");
+    expect(panelContent?.className).toContain("w-full");
+  });
+
+  test("removing a temporary record peek preserves the publisher's tabs and composer", async () => {
+    const base = {
+      tabs: [{ id: "workflow", label: "Workflow", children: "Decision form" }],
+      composer: <button type="button">Add comment</button>,
+    } satisfies ChatterContent;
+    const peek = {
+      tabs: [{ id: "records", label: "Records", children: "Invoice evidence" }],
+    } satisfies ChatterContent;
+    renderChatterContent(
+      <CompositionHarness base={base} peek={peek} />,
+      "workflow",
+    );
+
+    expect(await screen.findByRole("tab", { name: "Workflow" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Records" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add comment" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close record peek" }));
+    await waitFor(() => expect(screen.queryByRole("tab", { name: "Records" })).toBeNull());
+    expect(screen.getByRole("tab", { name: "Workflow" })).toBeTruthy();
+    expect(screen.getByText("Decision form")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add comment" })).toBeTruthy();
+  });
+
+  test("record peeks render the registered canonical form in read-only mode", async () => {
+    const seen = vi.fn();
+    const CanonicalForm = (props: RegisteredFormProps) => {
+      seen(props);
+      return <p>Canonical supplier details</p>;
+    };
+    render(chatterContentView(<RecordPeekHarness />, "comments", {
+      forms: { "parties.Party": registerForm("parties.Party", CanonicalForm) },
+    }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Review note" }), {
+      target: { value: "Retain this review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Inspect supplier" }));
+    expect(await screen.findByText("Canonical supplier details")).toBeTruthy();
+    expect(seen).toHaveBeenCalledWith(expect.objectContaining({
+      resource: "parties.Party", id: "pty_1", readOnly: true, hideRecordChrome: true,
+    }));
+    expect((screen.getByRole("textbox", { name: "Review note" }) as HTMLInputElement).value)
+      .toBe("Retain this review");
+  });
 });
+
+function RecordPeekHarness(): React.ReactElement {
+  const open = useRecordPeek();
+  return <>
+    <input aria-label="Review note" />
+    <button type="button" onClick={() => open({ model: "parties.Party", id: "pty_1" })}>
+      Inspect supplier
+    </button>
+  </>;
+}
+
+function PublishedContent({ content }: { content: ChatterContent }): null {
+  useChatterContent(content);
+  return null;
+}
+
+function CompositionHarness({ base, peek }: { base: ChatterContent; peek: ChatterContent }): React.ReactElement {
+  const [open, setOpen] = React.useState(true);
+  return <>
+    <PublishedContent content={base} />
+    {open ? <PublishedContent content={peek} /> : null}
+    <button type="button" onClick={() => setOpen(false)}>Close record peek</button>
+  </>;
+}
+
+function MountProbe({ onMount, children }: { onMount: () => void; children: React.ReactNode }): React.ReactElement {
+  React.useEffect(() => onMount(), [onMount]);
+  return <>{children}</>;
+}
 
 function useCommentsCount(
   context: ChatterViewContext,
@@ -162,4 +280,21 @@ function renderChatter(runtime: Partial<AppRuntime>): void {
   });
 
   render(<RouterProvider router={router} />);
+}
+
+function chatterContentView(children: React.ReactNode, defaultTab: string, runtime: Partial<AppRuntime> = {}): React.ReactElement {
+  return (
+    <RouterContextProvider router={createRouter({ routeTree: createRootRoute(), history: createMemoryHistory({ initialEntries: ["/"] }) })}>
+      <AppRuntimeProvider runtime={{ icons: baseIcons, ...runtime }}>
+        <ChatterProvider defaultTab={defaultTab}>
+          {children}
+          <Chatter />
+        </ChatterProvider>
+      </AppRuntimeProvider>
+    </RouterContextProvider>
+  );
+}
+
+function renderChatterContent(children: React.ReactNode, defaultTab: string) {
+  return render(chatterContentView(children, defaultTab));
 }

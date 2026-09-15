@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { AppRuntimeProvider, createRouteHref, defaultWidgets } from "@angee/ui";
 
@@ -29,7 +29,8 @@ vi.mock("@angee/ui", async (importOriginal) => {
 });
 
 import type { PendingWorkflowDecision } from "../documents.public";
-import { ApprovalTask } from "./ApprovalTask";
+import { WORKFLOW_DECISION_CONTENT_SLOT } from "../slots";
+import { ApprovalTask, type WorkflowDecisionContentProps } from "./ApprovalTask";
 
 const approval = {
   id: "decision-1",
@@ -38,6 +39,7 @@ const approval = {
   payload: { subject: "A note" },
   verdict: "PENDING",
   resolution: {},
+  resolved_by: "",
   attempts: 0,
   max_attempts: 3,
   expires_at: null,
@@ -69,12 +71,12 @@ afterEach(() => {
 });
 
 describe("ApprovalTask", () => {
-  test("puts the resolution before closed source data and preserves resolution mutation variables", async () => {
+  test("puts the resolution before collapsed processing details and preserves resolution mutation variables", async () => {
     const onResolved = vi.fn();
     render(<ApprovalTask approval={approval} onResolved={onResolved} />);
 
     const resolution = screen.getByLabelText("Resolution payload");
-    const sourceTrigger = screen.getByRole("button", { name: "Source data" });
+    const sourceTrigger = screen.getByRole("button", { name: "Processing details" });
     expect(resolution.compareDocumentPosition(sourceTrigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(sourceTrigger.getAttribute("aria-expanded")).toBe("false");
 
@@ -107,9 +109,50 @@ describe("ApprovalTask", () => {
       source_attempt_id: "attempt-3",
     }} onResolved={() => undefined} /></AppRuntimeProvider>);
 
+    fireEvent.click(screen.getByRole("button", { name: "Processing details" }));
     expect(screen.getByRole("link", { name: "Open source run" }).getAttribute("href")).toBe("/runs/run-1");
     expect(screen.getByRole("link", { name: "Execution execution-2" }).getAttribute("href")).toContain("execution=execution-2");
     expect(screen.getByRole("link", { name: "Attempt attempt-3" }).getAttribute("href")).toContain("attempt=attempt-3");
+  });
+
+  test("records one decision and retries only the queue refresh after continuation failure", async () => {
+    const onResolved = vi.fn()
+      .mockRejectedValueOnce(new Error("queue unavailable"))
+      .mockResolvedValueOnce(undefined);
+    let submitAgain: (() => Promise<void>) | undefined;
+    function Specialized({ resolve, readOnly }: WorkflowDecisionContentProps) {
+      submitAgain = () => resolve("COMPLETE", { approved: true });
+      return <button type="button" disabled={readOnly} onClick={() => void submitAgain?.()}>Record decision</button>;
+    }
+    render(<AppRuntimeProvider runtime={{
+      widgets: defaultWidgets,
+      slots: [{
+        slot: WORKFLOW_DECISION_CONTENT_SLOT,
+        model: "workflows.Decision",
+        impl: "review",
+        id: "test.post-commit-refresh",
+        content: Specialized,
+      }],
+    }}><ApprovalTask approval={{ ...approval, decision_schema: { type: "object", properties: {} } }} onResolved={onResolved} /></AppRuntimeProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Record decision" }));
+
+    expect(await screen.findByText("Decision recorded")).toBeTruthy();
+    expect(screen.getByText("The decision was recorded, but the approval queue could not refresh.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Record decision" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: /Complete/ })).toBeNull();
+    expect(mocks.decide).toHaveBeenCalledOnce();
+    expect(onResolved).toHaveBeenCalledOnce();
+
+    await act(async () => { await submitAgain?.(); });
+    expect(mocks.decide).toHaveBeenCalledOnce();
+    expect(onResolved).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry queue refresh" }));
+    await waitFor(() => expect(onResolved).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText("Decision recorded")).toBeNull());
+    expect(mocks.decide).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: /Complete/ })).toBeNull();
   });
 
   test("keeps edited structured values when the server returns a field error", async () => {
@@ -135,7 +178,7 @@ describe("ApprovalTask", () => {
       </AppRuntimeProvider>,
     );
 
-    const title = screen.getByLabelText("Title");
+    const title = await screen.findByLabelText("Title");
     fireEvent.change(title, { target: { value: "Edited" } });
     fireEvent.click(screen.getByRole("button", { name: /Complete/ }));
 
@@ -146,6 +189,77 @@ describe("ApprovalTask", () => {
       verdict: "COMPLETE",
       payload: { title: "Edited" },
     });
+  });
+
+  test("keeps frozen context separate from submitted decision inputs", async () => {
+    render(<AppRuntimeProvider runtime={{ widgets: defaultWidgets }}><ApprovalTask approval={{
+      ...approval,
+      payload: { source: "Frozen invoice A", action: "approve" },
+      decision_schema: { type: "object", properties: {
+        source: { type: "string", label: "Source", layout: "context" },
+        action: { type: "string", label: "Action", layout: "input" },
+      } },
+    }} onResolved={() => undefined} /></AppRuntimeProvider>);
+
+    expect(await screen.findByText("Frozen invoice A")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Source" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Action"), { target: { value: "reject" } });
+    fireEvent.click(screen.getByRole("button", { name: /Complete/ }));
+    await waitFor(() => expect(mocks.decide).toHaveBeenCalledWith({
+      decision: "decision-1", verdict: "COMPLETE", payload: { action: "reject" },
+    }));
+  });
+
+  test("lets one action specialization use shared values and resolver without generic actions", async () => {
+    function Specialized({ contextValues, values, resolve }: WorkflowDecisionContentProps) {
+      return <div>
+        <span>{String(contextValues.source)}</span>
+        <button type="button" onClick={() => void resolve("COMPLETE", { ...values, action: "use-existing" })}>
+          Use existing supplier
+        </button>
+      </div>;
+    }
+    render(<AppRuntimeProvider runtime={{
+      widgets: defaultWidgets,
+      slots: [{
+        slot: WORKFLOW_DECISION_CONTENT_SLOT,
+        model: "workflows.Decision",
+        impl: "review",
+        id: "test.specialized-review",
+        content: Specialized,
+      }],
+    }}><ApprovalTask approval={{
+      ...approval,
+      payload: { source: "Frozen invoice A", action: "approve" },
+      decision_schema: { type: "object", properties: {
+        source: { type: "string", label: "Source", layout: "context" },
+        action: { type: "string", label: "Action", layout: "input" },
+      } },
+    }} onResolved={() => undefined} /></AppRuntimeProvider>);
+
+    expect(screen.queryByRole("button", { name: "Complete" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Use existing supplier" }));
+    await waitFor(() => expect(mocks.decide).toHaveBeenCalledWith({
+      decision: "decision-1", verdict: "COMPLETE", payload: { action: "use-existing" },
+    }));
+  });
+
+  test("renders completed context from payload and inputs from retained resolution", async () => {
+    render(<AppRuntimeProvider runtime={{ widgets: defaultWidgets }}><ApprovalTask approval={{
+      ...approval,
+      verdict: "COMPLETED",
+      payload: { source: "Frozen invoice A", action: "old suggestion" },
+      resolution: { source: "tampered context", action: "approve" },
+      decision_schema: { type: "object", properties: {
+        source: { type: "string", label: "Source", layout: "context" },
+        action: { type: "string", label: "Action", layout: "input" },
+      } },
+    }} onResolved={() => undefined} /></AppRuntimeProvider>);
+
+    expect(await screen.findByText("Frozen invoice A")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Source" })).toBeNull();
+    expect(screen.getByText("approve")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Action" })).toBeNull();
   });
 
   test.each([
@@ -276,7 +390,7 @@ describe("ApprovalTask", () => {
     rerender(<ApprovalTask approval={{ ...approval, verdict: "EXPIRED", resolution: { confirmed: true } }} onResolved={() => undefined} />);
 
     expect(screen.getByText("This approval is no longer pending.")).toBeTruthy();
-    expect(JSON.parse((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value)).toEqual({ confirmed: true });
+    expect((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value).toBe('{\n  "note": "mine"\n}');
     expect((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).readOnly).toBe(true);
     expect(screen.queryByRole("button", { name: /Complete/ })).toBeNull();
   });

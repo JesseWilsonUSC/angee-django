@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pycountry
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.encoding import force_str
@@ -21,6 +22,10 @@ def country_choices() -> Countries:
 def normalize_country_code(value: Any) -> str:
     """Resolve an ISO code or exact upstream-recognized name to alpha-2.
 
+    The configured django-countries catalogue resolves first, so a project's
+    ``COUNTRIES_OVERRIDE`` names win; the complete pycountry ISO catalogue is an
+    exact-match fallback only when that catalogue has no match, keeping the
+    field's contract full ISO completeness rather than a validation gate.
     Deliberately reject fuzzy or colloquial names so ingestion cannot silently
     attach an address to the wrong jurisdiction.
     """
@@ -30,6 +35,11 @@ def normalize_country_code(value: Any) -> str:
         return ""
     code = countries.alpha2(candidate) or countries.by_name(candidate)
     if not isinstance(code, str) or not code:
+        try:
+            code = pycountry.countries.lookup(candidate).alpha_2
+        except LookupError:
+            code = ""
+    if not code:
         raise ValidationError(
             "%(value)s is not a recognized country code or name.",
             code="invalid_country",

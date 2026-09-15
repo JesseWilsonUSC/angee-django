@@ -12,7 +12,10 @@ import {
 
 import type { CollapsiblePane } from "../page";
 
+export type ChatterPaneController = Pick<CollapsiblePane, "collapsed" | "collapse" | "expand" | "toggle">;
+
 export type ChatterTabId = "agents" | "comments" | "activity" | (string & {});
+export const CHATTER_TAB_SEARCH_KEY = "chatterTab";
 
 export interface ChatterTab {
   id: ChatterTabId;
@@ -43,7 +46,7 @@ export interface ChatterContextValue {
    * persistence). With no Workbench (standalone/tests) the context falls back to
    * a local `collapsed` flag. Pass `null` to unregister on unmount.
    */
-  registerSecondaryController: (controller: CollapsiblePane | null) => void;
+  registerSecondaryController: (controller: ChatterPaneController | null) => void;
 }
 
 export interface ChatterProviderProps {
@@ -73,18 +76,24 @@ export function ChatterProvider({
   // plus its reactive collapsed flag mirrored into state so the chrome re-renders
   // when the pane collapses (including via drag). `null` collapsed means no
   // controller is registered, so the chrome falls back to `localCollapsed`.
-  const controllerRef = useRef<CollapsiblePane | null>(null);
+  const controllerRef = useRef<ChatterPaneController | null>(null);
+  const desiredCollapsedRef = useRef(defaultCollapsed);
+  const registeredControllerRef = useRef(false);
   const [controllerCollapsed, setControllerCollapsed] = useState<
     boolean | null
   >(null);
   const [activeTab, setActiveTab] = useState<ChatterTabId>(defaultTab);
   const [contentState, setContentState] = useState<
-    (ChatterContent & { owner: symbol }) | null
-  >(null);
+    readonly (ChatterContent & { owner: symbol })[]
+  >([]);
 
   const registerSecondaryController = useCallback(
-    (controller: CollapsiblePane | null) => {
+    (controller: ChatterPaneController | null) => {
       controllerRef.current = controller;
+      if (controller && !registeredControllerRef.current) {
+        registeredControllerRef.current = true;
+        if (!desiredCollapsedRef.current && controller.collapsed) controller.expand();
+      }
       // Same-value state updates bail out, so the Workbench may republish its
       // controller every render (its identity changes each tick) without looping.
       setControllerCollapsed(controller ? controller.collapsed : null);
@@ -93,6 +102,7 @@ export function ChatterProvider({
   );
 
   const setCollapsed = useCallback((next: boolean) => {
+    desiredCollapsedRef.current = next;
     const controller = controllerRef.current;
     if (controller) {
       if (next) controller.collapse();
@@ -103,30 +113,42 @@ export function ChatterProvider({
   }, []);
   const toggleCollapsed = useCallback(() => {
     const controller = controllerRef.current;
-    if (controller) controller.toggle();
-    else setLocalCollapsed((current) => !current);
+    if (controller) {
+      desiredCollapsedRef.current = !controller.collapsed;
+      controller.toggle();
+    } else setLocalCollapsed((current) => {
+      desiredCollapsedRef.current = !current;
+      return !current;
+    });
   }, []);
   const setContent = useCallback(
     (owner: symbol, content: ChatterContent | null) => {
       const next = normalizeChatterContent(content);
       setContentState((current) => {
+        const previous = current.find((entry) => entry.owner === owner);
         if (next) {
-          if (current?.owner === owner && sameChatterContent(current, next)) {
+          if (previous && sameChatterContent(previous, next)) {
             return current;
           }
-          return { ...next, owner };
+          const entry = { ...next, owner };
+          // Replace an existing owner's entry in place so a republish never
+          // reorders the merged tab strip; only a new owner is appended.
+          return previous
+            ? current.map((existing) => (existing.owner === owner ? entry : existing))
+            : [...current, entry];
         }
-        return current?.owner === owner ? null : current;
+        return previous ? current.filter((entry) => entry.owner !== owner) : current;
       });
     },
     [],
   );
   const content = useMemo<ChatterContent | null>(() => {
-    if (!contentState) return null;
+    if (!contentState.length) return null;
+    const composer = contentState.findLast((entry) => entry.composer !== undefined)?.composer;
     return {
-      ...(contentState.tabs !== undefined ? { tabs: contentState.tabs } : {}),
-      ...(contentState.composer !== undefined
-        ? { composer: contentState.composer }
+      tabs: contentState.flatMap((entry) => entry.tabs ?? []),
+      ...(composer !== undefined
+        ? { composer }
         : {}),
     };
   }, [contentState]);

@@ -63,6 +63,8 @@ export type {
 } from "./form-view-surface";
 
 export interface FormViewProps extends UseFormViewSurfaceProps {
+  /** Suppress contributed record toolbar controls in a passive embedded peek. */
+  hideRecordChrome?: boolean;
   /** Publish this routed record's representation into the current breadcrumb. */
   publishBreadcrumbLabel?: boolean;
   /** Override the record heading from the same live create/edit form context. */
@@ -231,7 +233,7 @@ function FormViewInstance(props: FormViewProps): React.ReactElement {
     event.preventDefault();
     void submitForm();
   };
-  const controlBand = (
+  const controlBand = readOnly && props.hideRecordChrome && !toolbarStartNode && !toolbar ? null : (
     <ControlBand className={cn("overflow-x-auto overflow-y-hidden", formIsDirty ? "bg-brand-soft" : undefined)}>
       <div className="flex min-w-max shrink-0 items-center gap-2">
         {toolbarStartNode}
@@ -279,7 +281,7 @@ function FormViewInstance(props: FormViewProps): React.ReactElement {
       </div>
       <div className="min-w-2 flex-1" />
       <div className="flex min-w-max shrink-0 items-center gap-2">
-        {recordChromeContext ? (
+        {recordChromeContext && !props.hideRecordChrome ? (
           <RecordChrome value={recordChromeContext} />
         ) : null}
         {toolbar}
@@ -337,6 +339,32 @@ function FormViewInstance(props: FormViewProps): React.ReactElement {
       </div>
     </form>
   );
+
+  if (recordPresentation === "workspace" && !tabbed) {
+    return (
+      <div className={cn("flex h-full min-h-0 flex-col bg-sheet", className)}>
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onKeyDown={handleFormKeyDown}
+          onSubmit={(event) => {
+            void submitForm(event);
+          }}
+        >
+          {controlBand}
+          <div className="flex-none border-b border-border-subtle px-4 py-3">
+            <FormViewRecordHeader surface={surface} compact title={formTitle} />
+            <ErrorBanner description={saveError} title={t("form.saveFailed")} />
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto">
+            <div className={cn(FORM_VIEW_COLUMN_CLASS, "grid gap-6 py-6")}>
+              {overviewWithFormExtras}
+            </div>
+          </div>
+        </form>
+        {recordExtrasPanel}
+      </div>
+    );
+  }
 
   if (recordPresentation === "workspace" && tabbed) {
     return (

@@ -15,11 +15,12 @@ from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from jsonschema import Draft202012Validator
 from PIL import Image
-from rebac import current_actor, system_context
+from rebac import current_actor, system_context, to_subject_ref
 
 from angee.base.actors import actor_user_id
 from angee.base.impl import resolve_impl_class
-from angee.base.refs import canonical_record_target, record_ref_for
+from angee.base.refs import RecordRef, canonical_record_target, record_ref_for
+from angee.workflows.attempts import json_values_equal
 from angee.workflows_ocr.engines import (
     DocumentPart,
     DocumentPipelineError,
@@ -62,6 +63,8 @@ def extract(
     for candidate in (model, recognition_model):
         if candidate is not None and not candidate.has_access("read"):
             raise PermissionDenied("Read access to every inference model is required.")
+    require_approved_model_deployment(model, role="mapping")
+    require_approved_model_deployment(recognition_model, role="recognition")
     normalized_schema = _validated_schema(schema)
     normalized_config = _json_object(config or {}, field="config")
     schema_id = str(normalized_schema.get("$id") or normalized_schema.get("x-version") or "")
@@ -71,17 +74,7 @@ def extract(
     document_sources = _document_sources(ordered_files, ordered_message_parts)
     source_facts = [_source_fact(source) for source in document_sources]
     target_ref = record_ref_for(authorized_target)
-    lineage_key = _digest(
-        {
-            "sources": source_facts,
-            "schema_id": schema_id,
-            "target": {
-                "model_label": target_ref.model_label,
-                "object_id": str(target_ref.object_id),
-                "resource_type": target_ref.resource_type,
-            },
-        }
-    )
+    lineage_key = _lineage_key(source_facts=source_facts, schema_id=schema_id, target_ref=target_ref)
     engine_class = _engine_class(engine)
     reuse_key = _digest(
         {
@@ -258,7 +251,7 @@ def reextract(extraction: Any) -> Any:
             raise PermissionDenied("Read access to every inference model is required.")
     if latest.status == "succeeded":
         return latest
-    config = _retry_base_config(latest.engine_config)
+    config = authored_engine_config(latest.engine_config)
     config["retry_of_revision"] = latest.revision
     return extract(
         files=files,
@@ -272,7 +265,292 @@ def reextract(extraction: Any) -> Any:
     )
 
 
-def _retry_base_config(config: Mapping[str, Any]) -> dict[str, Any]:
+def revise(extraction: Any, *, result: Mapping[str, Any], decision: Any) -> Any:
+    """Retain a schema-valid human correction as a new evidence revision.
+
+    The actor must be able to read the original extraction, its target and
+    sources, and a completed Decision whose payload names the exact extraction
+    id and revision. The Decision authorizes this generic evidence operation
+    only; its domain action, resolution payload, and permitted corrected fields
+    remain the caller's responsibility.
+
+    The new revision clones retained source, page, and part evidence without
+    reacquiring sources or invoking an engine. Claims survive only where their
+    JSON-pointer value and every containing array element are unchanged. The
+    original revision remains immutable; exact retries reuse one result while
+    stale or competing corrections fail.
+    """
+
+    actor = current_actor()
+    if actor is None:
+        raise PermissionDenied("Authentication required.")
+    owner_id = actor_user_id(actor)
+    extraction_model = apps.get_model("workflows_ocr", "Extraction")
+    decision_model = apps.get_model("workflows", "Decision")
+    if not isinstance(extraction, extraction_model) or extraction.pk is None:
+        raise ValidationError({"extraction": "A retained extraction is required."})
+    if not isinstance(decision, decision_model) or decision.pk is None:
+        raise ValidationError({"decision": "A retained Decision is required."})
+    with system_context(reason="workflows_ocr.revise.load_authority"):
+        original = extraction_model._base_manager.filter(pk=extraction.pk).first()
+        authority = decision_model._base_manager.filter(pk=decision.pk).first()
+        if original is None:
+            raise ValidationError({"extraction": "The retained extraction is unavailable."})
+        if authority is None:
+            raise ValidationError({"decision": "The retained Decision is unavailable."})
+        target = original.target
+        if target is None:
+            raise ValidationError({"extraction": "The retained extraction target is unavailable."})
+        retained_sources = list(
+            original.sources.select_related(
+                "file", "message_part__fragment", "message_part__message"
+            ).order_by("position")
+        )
+
+    if not original.has_access("read"):
+        raise PermissionDenied("Read access to the extraction is required.")
+    files = [source.file for source in retained_sources if source.file_id is not None]
+    message_parts = [
+        source.message_part for source in retained_sources if source.message_part_id is not None
+    ]
+    _authorize(files, message_parts, target)
+    if not authority.has_access("read"):
+        raise PermissionDenied("Read access to the correction Decision is required.")
+    if str(authority.verdict) != "completed":
+        raise ValidationError({"decision": "The correction Decision must be completed."})
+
+    original_ref = record_ref_for(original)
+    decision_ref = record_ref_for(authority)
+    _validate_correction_binding(authority.payload, extraction_ref=original_ref, revision=original.revision)
+    normalized_schema = _validated_schema(original.schema)
+    schema_id = str(normalized_schema.get("$id") or normalized_schema.get("x-version") or "")
+    if (
+        not schema_id
+        or schema_id != str(original.schema_id)
+        or _digest(normalized_schema) != str(original.schema_digest)
+    ):
+        raise ValidationError({"extraction": "The retained extraction schema identity is invalid."})
+    normalized_result = _json_object(result, field="result")
+    errors = sorted(
+        Draft202012Validator(normalized_schema).iter_errors(normalized_result),
+        key=lambda error: list(error.path),
+    )
+    if errors:
+        raise ValidationError({"result": "Corrected output does not match the retained extraction schema."})
+
+    source_facts = _retained_source_facts(retained_sources)
+    target_ref = record_ref_for(target)
+    lineage_key = _lineage_key(source_facts=source_facts, schema_id=schema_id, target_ref=target_ref)
+    if lineage_key != str(original.lineage_key):
+        raise ValidationError({"extraction": "The retained extraction source identity is invalid."})
+
+    original_provenance = _json_object(original.provenance, field="extraction")
+    claims = _unchanged_claims(
+        original_provenance.get("claims", {}),
+        before=original.result,
+        after=normalized_result,
+    )
+    corrections = original_provenance.get("corrections", [])
+    if not isinstance(corrections, list) or not all(isinstance(entry, Mapping) for entry in corrections):
+        raise ValidationError({"extraction": "The retained correction provenance is invalid."})
+    correction = {
+        "kind": "human_correction",
+        "original_extraction_id": original_ref.public_id,
+        "original_extraction_revision": original.revision,
+        "decision_id": decision_ref.public_id,
+        "decision_resolved_by": str(authority.resolved_by),
+        "recorded_by": str(to_subject_ref(actor)),
+        "corrected_paths": list(_changed_json_pointers(original.result, normalized_result)),
+        "result_digest": _digest(normalized_result),
+    }
+    provenance = {
+        **original_provenance,
+        "claims": claims,
+        "used_model_roles": [],
+        "corrections": [*corrections, correction],
+    }
+    reuse_key = _digest(
+        {
+            "human_correction": {
+                "extraction_id": original_ref.public_id,
+                "extraction_revision": original.revision,
+                "decision_id": decision_ref.public_id,
+            }
+        }
+    )
+    return extraction_model.objects.create_revision_from_evidence(
+        original,
+        lineage_key=lineage_key,
+        reuse_key=reuse_key,
+        status="succeeded",
+        error_code="",
+        schema_id=schema_id,
+        schema=normalized_schema,
+        schema_digest=str(original.schema_digest),
+        engine=str(original.engine),
+        model=original.model,
+        recognition_model=original.recognition_model,
+        engine_config=original.engine_config,
+        result=normalized_result,
+        provenance=provenance,
+        content_type_id=original.content_type_id,
+        object_id=original.object_id,
+        created_by_id=owner_id,
+    )
+
+
+def _validate_correction_binding(payload: Any, *, extraction_ref: Any, revision: int) -> None:
+    if not isinstance(payload, Mapping):
+        raise ValidationError({"decision": "The correction Decision payload must be an object."})
+    if type(payload.get("extraction_id")) is not str or payload["extraction_id"] != extraction_ref.public_id:
+        raise ValidationError({"decision": "The correction Decision names a different extraction."})
+    bound_revision = payload.get("extraction_revision")
+    if type(bound_revision) is not int or bound_revision != revision:
+        raise ValidationError({"decision": "The correction Decision names a different extraction revision."})
+
+
+def _retained_source_facts(sources: Sequence[Any]) -> list[dict[str, Any]]:
+    facts: list[dict[str, Any]] = []
+    seen_files: set[Any] = set()
+    seen_parts: set[Any] = set()
+    for position, source in enumerate(sources):
+        if source.position != position:
+            raise ValidationError({"extraction": "The retained source ordering is invalid."})
+        content_hash = str(source.content_hash).lower()
+        if source.file_id is not None and source.message_part_id is None:
+            if source.file_id in seen_files or content_hash != str(source.file.content_hash).lower():
+                raise ValidationError({"extraction": "A retained file source identity is invalid."})
+            seen_files.add(source.file_id)
+            identity = {"file": str(source.file.sqid)}
+        elif source.message_part_id is not None and source.file_id is None:
+            if source.message_part_id in seen_parts:
+                raise ValidationError({"extraction": "A retained message source identity is invalid."})
+            part = source.message_part
+            fragment_hash = _message_part_hash(part)
+            if (
+                content_hash != fragment_hash
+                or hashlib.sha256(str(part.fragment.text).encode()).hexdigest() != fragment_hash
+            ):
+                raise ValidationError({"extraction": "A retained message source identity is invalid."})
+            seen_parts.add(source.message_part_id)
+            identity = {"message_part": str(part.sqid)}
+        else:
+            raise ValidationError({"extraction": "A retained source must name exactly one input."})
+        facts.append({"position": position, **identity, "content_hash": content_hash})
+    if not facts:
+        raise ValidationError({"extraction": "The retained extraction has no source evidence."})
+    return facts
+
+
+def _unchanged_claims(claims: Any, *, before: Any, after: Any) -> dict[str, Any]:
+    """Retain equal leaf claims only while indexed container identity is stable."""
+
+    if not isinstance(claims, Mapping):
+        raise ValidationError({"extraction": "The retained extraction claims are invalid."})
+    retained: dict[str, Any] = {}
+    for pointer, entries in claims.items():
+        if not isinstance(pointer, str) or not pointer.startswith("/") or not isinstance(entries, list):
+            raise ValidationError({"extraction": "The retained extraction claims are invalid."})
+        if any(
+            not isinstance(entry, Mapping)
+            or type(entry.get("part_position")) is not int
+            or entry["part_position"] < 0
+            for entry in entries
+        ):
+            raise ValidationError({"extraction": "The retained extraction claims are invalid."})
+        old_value = _json_pointer_value(before, pointer)
+        new_value = _json_pointer_value(after, pointer, array_element_baseline=before)
+        if (
+            old_value is not _MISSING
+            and new_value is not _MISSING
+            and json_values_equal(old_value, new_value)
+        ):
+            retained[pointer] = entries
+    return _json_object(retained, field="extraction")
+
+
+_MISSING = object()
+
+
+def json_pointer_value(value: Any, pointer: str) -> Any:
+    """Resolve one RFC 6901 pointer or raise ``KeyError`` when it is invalid or absent.
+
+    The public raising contract is consumed by downstream accounting-intake steps;
+    :func:`_json_pointer_value` keeps the internal sentinel/array-baseline shape.
+    """
+
+    resolved = _json_pointer_value(value, pointer)
+    if resolved is _MISSING:
+        raise KeyError(pointer)
+    return resolved
+
+
+def _json_pointer_value(
+    value: Any, pointer: str, *, array_element_baseline: Any = _MISSING,
+) -> Any:
+    current = value
+    baseline = array_element_baseline
+    for encoded in pointer.removeprefix("/").split("/"):
+        if "~" in encoded:
+            index = 0
+            while (index := encoded.find("~", index)) >= 0:
+                if index + 1 >= len(encoded) or encoded[index + 1] not in {"0", "1"}:
+                    return _MISSING
+                index += 2
+        token = encoded.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, Mapping):
+            if token not in current:
+                return _MISSING
+            current = current[token]
+            if baseline is not _MISSING:
+                if not isinstance(baseline, Mapping) or token not in baseline:
+                    return _MISSING
+                baseline = baseline[token]
+        elif isinstance(current, list):
+            if not token.isascii() or not token.isdigit() or (token.startswith("0") and token != "0"):
+                return _MISSING
+            index = int(token)
+            if index >= len(current):
+                return _MISSING
+            current = current[index]
+            if baseline is not _MISSING:
+                if not isinstance(baseline, list) or index >= len(baseline):
+                    return _MISSING
+                baseline = baseline[index]
+                if not json_values_equal(current, baseline):
+                    return _MISSING
+        else:
+            return _MISSING
+    return current
+
+
+def _changed_json_pointers(before: Any, after: Any, pointer: str = "") -> tuple[str, ...]:
+    if json_values_equal(before, after):
+        return ()
+    if isinstance(before, Mapping) and isinstance(after, Mapping):
+        changed: list[str] = []
+        for key in sorted(set(before) | set(after)):
+            child = f"{pointer}/{str(key).replace('~', '~0').replace('/', '~1')}"
+            if key not in before or key not in after:
+                changed.append(child)
+            else:
+                changed.extend(_changed_json_pointers(before[key], after[key], child))
+        return tuple(changed)
+    if isinstance(before, list) and isinstance(after, list):
+        changed = []
+        for index in range(max(len(before), len(after))):
+            child = f"{pointer}/{index}"
+            if index >= len(before) or index >= len(after):
+                changed.append(child)
+            else:
+                changed.extend(_changed_json_pointers(before[index], after[index], child))
+        return tuple(changed)
+    return (pointer,)
+
+
+def authored_engine_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Return authored engine policy without native retry lineage metadata."""
+
     return {key: value for key, value in dict(config).items() if key != "retry_of_revision"}
 
 
@@ -282,7 +560,7 @@ def _same_retry_policy(candidate: Any, original: Any) -> bool:
         and candidate.model_id == original.model_id
         and candidate.recognition_model_id == original.recognition_model_id
         and str(candidate.schema_digest) == str(original.schema_digest)
-        and _retry_base_config(candidate.engine_config) == _retry_base_config(original.engine_config)
+        and authored_engine_config(candidate.engine_config) == authored_engine_config(original.engine_config)
     )
 
 
@@ -300,8 +578,8 @@ def _message_part_hash(part: Any) -> str:
         raise ValidationError({"message_parts": "Text message parts require a retained fragment."})
     if not str(part.type).startswith("text/"):
         raise ValidationError({"message_parts": "Only textual message parts can be extraction sources."})
-    if str(part.role) not in {"body", "title", "header"}:
-        raise ValidationError({"message_parts": "Quoted and signature message parts cannot be extraction sources."})
+    if str(part.role) not in {"body", "title", "quoted", "signature", "header"}:
+        raise ValidationError({"message_parts": "The message part has an unsupported textual role."})
     if len(part.fragment.text.encode()) > int(settings.ANGEE_OCR_MAX_BYTES):
         raise ValidationError({"message_parts": "An extraction source exceeds the configured byte limit."})
     return str(part.fragment.hash)
@@ -338,6 +616,24 @@ def _source_fact(source: DocumentSource) -> dict[str, Any]:
     return {"position": source.source_position, **identity, "content_hash": source.content_hash}
 
 
+def _lineage_key(
+    *, source_facts: Sequence[Mapping[str, Any]], schema_id: str, target_ref: RecordRef
+) -> str:
+    """Return the canonical source, schema, and target extraction lineage."""
+
+    return _digest(
+        {
+            "sources": list(source_facts),
+            "schema_id": schema_id,
+            "target": {
+                "model_label": target_ref.model_label,
+                "object_id": str(target_ref.object_id),
+                "resource_type": target_ref.resource_type,
+            },
+        }
+    )
+
+
 def _model_fingerprint(model: Any | None) -> dict[str, Any] | None:
     if model is None:
         return None
@@ -349,6 +645,48 @@ def _model_fingerprint(model: Any | None) -> dict[str, Any] | None:
         "provider_config": model.provider.config,
         "model_config": model.config,
     }
+
+
+def model_deployment_identity(model: Any) -> dict[str, str]:
+    """Return the non-secret endpoint binding checked before model invocation."""
+
+    provider = model.provider
+    backend = provider.backend
+    effective_url = str(provider.base_url or getattr(backend, "default_base_url", "")).strip().rstrip("/")
+    return {
+        "model": str(model.sqid),
+        "provider": str(provider.sqid),
+        "backend": str(provider.backend_class),
+        "native_model": str(model.provider_model_name),
+        "endpoint": effective_url,
+    }
+
+
+def require_approved_model_deployment(model: Any | None, *, role: str) -> None:
+    """Fail closed when a configured OCR deployment allowlist excludes a model."""
+
+    try:
+        validate_model_deployment(model, role=role)
+    except ValueError as error:
+        raise PermissionDenied(str(error)) from error
+
+
+def validate_model_deployment(model: Any | None, *, role: str) -> None:
+    """Validate one configured model against the shared deployment allowlist."""
+
+    if model is None:
+        return
+    policy = getattr(settings, "ANGEE_OCR_APPROVED_MODEL_DEPLOYMENTS", None)
+    if policy is None:
+        return
+    if not isinstance(policy, Mapping):
+        raise ValueError("The OCR model deployment policy is invalid.")
+    approved = policy.get(role)
+    if not isinstance(approved, (list, tuple)) or not all(isinstance(item, Mapping) for item in approved):
+        raise ValueError(f"The OCR {role} deployment policy is invalid.")
+    identity = model_deployment_identity(model)
+    if not any(dict(item) == identity for item in approved):
+        raise ValueError(f"The configured OCR {role} model deployment is not approved.")
 
 
 def _validate_document_result(

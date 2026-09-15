@@ -173,7 +173,13 @@ class IdentityReviewStepImpl(StepImpl):
     key = "parties_identity_review"
     label = "Review party identity"
     category = "Control"
-    outcomes = (StepOutcome("unchanged", "No identity change"), StepOutcome("completed", "Review completed"))
+    outcomes = (
+        StepOutcome("unchanged", "No identity change"),
+        StepOutcome("completed", "Review completed"),
+        StepOutcome("rejected", "Review rejected"),
+        StepOutcome("escalated", "Review escalated"),
+        StepOutcome("expired", "Review expired"),
+    )
     effect = StepEffect.READ
     effect_description = "Reads Party identity facts and may create a workflow Decision."
     idempotent = True

@@ -25,8 +25,11 @@ const resource = testDataResource("notes.Note", {
 const scope: ListViewNavigationScope = { filter: { AND: [{ title: { iContains: "needle" } }, { status: { exact: "active" } }] }, order: { updated_at: "DESC" }, page: 1, pageSize: 2 };
 const clients: QueryClient[] = [];
 afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.length = 0; });
-function fixture({ initialScope = scope, initialId = "b", total = 4, getPage, dataResource = resource }: { dataResource?: DataResourceMetadata; initialScope?: ListViewNavigationScope | null; initialId?: string | null; total?: number; getPage?: (page: number) => Promise<Row[]> } = {}) {
-  const getList = vi.fn(async (params: GetListParams) => ({ data: await (getPage?.(params.pagination!.currentPage!) ?? Promise.resolve(params.pagination?.currentPage === 2 ? [{ id: "c" }, { id: "d" }] : [{ id: "a" }, { id: "b" }])), ...(total >= 0 ? { total } : {}) }));
+function fixture({ initialScope = scope, initialId = "b", total = 4, getPage, dataResource = resource }: { dataResource?: DataResourceMetadata; initialScope?: ListViewNavigationScope | null; initialId?: string | null; total?: number | (() => number); getPage?: (page: number) => Promise<Row[]> } = {}) {
+  const getList = vi.fn(async (params: GetListParams) => {
+    const currentTotal = typeof total === "function" ? total() : total;
+    return { data: await (getPage?.(params.pagination!.currentPage!) ?? Promise.resolve(params.pagination?.currentPage === 2 ? [{ id: "c" }, { id: "d" }] : [{ id: "a" }, { id: "b" }])), ...(currentTotal >= 0 ? { total: currentTotal } : {}) };
+  });
   const provider = { getApiUrl: () => "test://notes", getList, getOne: vi.fn(), create: vi.fn(), update: vi.fn(), deleteOne: vi.fn() } as DataProvider;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   clients.push(client);
@@ -88,6 +91,7 @@ test("a direct or invalid context performs no broad fallback list query", async 
   const f = fixture({ initialScope: null });
   expect(f.result.current.navigation).toBeNull();
   expect(f.getList).not.toHaveBeenCalled();
+  await expect(f.result.current.onRecordResolved()).resolves.toBe("unscoped");
   act(() => f.result.current.setContext(scope));
   await waitFor(() => expect(f.result.current.navigation?.current).toBe(2));
   act(() => f.result.current.setContext(null));
@@ -117,6 +121,83 @@ test("refresh removal disables neighbors without scanning unrelated pages", asyn
   expect(f.result.current.navigation?.onNext).toBeUndefined();
   expect(f.result.current.navigation?.onPrev).toBeUndefined();
   expect(f.getList.mock.calls.every(([params]) => params.pagination?.currentPage === 1)).toBe(true);
+});
+
+test("resolution refetch selects the next live row pulled from a later page", async () => {
+  let pending = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+  const f = fixture({ getPage: async (page) => pending.slice((page - 1) * 2, page * 2) });
+  await waitFor(() => expect(f.result.current.navigation?.current).toBe(2));
+  pending = pending.filter((row) => row.id !== "b");
+  let result = "";
+  await act(async () => { result = await f.result.current.onRecordResolved(); });
+  expect(result).toBe("advanced");
+  expect(f.result.current.id).toBe("c");
+  expect(f.onSelect).toHaveBeenLastCalledWith("c", scope);
+});
+
+test("resolution refetch skips concurrently removed predecessors and successors", async () => {
+  let pending = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+  const f = fixture({ getPage: async (page) => pending.slice((page - 1) * 2, page * 2) });
+  await waitFor(() => expect(f.result.current.navigation?.current).toBe(2));
+  pending = pending.filter((row) => row.id === "d");
+  let result = "";
+  await act(async () => { result = await f.result.current.onRecordResolved(); });
+  expect(result).toBe("advanced");
+  expect(f.result.current.id).toBe("d");
+  expect(f.onSelect).toHaveBeenCalledOnce();
+});
+
+test("resolution refetch reports an earlier surviving row without wrapping", async () => {
+  let pending = [{ id: "a" }, { id: "b" }];
+  const f = fixture({ getPage: async (page) => pending.slice((page - 1) * 2, page * 2) });
+  await waitFor(() => expect(f.result.current.navigation?.current).toBe(2));
+  pending = pending.filter((row) => row.id !== "b");
+  let result = "";
+  await act(async () => { result = await f.result.current.onRecordResolved(); });
+  expect(result).toBe("end");
+  expect(f.result.current.id).toBe("b");
+  expect(f.onSelect).not.toHaveBeenCalled();
+});
+
+test("resolution refetch reports an empty exact query separately from its final position", async () => {
+  let pending = [{ id: "a" }, { id: "b" }];
+  const f = fixture({ total: () => pending.length, getPage: async (page) => pending.slice((page - 1) * 2, page * 2) });
+  await waitFor(() => expect(f.result.current.navigation?.current).toBe(2));
+  pending = [];
+  let result = "";
+  await act(async () => { result = await f.result.current.onRecordResolved(); });
+  expect(result).toBe("empty");
+  expect(f.result.current.id).toBe("b");
+  expect(f.onSelect).not.toHaveBeenCalled();
+});
+
+test("resolution refetch never replaces a selection made while the refresh is pending", async () => {
+  let release!: (rows: { id: string }[]) => void;
+  const delayed = new Promise<{ id: string }[]>((resolve) => { release = resolve; });
+  let calls = 0;
+  const f = fixture({ getPage: async () => calls++ === 0 ? [{ id: "a" }, { id: "b" }] : delayed });
+  await waitFor(() => expect(f.result.current.navigation?.current).toBe(2));
+  let resultPromise!: Promise<string>;
+  act(() => { resultPromise = f.result.current.onRecordResolved(); });
+  await waitFor(() => expect(f.getList).toHaveBeenCalledTimes(2));
+  act(() => f.result.current.setId("a"));
+  await act(async () => release([{ id: "a" }, { id: "c" }]));
+  await expect(resultPromise).resolves.toBe("advanced");
+  expect(f.result.current.id).toBe("a");
+  expect(f.onSelect).not.toHaveBeenCalled();
+});
+
+test("resolution refetch preserves the selected record when the live query fails", async () => {
+  let fail = false;
+  const f = fixture({ getPage: async () => {
+    if (fail) throw new Error("refresh unavailable");
+    return [{ id: "a" }, { id: "b" }];
+  } });
+  await waitFor(() => expect(f.result.current.navigation?.current).toBe(2));
+  fail = true;
+  await expect(act(async () => { await f.result.current.onRecordResolved(); })).rejects.toThrow("refresh unavailable");
+  expect(f.result.current.id).toBe("b");
+  expect(f.onSelect).not.toHaveBeenCalled();
 });
 
 test("failed page transitions keep the current route and current authoritative page", async () => {

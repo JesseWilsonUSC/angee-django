@@ -13,7 +13,15 @@ from django.core.exceptions import ValidationError
 from django.db import connection, transaction
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
-from rebac import system_context
+from rebac import (
+    RelationshipTuple,
+    actor_context,
+    system_context,
+    to_object_ref,
+    to_subject_ref,
+    write_relationships,
+)
+from rebac.errors import PermissionDenied
 
 from angee.workflows import engine
 from angee.workflows import models as workflow_models
@@ -39,6 +47,45 @@ from tests.workflows import (
 )
 
 User = get_user_model()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_decision_requester_may_share_exact_read_without_delegating_action_or_share(
+    workflow_engine_tables: None,
+) -> None:
+    """A requester may expose retained evidence without making the reader an assignee."""
+
+    del workflow_engine_tables
+    requester = User.objects.create_user(username="decision-share-requester")
+    assignee = User.objects.create_user(username="decision-share-assignee")
+    reader = User.objects.create_user(username="decision-share-reader")
+    outsider = User.objects.create_user(username="decision-share-outsider")
+    workflow = workflow_with_steps(
+        steps=({"key": "wait", "step_class": "wait", "config": {"until": "2099-01-01T00:00:00Z"}},),
+        edges=(),
+    )
+    run = start_run(workflow)
+    with system_context(reason="test exact Decision sharing fixture"):
+        step_run = StepRun.objects.get(run=run)
+        decision = Decision.objects.create(
+            step_run=step_run, action="review", created_by=requester,
+        )
+        write_relationships([
+            RelationshipTuple(to_object_ref(decision), "requester", to_subject_ref(requester)),
+            RelationshipTuple(to_object_ref(decision), "assignee", to_subject_ref(assignee)),
+        ])
+    with actor_context(requester):
+        decision.grant_record_access("reader", reader)
+
+    assert decision.with_actor(reader).has_access("read")
+    assert not decision.with_actor(reader).has_access("act")
+    assert not decision.with_actor(reader).has_access("write")
+    with actor_context(reader), pytest.raises(PermissionDenied):
+        decision.with_actor(reader).grant_record_access("reader", outsider)
+    assert not decision.with_actor(outsider).has_access("read")
+    with actor_context(requester):
+        decision.with_actor(requester).revoke_record_access("reader", reader)
+    assert not decision.with_actor(reader).has_access("read")
 
 
 @pytest.mark.django_db(transaction=True)
@@ -655,6 +702,89 @@ def test_deliver_is_idempotent_and_ignores_terminal_runs(
     assert engine.deliver(terminal.pk, now=now) == {"woken": 0}
     terminal.refresh_from_db()
     assert terminal.deliveries == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_deliver_artifact_wakes_all_exact_external_waits_without_approvals(
+    workflow_engine_tables: None,
+    no_workflow_queue: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A resource event leaves an unrelated approval wait parked in the same run."""
+
+    del workflow_engine_tables, no_workflow_queue
+    dependency = User.objects.create_user(username="external-artifact-dependency")
+    unrelated = User.objects.create_user(username="unrelated-artifact-dependency")
+    reviewer = User.objects.create_user(username="artifact-reviewer")
+    now = timezone.now()
+
+    def wait_on_dependency(self: HandlerStep, step_run: Any, *, now: Any) -> StepResult:
+        del self
+        if step_run.step.key == "entry":
+            return StepResult.done(outcome="done")
+        return StepResult.wait(
+            until=now + timedelta(days=1),
+            waiting_kind="external",
+            artifacts=(workflow_steps.ArtifactSpec(dependency, "External dependency"),),
+        )
+
+    monkeypatch.setattr(HandlerStep, "run", wait_on_dependency)
+    workflow = workflow_with_steps(
+        name="Exact artifact delivery",
+        steps=(
+            {"key": "entry", "step_class": "handler"},
+            {"key": "external", "step_class": "handler"},
+            {
+                "key": "approval",
+                "step_class": "gate",
+                "config": {
+                    "action": "approve",
+                    "slots": [{"assignee": f"auth/user:{reviewer.pk}"}],
+                },
+            },
+        ),
+        edges=(("entry", "external", "done"), ("entry", "approval", "done")),
+    )
+    runs = (start_run(workflow), start_run(workflow))
+    for run in runs:
+        advance_once(run, now=now)
+        execute_started(run, now=now)
+        advance_once(run, now=now)
+        advance_once(run, now=now)
+        execute_started(run, now=now)
+        advance_once(run, now=now)
+
+    external_steps = tuple(step_run_for(run, "external") for run in runs)
+    approval_steps = tuple(step_run_for(run, "approval") for run in runs)
+    for external, approval in zip(external_steps, approval_steps, strict=True):
+        assert external.status == workflow_models.StepRunStatus.WAITING
+        assert external.waiting_kind == workflow_models.WaitingKind.EXTERNAL
+        assert approval.status == workflow_models.StepRunStatus.WAITING
+        assert approval.waiting_kind == workflow_models.WaitingKind.APPROVAL
+    with system_context(reason="verify exact artifact delivery Decision"):
+        decision_ids = tuple(Decision.objects.filter(
+            step_run__in=approval_steps,
+        ).order_by("pk").values_list("pk", flat=True))
+
+    assert engine.deliver_artifact(unrelated, now=now) == {"runs": 0, "woken": 0}
+    assert engine.deliver_artifact(dependency, now=now) == {"runs": 2, "woken": 2}
+    for external, approval in zip(external_steps, approval_steps, strict=True):
+        external.refresh_from_db()
+        approval.refresh_from_db()
+        assert external.status == workflow_models.StepRunStatus.WAITING
+        assert external.wait_until is not None and external.wait_until <= now
+        assert approval.status == workflow_models.StepRunStatus.WAITING
+    for run in runs:
+        advance_once(run, now=now)
+    for external, approval in zip(external_steps, approval_steps, strict=True):
+        external.refresh_from_db()
+        approval.refresh_from_db()
+        assert external.status == workflow_models.StepRunStatus.STARTED
+        assert approval.status == workflow_models.StepRunStatus.WAITING
+    with system_context(reason="verify approval wait remained unchanged"):
+        assert tuple(Decision.objects.filter(
+            step_run__in=approval_steps,
+        ).order_by("pk").values_list("pk", flat=True)) == decision_ids
 
 
 @pytest.mark.django_db(transaction=True)

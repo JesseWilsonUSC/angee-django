@@ -19,19 +19,25 @@ vi.mock("@angee/refine", async (importOriginal) => {
       exactVariables.push(variables);
       if (authoredMode.current === "error") return { data: undefined, isFetching: false, error: new Error("Decision query failed"), refetch: vi.fn() };
       if (authoredMode.current === "empty") return { data: { workflow_decisions: [] }, isFetching: false, error: null, refetch: vi.fn() };
+      const data = { workflow_decisions: [{
+        id: String(variables.id ?? "decision-1"), action: "review", priority: 1, payload: {}, verdict: authoredVerdict.current,
+        resolution: {}, resolved_by: "", attempts: 0, max_attempts: 3, expires_at: null, escalate_at: null,
+        decision_schema: null, workflow_name: "Session", step_name: "Approve tool",
+        created_at: "2026-09-09T00:00:00Z", updated_at: "2026-09-09T00:00:00Z",
+      }] };
       return {
-        data: { workflow_decisions: [{
-          id: "decision-1", action: "review", priority: 1, payload: {}, verdict: authoredVerdict.current,
-          resolution: {}, attempts: 0, max_attempts: 3, expires_at: null, escalate_at: null,
-          decision_schema: null, workflow_name: "Session", step_name: "Approve tool",
-          created_at: "2026-09-09T00:00:00Z", updated_at: "2026-09-09T00:00:00Z",
-        }] },
+        data,
         isFetching: false,
         error: null,
-        refetch: vi.fn(),
+        refetch: vi.fn(async () => ({ data })),
       };
     },
-    useAuthoredMutation: () => [vi.fn(), { fetching: false, error: null }],
+    useAuthoredMutation: () => [vi.fn(async ({ decision, verdict }: { decision: string; verdict: string }) => ({
+      decide: {
+        decision: { id: decision, verdict: verdict === "COMPLETE" ? "COMPLETED" : verdict === "REJECT" ? "REJECTED" : "ESCALATED" },
+        validation_errors: null,
+      },
+    })), { fetching: false, error: null }],
   };
 });
 
@@ -41,7 +47,7 @@ vi.mock("@angee/ui", async (importOriginal) => {
   return { ...actual, JsonEditor: ApprovalTestJsonEditor };
 });
 
-import { WorkflowApprovals } from "./WorkflowApprovals";
+import { RoutedDecisionTask, WorkflowApprovals } from "./WorkflowApprovals";
 
 const field = (name: string, scalar = "String") => ({
   name, kind: "scalar" as const, scalar, values: [], readable: true, filterable: true,
@@ -93,14 +99,12 @@ test("the native scoped collection opens only the selected Run decision task", a
 
   await waitFor(() => expect(provider.getList).toHaveBeenCalledWith(expect.objectContaining({
     pagination: expect.objectContaining({ pageSize: 20 }),
-    meta: expect.objectContaining({ gqlVariables: expect.objectContaining({
-      where: {
-        _and: [
-          { step_run__run: { _eq: "run-1" } },
-          { verdict: { _eq: "PENDING" } },
-        ],
-      },
-    }) }),
+    meta: expect.objectContaining({ gqlVariables: expect.objectContaining({ where: {
+      _and: expect.arrayContaining([
+        { step_run__run: { _eq: "run-1" } },
+        { verdict: { _eq: "PENDING" } },
+      ]),
+    } }) }),
   })));
   fireEvent.click(await screen.findByText("review"));
   expect(await screen.findByText("Approve tool")).toBeTruthy();
@@ -149,6 +153,7 @@ test("a record overlay renders one exact target task without mounting a nested D
   );
 
   expect(await screen.findByText("Approve tool")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Back to approvals" })).toBeNull();
   expect(provider.getList).not.toHaveBeenCalled();
   expect(exactVariables.at(-1)).toEqual({ id: "decision-1", targetModel: "parties.Party", targetId: "party-7", targetTab: "accounting" });
 });
@@ -239,4 +244,89 @@ test("dirty approval values use the shared leave guard before changing selection
   expect(await screen.findByText("Unsaved changes - leave without saving?")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Stay" }));
   expect((screen.getByLabelText("Resolution payload") as HTMLTextAreaElement).value).toContain("kept");
+  fireEvent.click(screen.getByRole("button", { name: "Next record" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Leave" }));
+  await waitFor(() => expect(exactVariables.at(-1)).toEqual({ id: "decision-2" }));
+  expect(screen.queryByText("Unsaved changes - leave without saving?")).toBeNull();
+});
+
+test("resolution awaits the live collection successor instead of the captured pager callback", async () => {
+  const earlier = vi.fn();
+  const later = vi.fn();
+  const resolved = vi.fn(async () => "advanced" as const);
+  const close = vi.fn();
+  const router = createRouter({ routeTree: createRootRoute(), history: createMemoryHistory({ initialEntries: ["/"] }) });
+  render(
+    <RouterContextProvider router={router}><ModalsHost><ToastProvider>
+      <AppRuntimeProvider runtime={{ widgets: defaultWidgets }}>
+        <RoutedDecisionTask
+          recordId="decision-2"
+          navigation={{ current: 2, total: 3, onPrev: earlier, onNext: later }}
+          onClose={close}
+          onResolved={resolved}
+          onDirtyChange={vi.fn()}
+          requestLeave={async () => true}
+        />
+      </AppRuntimeProvider>
+    </ToastProvider></ModalsHost></RouterContextProvider>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Complete" }));
+  await waitFor(() => expect(resolved).toHaveBeenCalledOnce());
+  expect(later).not.toHaveBeenCalled();
+  expect(earlier).not.toHaveBeenCalled();
+  expect(close).not.toHaveBeenCalled();
+});
+
+test("resolution at the end reports remaining earlier work without wrapping", async () => {
+  const earlier = vi.fn();
+  const close = vi.fn();
+  const resolved = vi.fn(async () => "end" as const);
+  const router = createRouter({ routeTree: createRootRoute(), history: createMemoryHistory({ initialEntries: ["/"] }) });
+  render(
+    <RouterContextProvider router={router}><ModalsHost><ToastProvider>
+      <AppRuntimeProvider runtime={{ widgets: defaultWidgets }}>
+        <RoutedDecisionTask
+          recordId="decision-3"
+          navigation={{ current: 3, total: 3, onPrev: earlier }}
+          onClose={close}
+          onResolved={resolved}
+          onDirtyChange={vi.fn()}
+          requestLeave={async () => true}
+        />
+      </AppRuntimeProvider>
+    </ToastProvider></ModalsHost></RouterContextProvider>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Complete" }));
+  expect(await screen.findByText("End of this review queue")).toBeTruthy();
+  expect(resolved).toHaveBeenCalledOnce();
+  expect(close).not.toHaveBeenCalled();
+  expect(earlier).not.toHaveBeenCalled();
+});
+
+test("resolution shows queue completion only when the refreshed query is empty", async () => {
+  const close = vi.fn();
+  const resolved = vi.fn(async () => "empty" as const);
+  const router = createRouter({ routeTree: createRootRoute(), history: createMemoryHistory({ initialEntries: ["/"] }) });
+  render(
+    <RouterContextProvider router={router}><ModalsHost><ToastProvider>
+      <AppRuntimeProvider runtime={{ widgets: defaultWidgets }}>
+        <RoutedDecisionTask
+          recordId="decision-1"
+          navigation={{ current: 1, total: 1 }}
+          onClose={close}
+          onResolved={resolved}
+          onDirtyChange={vi.fn()}
+          requestLeave={async () => true}
+        />
+      </AppRuntimeProvider>
+    </ToastProvider></ModalsHost></RouterContextProvider>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Complete" }));
+  expect(await screen.findByText("Queue complete")).toBeTruthy();
+  expect(screen.getByText("There are no pending approvals in this view.")).toBeTruthy();
+  expect(resolved).toHaveBeenCalledOnce();
+  expect(close).not.toHaveBeenCalled();
 });

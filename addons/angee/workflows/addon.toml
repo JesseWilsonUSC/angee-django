@@ -24,3 +24,8 @@ module = "runtime_migrations.workflow_identity"
 name = "decision_target"
 app_label = "workflows"
 module = "runtime_migrations.decision_target"
+
+[[migrations]]
+name = "step_artifact_target"
+app_label = "workflows"
+module = "runtime_migrations.step_artifact_target"

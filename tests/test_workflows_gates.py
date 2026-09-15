@@ -345,6 +345,89 @@ def test_force_expiry_wakes_retained_decision_continuation(
     assert row.wait_until is not None
 
 
+def test_delivery_expires_departed_suspension_before_failed_rerun(
+    workflow_gate_tables: None,
+    no_workflow_queue: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A broad event cannot leave the prior approval actionable after rerunning its step."""
+
+    del workflow_gate_tables, no_workflow_queue
+    assignee = User.objects.create_user(username="wdc-delivery-retirement")
+
+    def suspend_then_fail(self: HandlerStep, step_run: Any, *, now: Any) -> StepResult:
+        del self, now
+        if step_run.attempt == 1:
+            return StepResult.suspend(
+                decisions=(DecisionSpec(
+                    assignees=(str(to_subject_ref(assignee)),),
+                    action="approve-tool",
+                ),),
+            )
+        raise RuntimeError("rerun failed after delivery")
+
+    monkeypatch.setattr(HandlerStep, "run", suspend_then_fail)
+    workflow = workflow_with_steps(
+        name="Retire delivered suspension",
+        steps=({"key": "handler", "step_class": "handler", "config": {}},),
+        edges=(),
+    )
+    run = start_run(workflow)
+    advance_once(run)
+    execute_started(run)
+    decision = _decision_for(run, "handler")
+
+    assert engine.deliver(run.pk) == {"woken": 1}
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.EXPIRED
+    advance_once(run)
+    execute_started(run)
+    advance_once(run)
+    run.refresh_from_db()
+    assert run.status == workflow_models.RunStatus.FAILED
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.EXPIRED
+
+
+def test_orphan_repair_refuses_current_approval_and_expires_terminal_orphan(
+    workflow_gate_tables: None,
+    no_workflow_queue: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The repair owner leaves an active approval alone and retires it after terminal failure."""
+
+    del workflow_gate_tables, no_workflow_queue
+    assignee = User.objects.create_user(username="wdc-orphan-retirement")
+
+    def suspend(self: HandlerStep, step_run: Any, *, now: Any) -> StepResult:
+        del self, step_run, now
+        return StepResult.suspend(decisions=(DecisionSpec(
+            assignees=(str(to_subject_ref(assignee)),),
+            action="approve-tool",
+        ),))
+
+    monkeypatch.setattr(HandlerStep, "run", suspend)
+    workflow = workflow_with_steps(
+        name="Repair orphaned suspension",
+        steps=({"key": "handler", "step_class": "handler", "config": {}},),
+        edges=(),
+    )
+    run = start_run(workflow)
+    advance_once(run)
+    execute_started(run)
+    decision = _decision_for(run, "handler")
+
+    assert engine.expire_orphaned_decisions(run, resolved_by="test/orphan-repair") == 0
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.PENDING
+    with system_context(reason="test terminal orphan fixture"):
+        run.refresh_from_db()
+        run.mark_failed("Controlled failure after suspension")
+    assert engine.expire_orphaned_decisions(run, resolved_by="test/orphan-repair") == 1
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.EXPIRED
+
+
 def test_resume_after_decisions_scopes_each_single_and_multi_suspension(
     workflow_gate_tables: None,
     no_workflow_queue: None,
@@ -551,6 +634,125 @@ def test_nested_decision_schema_validates_objects_and_array_rows_before_round_tr
     assert decision.resolution == resolution
 
 
+def test_decision_schema_enforces_resolution_conditional_requirements(
+    workflow_gate_tables: None,
+    no_workflow_queue: None,
+) -> None:
+    """The native Decision owner gates inputs selected by the submitted action."""
+
+    del workflow_gate_tables, no_workflow_queue
+    assignee = User.objects.create_user(username="wdc-conditional-schema-assignee")
+    schema = {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+            "action": {"enum": ["approve", "reject"]},
+            "party_id": {"type": "string", "minLength": 1, "pattern": r".*\S.*"},
+        },
+        "allOf": [{
+            "if": {"properties": {"action": {"const": "approve"}}, "required": ["action"]},
+            "then": {"required": ["party_id"]},
+        }],
+    }
+    workflow = workflow_with_steps(
+        name="Conditional schema gate",
+        steps=({
+            "key": "gate", "step_class": "gate",
+            "config": _gate_config([assignee], None, [], decision_schema=schema),
+        },),
+        edges=(),
+    )
+    decision = _decision_for(_open_gate_run(workflow), "gate")
+
+    engine.decide(decision, "complete", payload={"action": "approve"}, actor=assignee)
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.PENDING
+
+    engine.decide(decision, "complete", payload={"action": "approve", "party_id": ""}, actor=assignee)
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.PENDING
+
+    engine.decide(decision, "complete", payload={"action": "reject"}, actor=assignee)
+    decision.refresh_from_db()
+    assert decision.verdict == workflow_models.Verdict.COMPLETED
+    assert decision.resolution["action"] == "reject"
+
+
+def test_decision_mapping_schema_enforces_authored_constraints_after_normalization(
+    monkeypatch: Any,
+) -> None:
+    """Full JSON Schema sees coerced submitted fields, before relation authorization."""
+
+    relation_checks: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        engine,
+        "_validate_relation_fields",
+        lambda _schema, resolution, _actor: relation_checks.append(resolution),
+    )
+    schema = {
+        "type": "object",
+        "required": ["amount"],
+        "properties": {
+            "amount": {"type": "integer"},
+            "payment_term_id": {"type": "string"},
+            "due_date": {"type": "string"},
+            "note": {"type": "string"},
+        },
+        "oneOf": [
+            {"required": ["payment_term_id"]},
+            {"required": ["due_date"]},
+        ],
+    }
+
+    with pytest.raises(ValidationError):
+        engine._validate_mapping_schema(
+            schema,
+            {"amount": "7", "payment_term_id": "net-30", "due_date": "2030-01-01"},
+        )
+    assert relation_checks == []
+
+    validated = engine._validate_mapping_schema(
+        schema,
+        {"amount": "7", "payment_term_id": "net-30"},
+    )
+    assert validated == {
+        "amount": 7,
+        "payment_term_id": "net-30",
+        "due_date": None,
+        "note": None,
+    }
+    assert relation_checks == [validated]
+
+
+def test_decision_mapping_schema_excludes_layout_context_from_resolution() -> None:
+    """Frozen display context is neither accepted nor materialized as a decision answer."""
+
+    schema = {
+        "type": "object",
+        "required": ["source_evidence", "action"],
+        "properties": {
+            "source_evidence": {
+                "type": "string",
+                "layout": "context",
+                "readOnly": True,
+                "defaultValue": "Extraction ext_1 revision 2",
+            },
+            "action": {"type": "string", "enum": ["accept", "reject"]},
+            "note": {"type": "string"},
+        },
+    }
+
+    assert engine._validate_mapping_schema(schema, {"action": "accept"}) == {
+        "action": "accept",
+        "note": None,
+    }
+    with pytest.raises(ValidationError, match="cannot be submitted"):
+        engine._validate_mapping_schema(
+            schema,
+            {"source_evidence": "forged", "action": "accept"},
+        )
+
+
 def test_decision_relation_permission_defaults_to_write_and_allows_declared_read(monkeypatch: Any) -> None:
     """Relation selection changes scope only through a valid explicit permission."""
 
@@ -564,14 +766,14 @@ def test_decision_relation_permission_defaults_to_write_and_allows_declared_read
     )
     monkeypatch.setattr(engine, "instance_from_public_id", lambda _model, _value, *, queryset: object())
 
-    assert engine._relation_error({"resource": "arp.Company"}, "company-1", object()) is None
+    assert engine._relation_error({"resource": "demo.Company"}, "company-1", object()) is None
     assert engine._relation_error(
-        {"resource": "arp.Company", "permission": "read"}, "company-1", object(),
+        {"resource": "demo.Company", "permission": "read"}, "company-1", object(),
     ) is None
     assert actions == ["write", "read"]
 
     assert engine._relation_error(
-        {"resource": "arp.Company", "permission": "read;delete"}, "company-1", object(),
+        {"resource": "demo.Company", "permission": "read;delete"}, "company-1", object(),
     ) == "Relation value must reference a permitted record."
     assert actions == ["write", "read"]
 
@@ -730,6 +932,8 @@ def test_public_schema_exposes_decision_resource_decide_mutation_and_subscriptio
     assert "decisionChanged" in sdl
     assert "target_model" in sdl
     assert "target_id" in sdl
+    target_section = sdl.split("type WorkflowArtifactTarget", 1)[1].split("type ", 1)[0]
+    assert "label: String" in target_section
 
     workflows_schema = importlib.import_module("angee.workflows.schema")
     parts = {key: tuple(workflows_schema.schemas["public"].get(key, ())) for key in SCHEMA_PART_KEYS}

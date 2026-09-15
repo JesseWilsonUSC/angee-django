@@ -87,6 +87,7 @@ export function ConditionalMutationButton<
     resource,
     recordId,
     record,
+    formReadOnly,
   } = useRecordChromeContext();
   const [mutate, mutation] = useRecordChromeActionMutation<TField>(field);
   const [mutateOutcome] = useRecordChromeActionOutcome<TField>(field);
@@ -113,7 +114,7 @@ export function ConditionalMutationButton<
 
   if (
     record === null ||
-    !when({ canonicalResource, dataProviderName, resource, recordId, record })
+    !when({ canonicalResource, dataProviderName, resource, recordId, record, formReadOnly })
   ) {
     return null;
   }

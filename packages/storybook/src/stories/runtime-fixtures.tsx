@@ -1,19 +1,32 @@
 import { ModelMetadataProvider, defineAngeeSchemaMetadata, schemaFieldMetadataFromAngeeSchemaMetadata, type AngeeSchemaMetadata, } from "@angee/metadata";
 import {
-  useMemo, type ReactNode } from "react";
+  useMemo, type ComponentProps, type ReactNode } from "react";
 import {
   AppRuntimeProvider,
   baseIcons,
+  ConsoleLayout,
   defaultWidgets,
   type AppRuntime,
 } from "@angee/ui";
 import { ActiveGraphQLSchemaProvider, } from "@angee/metadata";
 import {
   createAngeeHasuraDataProviders,
+  OperationDocumentsProvider,
   Refine,
+  tanStackRouterProvider,
   type AngeeHasuraSchemaConfig,
 } from "@angee/refine";
-import { ModalsHost } from "@angee/ui";
+import type { IResourceItem } from "@refinedev/core";
+import { ModalsHost, ToastProvider } from "@angee/ui";
+export { testDataResource, testQueryAxis, testQueryField, testResourceQuery } from "@angee/metadata/testing";
+import {
+  Outlet,
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from "@tanstack/react-router";
 
 /**
  * Shared story fixtures for data-bound views (`ListView`/`FormView`). A view that
@@ -75,11 +88,23 @@ export function storySchema(
  * view needs to render in isolation.
  */
 export function RuntimeFixture({
+  activeSchema = "public",
   schemas,
   children,
+  runtime = {},
+  syncWithLocation = false,
+  resources,
+  routed = false,
+  operationDocuments = {},
 }: {
+  activeSchema?: string;
   schemas: Record<string, StorySchemaConfig>;
   children: ReactNode;
+  runtime?: Partial<AppRuntime>;
+  syncWithLocation?: boolean;
+  resources?: IResourceItem[];
+  routed?: boolean;
+  operationDocuments?: ComponentProps<typeof OperationDocumentsProvider>["documents"];
 }): ReactNode {
   const normalized = useMemo(
     () =>
@@ -105,23 +130,89 @@ export function RuntimeFixture({
   );
   const fieldMetadata = useMemo(
     () =>
-      schemaFieldMetadataFromAngeeSchemaMetadata(normalized.public?.metadata),
-    [normalized],
+      schemaFieldMetadataFromAngeeSchemaMetadata(normalized[activeSchema]?.metadata),
+    [activeSchema, normalized],
   );
   return (
-    <ModalsHost>
+    <ToastProvider><ModalsHost>
       <Refine
         dataProvider={dataProvider}
-        options={{ syncWithLocation: false }}
+        resources={resources}
+        routerProvider={routed ? tanStackRouterProvider : undefined}
+        options={{ syncWithLocation }}
       >
-        <ActiveGraphQLSchemaProvider schema="public">
+        <OperationDocumentsProvider documents={operationDocuments}><ActiveGraphQLSchemaProvider schema={activeSchema}>
           <ModelMetadataProvider metadata={fieldMetadata}>
-            <RuntimeRegistryFixture runtime={{ slots: [] }}>
+            <RuntimeRegistryFixture runtime={{ slots: [], ...runtime }}>
               {children}
             </RuntimeRegistryFixture>
           </ModelMetadataProvider>
-        </ActiveGraphQLSchemaProvider>
+        </ActiveGraphQLSchemaProvider></OperationDocumentsProvider>
       </Refine>
-    </ModalsHost>
+    </ModalsHost></ToastProvider>
   );
+}
+
+/** Native routed resource-page host for full interaction stories. */
+export function RoutedRuntimeFixture({
+  activeSchema = "public",
+  schemas,
+  children,
+  collectionPath,
+  initialEntry = collectionPath,
+  recordParam = "id",
+  runtime = {},
+  resourceLabel = "Records",
+  resourceName,
+  operationDocuments,
+}: {
+  activeSchema?: string;
+  schemas: Record<string, StorySchemaConfig>;
+  children: ReactNode;
+  collectionPath: string;
+  initialEntry?: string;
+  recordParam?: string;
+  runtime?: Partial<AppRuntime>;
+  resourceLabel?: string;
+  resourceName?: string;
+  operationDocuments?: ComponentProps<typeof OperationDocumentsProvider>["documents"];
+}): ReactNode {
+  const router = useMemo(() => {
+    const resources = resourceName ? [{
+      name: resourceName,
+      list: collectionPath,
+      show: `${collectionPath}/:${recordParam}`,
+      meta: { label: resourceLabel },
+    }] : undefined;
+    const root = createRootRoute({ component: () => <RuntimeFixture
+      activeSchema={activeSchema}
+      schemas={schemas}
+      runtime={runtime}
+      resources={resources}
+      routed
+      syncWithLocation
+      operationDocuments={operationDocuments}
+    ><Outlet /></RuntimeFixture> });
+    const collection = createRoute({
+      getParentRoute: () => root,
+      path: collectionPath,
+      component: () => <ConsoleLayout>{children}</ConsoleLayout>,
+    });
+    const record = createRoute({
+      getParentRoute: () => collection,
+      path: `$${recordParam}`,
+    });
+    return createRouter({
+      routeTree: root.addChildren([collection.addChildren([record])]),
+      history: createMemoryHistory({ initialEntries: [initialEntry] }),
+      parseSearch: (value) => Object.fromEntries(new URLSearchParams(value)),
+      stringifySearch: (value) => {
+        const query = new URLSearchParams(Object.entries(value).flatMap(([key, item]) => (
+          item == null ? [] : [[key, String(item)]]
+        ))).toString();
+        return query ? `?${query}` : "";
+      },
+    });
+  }, [activeSchema, children, collectionPath, initialEntry, operationDocuments, recordParam, resourceLabel, resourceName, runtime, schemas]);
+  return <RouterProvider router={router} />;
 }

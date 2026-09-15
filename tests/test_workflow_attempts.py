@@ -166,6 +166,24 @@ def test_step_result_retains_explicit_ordered_artifact_associations() -> None:
     assert waiting.artifacts == (ArtifactSpec(target=first, label="Pending owner record"),)
 
 
+def test_step_result_failed_retains_error_checkpoint_and_artifacts() -> None:
+    target = object()
+    result = StepResult.failed(
+        "Retained operation failure.",
+        checkpoint={"evidence_id": "ext_test", "revision": 2},
+        outcome="retained_failure",
+        artifacts=(ArtifactSpec(target, "Failed evidence"),),
+    ).to_attempt_result()
+
+    assert result.kind == AttemptResultKind.ERROR
+    assert result.error == "Retained operation failure."
+    assert not result.output_present
+    assert result.checkpoint_present
+    assert result.checkpoint == {"evidence_id": "ext_test", "revision": 2}
+    assert result.outcome == "retained_failure"
+    assert result.artifacts == (ArtifactSpec(target, "Failed evidence"),)
+
+
 def test_default_recovery_only_permits_explicit_fresh_replay() -> None:
     class ReplayableStep(StepImpl):
         def run(self, step_run: object, *, now: object) -> StepResult:

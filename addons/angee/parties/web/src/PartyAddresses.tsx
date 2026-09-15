@@ -5,6 +5,7 @@ import {
   Field,
   Form,
   List,
+  type RecordPanelContext,
 } from "@angee/ui";
 
 import { usePartiesT } from "./i18n";
@@ -47,8 +48,19 @@ export function addressFields({
   ];
 }
 
-/** Canonical create/edit address collection shared by every Party subtype. */
-export function PartyAddresses({ recordId }: { recordId: string }): React.ReactElement {
+// Two call shapes: inside a record panel it derives read-only from the form
+// surface; embedded standalone (e.g. a consumer company view) it takes an
+// explicit `readOnly`. Both are live — keep the union.
+type PartyAddressesProps = Pick<RecordPanelContext, "recordId"> & (
+  | { form: RecordPanelContext["form"]; readOnly?: never }
+  | { form?: never; readOnly: boolean }
+);
+
+export function PartyAddresses(props: PartyAddressesProps): React.ReactElement {
+  const { recordId } = props;
+  const formReadOnly = props.form !== undefined
+    ? props.form.formReadOnly
+    : props.readOnly;
   const t = usePartiesT();
   const labels: AddressFieldLabels = {
     label: t("address.label"),
@@ -66,6 +78,7 @@ export function PartyAddresses({ recordId }: { recordId: string }): React.ReactE
       resource={ADDRESS}
       baseFilter={{ party: { exact: recordId } }}
       createDefaults={{ party: recordId }}
+      hideCreate={formReadOnly}
     >
       <List resource={ADDRESS} order={{ is_primary: "DESC" }}>
         <Column field="label" />
@@ -78,7 +91,7 @@ export function PartyAddresses({ recordId }: { recordId: string }): React.ReactE
         <Column field="country" />
         <Column field="is_primary" />
       </List>
-      <Form resource={ADDRESS}>
+      <Form resource={ADDRESS} readOnly={formReadOnly}>
         {addressFields({ labels })}
       </Form>
     </DrawerResourceList>

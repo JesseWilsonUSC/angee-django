@@ -5,6 +5,7 @@ import { JsonValueSchema } from "../../widgets/json-value";
 
 const NonEmptyString = v.pipe(v.string(), v.minLength(1));
 const FieldTypeSchema = v.picklist(["string", "integer", "number", "boolean", "object", "array", "any"]);
+const FieldLayoutSchema = v.picklist(["context", "input"]);
 export type FormSpecFieldType = v.InferOutput<typeof FieldTypeSchema>;
 
 const FilterSchema: v.GenericSchema<unknown, CrudFilter> = v.lazy(() => v.variant("operator", [
@@ -44,6 +45,7 @@ const FieldBaseSchema = v.object({
   description: v.optional(NonEmptyString),
   placeholder: v.optional(NonEmptyString),
   readOnly: v.optional(v.boolean()),
+  layout: v.optional(FieldLayoutSchema),
   nullable: v.optional(v.boolean()),
   omittable: v.optional(v.boolean()),
   presenceRequired: v.optional(v.boolean()),
@@ -54,6 +56,7 @@ const FieldBaseSchema = v.object({
   minItems: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
   maxItems: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
   defaultValue: v.optional(JsonValueSchema),
+  default: v.optional(JsonValueSchema),
   const: v.optional(JsonValueSchema),
   enum: v.optional(v.array(v.string("form-spec select values must be strings."))),
   options: v.optional(v.array(v.object({

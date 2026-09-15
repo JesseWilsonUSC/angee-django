@@ -16,6 +16,7 @@ export const enStorageMessages: Record<string, string> = {
   "file.notFoundDescription": "This file is no longer available.",
   "preview.unsupported": "No inline preview for this file type.",
   // Rich renderer (PDF / media / HEIC) loading and error surfaces.
+  "preview.label": "Preview",
   "preview.loading": "Loading preview",
   "preview.loadError": "Could not load this preview.",
   "preview.decoding": "Decoding photo",

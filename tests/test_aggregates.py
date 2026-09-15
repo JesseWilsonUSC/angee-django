@@ -37,7 +37,10 @@ from angee.graphql.data.hasura import (
     _relation_filter_decoders,
     _relation_group_key_encoders,
 )
-from angee.graphql.data.metadata import _finalize_data_resource as _project_final_data_resource
+from angee.graphql.data.metadata import (
+    _finalize_data_resource as _project_final_data_resource,
+)
+from angee.graphql.data.metadata import _relation_label_axes
 from angee.graphql.data.resource_fields import resource_string_field_names
 from angee.graphql.ids import require_public_id
 from angee.graphql.node import AngeeNode
@@ -1091,14 +1094,14 @@ def test_measure_ops_pin_the_curated_subset_per_field_family() -> None:
     assert resolved == expected
 
 
-def test_data_resource_metadata_requires_direct_relation_axis_for_relation_label() -> None:
-    """A relation label axis only describes a bucket when the relation id axis exists."""
+def test_data_resource_metadata_requires_relation_axis_for_relation_label() -> None:
+    """A relation label axis only describes a bucket when its relation id axis exists."""
 
     @strawberry_django.type(ResourceChild)
     class ResourceChildInvalidRelationType:
         name: auto
 
-    with pytest.raises(ImproperlyConfigured, match="requires matching direct relation"):
+    with pytest.raises(ImproperlyConfigured, match="requires matching relation"):
         _finalize_data_resource(
             model=ResourceChild,
             roots=DataResourceRoots(list_name="children", group_name="children_groups"),
@@ -1107,6 +1110,15 @@ def test_data_resource_metadata_requires_direct_relation_axis_for_relation_label
             node_type=ResourceChildInvalidRelationType,
             group_by_fields=("parent__name",),
         )
+
+
+def test_data_resource_metadata_uses_longest_nested_relation_axis_for_label() -> None:
+    """A nested relation label describes its exact grouped relation identity."""
+
+    assert _relation_label_axes(
+        ResourceGrandchild,
+        ("child", "child__parent", "child__parent__name"),
+    ) == {"child__parent": "child__parent__name"}
 
 
 def test_data_resource_metadata_rejects_multiple_relation_label_axes() -> None:
@@ -1671,7 +1683,7 @@ def test_interleaved_json_resources_do_not_replace_upstream_builders(monkeypatch
     assert "metadata__mailbox" not in region.group_key_type.__annotations__
 
 
-@pytest.mark.parametrize("widget", ["demo.cost.allocation", "arp.example.percent_editor"])
+@pytest.mark.parametrize("widget", ["demo.cost.allocation", "demo.example.percent_editor"])
 def test_resource_field_accepts_addon_qualified_widget(widget):
     """Addon-owned widgets use a qualified registry name without widening built-ins."""
     from angee.graphql.data.resource_fields import require_unique_resource_fields

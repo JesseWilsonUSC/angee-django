@@ -10,6 +10,7 @@ import { Inbox, Mail, MessagesSquare, Send } from "lucide-react";
 
 import { enMessagingMessages } from "./i18n";
 import { channelForm } from "./ChannelsPage";
+import { messageForm } from "./MessagesPage";
 import { MessagingOverviewContribution } from "./MessagingOverviewContribution";
 import { RecordActivityPane } from "./RecordActivityPane";
 import { RecordChatterPane } from "./RecordChatterPane";
@@ -96,7 +97,7 @@ const messaging = defineBaseAddon({
   menus: messagingMenu,
   icons: { inbox: Inbox, threads: MessagesSquare, send: Send, channel: Mail },
   i18n: { messaging: enMessagingMessages },
-  forms: { "messaging.Channel": channelForm },
+  forms: { "messaging.Channel": channelForm, "messaging.Message": messageForm },
   chatter: [
     {
       id: "comments",

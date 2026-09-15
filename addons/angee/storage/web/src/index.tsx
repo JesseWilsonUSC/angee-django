@@ -3,10 +3,12 @@
 import type { BaseAddonRoute } from "@angee/app";
 import { defineBaseAddon, resourcePageRoutes } from "@angee/app";
 import type { BaseMenuItem } from "@angee/ui";
+import { Tab, formViewSectionsSlot, useRecordChromeContext, useRecordPeekContext } from "@angee/ui";
 import { lazyRouteComponent } from "@tanstack/react-router";
 import { ArchiveRestore, Download, HardDrive, Image, Pencil } from "lucide-react";
 
-import { enStorageMessages } from "./i18n";
+import { enStorageMessages, useStorageT } from "./i18n";
+import { FileRecordPreview } from "./views/FilePreview";
 import { storagePreviews } from "./previews";
 import { folderForm } from "./views/folder-form";
 
@@ -49,6 +51,12 @@ const storage = defineBaseAddon({
   routes: storageRoutes,
   menus: storageMenu,
   forms: { "storage.Folder": folderForm },
+  slots: [{
+    ...formViewSectionsSlot("storage.File"),
+    id: "storage.file-preview",
+    sequence: 10,
+    content: <Tab id="preview" label={<FilePreviewLabel />}><FilePreviewSection /></Tab>,
+  }],
   i18n: { storage: enStorageMessages },
   icons: {
     drive: HardDrive,
@@ -62,7 +70,19 @@ const storage = defineBaseAddon({
 });
 
 export { useStorageUpload } from "./data/use-upload";
+export { FileRecordPreview, filePreviewReference } from "./views/FilePreview";
 export type { StorageUpload, UploadedFile, UploadTarget, UploadTask } from "./data/use-upload";
 export { StorageUploadTasks } from "./views/StorageUploadTasks";
 
 export default storage;
+
+function FilePreviewLabel() {
+  const t = useStorageT();
+  return <>{t("preview.label")}</>;
+}
+
+function FilePreviewSection() {
+  const record = useRecordChromeContext();
+  const peek = useRecordPeekContext();
+  return <div className="h-[65vh] min-h-80"><FileRecordPreview id={record.recordId} page={peek?.reference.page} /></div>;
+}

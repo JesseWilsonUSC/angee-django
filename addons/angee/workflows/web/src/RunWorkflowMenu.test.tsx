@@ -5,7 +5,7 @@ import * as React from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  chrome: { resource: "documents.Document", canonicalResource: "documents.Document", dataProviderName: "console", recordId: "doc_1", record: { id: "doc_1" } } as RecordChromeContext,
+  chrome: { resource: "documents.Document", canonicalResource: "documents.Document", dataProviderName: "console", recordId: "doc_1", record: { id: "doc_1" }, formReadOnly: false } as RecordChromeContext,
   workflows: [] as { id: string; name: string; subject_declaration: string }[],
   launch: null as Record<string, unknown> | null,
   queries: [] as { document: unknown; variables: unknown; options: Record<string, unknown> }[],

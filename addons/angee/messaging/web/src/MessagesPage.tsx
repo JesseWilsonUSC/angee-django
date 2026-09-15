@@ -8,17 +8,23 @@ import {
   Group,
   List,
   ListView,
+  LoadingPanel,
+  ErrorBanner,
+  MessagePartsView,
   ResourceList,
+  registerForm,
   TextLink,
   useResourceRecordHrefLookup,
   type ListColumn,
   type RecordPanelContext,
   type RecordTabDescriptor,
+  type RegisteredFormProps,
   type StringIdRow,
 } from "@angee/ui";
+import { useAuthoredQuery } from "@angee/refine";
 
 import { useMessagingT } from "./i18n";
-import type { PartListRow } from "./documents";
+import { MessageDetailPartsDocument, type PartListRow } from "./documents";
 
 const MODEL = "messaging.Message";
 const PART_MODEL = "messaging.Part";
@@ -142,6 +148,20 @@ function MessagePartsTab({ recordId }: RecordPanelContext): React.ReactElement {
   );
 }
 
+/** Human-readable MIME body and attachments, rendered by the shared message owner. */
+function MessageReadableBody({ recordId }: Pick<RecordPanelContext, "recordId">): React.ReactElement {
+  const t = useMessagingT();
+  const query = useAuthoredQuery(MessageDetailPartsDocument, { id: recordId }, {
+    models: [MODEL, PART_MODEL, FILE_MODEL],
+    records: [{ model: MODEL, id: recordId }],
+  });
+  if (query.isFetching && !query.data) return <LoadingPanel message={t("messages.loadingBody")} />;
+  if (query.error && !query.data) return <ErrorBanner description={t("messages.bodyUnavailable")} />;
+  const message = query.data?.messages[0];
+  if (!message) return <ErrorBanner description={t("messages.bodyUnavailable")} />;
+  return <MessagePartsView parts={message.parts} className="px-1" />;
+}
+
 function messageRecordTabs(
   t: ReturnType<typeof useMessagingT>,
 ): readonly RecordTabDescriptor[] {
@@ -166,7 +186,7 @@ export function MessagesPage(): React.ReactElement {
   const t = useMessagingT();
   const recordTabs = React.useMemo(() => messageRecordTabs(t), [t]);
   return (
-    <ResourceList<MessageListRow> resource={MODEL} placement="inline" routed hideCreate recordTabs={recordTabs}>
+    <ResourceList<MessageListRow> resource={MODEL} form={messageForm} placement="inline" routed hideCreate recordTabs={recordTabs}>
       <List<MessageListRow>
         resource={MODEL}
         defaultGroups={DEFAULT_GROUPS}
@@ -189,47 +209,57 @@ export function MessagesPage(): React.ReactElement {
         <Column field="status" widget="statusBadge" />
         <Column field="sent_at" />
       </List>
-      <Form
-        resource={MODEL}
-        title={({ record }) => messageSubject(record?.title, t("messages.noSubject"))}
-      >
-        {/* The record heading: the message's TITLE-part text (its subject). */}
-        <Field name="title" title readOnly />
-        {/* status reads the UPPERCASE enum member name but its String patch input
-            takes the lowercase value, so moderation rides declarative verbs (which
-            write the value) rather than an editable enum field. */}
-        <Field name="status" readOnly />
-        <Group label={t("messages.groupEnvelope")} columns={2}>
-          <Field name="platform" readOnly />
-          <Field name="direction" readOnly />
-          <Field name="sent_at" readOnly />
-          <Field name="external_id" readOnly />
-        </Group>
-        <Field name="preview" readOnly />
-        <Action
-          id="hide"
-          label={t("messages.hide")}
-          set={{ status: "hidden" }}
-          visibleWhen={(record) => record.status !== "HIDDEN" && record.status !== "REMOVED"}
-        />
-        <Action
-          id="remove"
-          label={t("messages.remove")}
-          danger
-          confirm={{ title: t("messages.removeTitle"), body: t("messages.removeBody"), danger: true }}
-          set={{ status: "removed" }}
-          visibleWhen={(record) => record.status !== "REMOVED"}
-        />
-        <Action
-          id="restore"
-          label={t("messages.restore")}
-          set={{ status: "synced" }}
-          visibleWhen={(record) => record.status === "HIDDEN" || record.status === "REMOVED"}
-        />
-      </Form>
     </ResourceList>
   );
 }
+
+/** The canonical Message detail, reused by the inbox and passive record peeks. */
+function MessageForm({ resource: _resource, readOnly, ...props }: RegisteredFormProps): React.ReactElement {
+  const t = useMessagingT();
+  const recordTabs = React.useMemo(() => messageRecordTabs(t), [t]);
+  return <Form
+    {...props}
+    resource={MODEL}
+    readOnly={readOnly}
+    recordTabs={recordTabs}
+    formExtras={({ recordId }) => recordId ? <MessageReadableBody recordId={recordId} /> : null}
+    title={({ record }) => messageSubject(record?.title, t("messages.noSubject"))}
+  >
+    <Field name="title" title readOnly />
+    <Field name="status" readOnly />
+    <Group label={t("messages.groupEnvelope")} columns={2}>
+      <Field name="sender_name" readOnly />
+      <Field name="sent_at" readOnly />
+      <Field name="platform" readOnly />
+      <Field name="direction" readOnly />
+      <Field name="external_id" readOnly />
+    </Group>
+    {!readOnly ? <>
+      <Action
+        id="hide"
+        label={t("messages.hide")}
+        set={{ status: "hidden" }}
+        visibleWhen={(record) => record.status !== "HIDDEN" && record.status !== "REMOVED"}
+      />
+      <Action
+        id="remove"
+        label={t("messages.remove")}
+        danger
+        confirm={{ title: t("messages.removeTitle"), body: t("messages.removeBody"), danger: true }}
+        set={{ status: "removed" }}
+        visibleWhen={(record) => record.status !== "REMOVED"}
+      />
+      <Action
+        id="restore"
+        label={t("messages.restore")}
+        set={{ status: "synced" }}
+        visibleWhen={(record) => record.status === "HIDDEN" || record.status === "REMOVED"}
+      />
+    </> : null}
+  </Form>;
+}
+
+export const messageForm = registerForm(MODEL, MessageForm);
 
 function messageSubject(value: unknown, fallback: string): string {
   const subject = typeof value === "string" ? value.trim() : "";

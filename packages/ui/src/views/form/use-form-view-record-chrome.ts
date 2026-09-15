@@ -23,6 +23,7 @@ export interface UseFormViewRecordChromeProps {
   id: string | null | undefined;
   isCreate: boolean;
   record: Row | null;
+  formReadOnly: boolean;
 }
 
 export interface FormViewRecordChromeSurface {
@@ -38,6 +39,7 @@ export function useFormViewRecordChrome({
   id,
   isCreate,
   record,
+  formReadOnly,
 }: UseFormViewRecordChromeProps): FormViewRecordChromeSurface {
   const recordChromeContext = React.useMemo<RecordChromeContext | null>(
     () =>
@@ -49,8 +51,9 @@ export function useFormViewRecordChrome({
             canonicalResource,
             recordId: rowPublicId(record) ?? id,
             record,
+            formReadOnly,
           },
-    [canonicalResource, dataResource, id, isCreate, modelLabel, record],
+    [canonicalResource, dataResource, formReadOnly, id, isCreate, modelLabel, record],
   );
   const recordActionTargets = React.useMemo<readonly ModelSlotTarget[]>(() => {
     const targets = [formViewRecordActionsSlot(canonicalResource)];

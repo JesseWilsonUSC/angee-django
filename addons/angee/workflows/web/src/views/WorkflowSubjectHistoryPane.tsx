@@ -3,21 +3,27 @@ import { useAssignmentSubjects } from "@angee/iam";
 import { useAuthoredQuery } from "@angee/refine";
 import {
   Alert, Badge, EmptyState, ErrorBanner, LoadingPanel, TextLink, errorMessage,
-  recordTargetHref, useResourceRecordHrefLookup, useRouteHref,
+  recordTargetHref, routeSearchParam, useResourceRecordHrefLookup, useRouteHref, useRouteSearch,
 } from "@angee/ui";
 
-import { decisionHref } from "../decision-navigation";
+import { DECISION_SEARCH_KEY, WORKFLOW_RUN_SEARCH_KEY, decisionHref, subjectDecisionRunId, subjectPendingDecision } from "../decision-navigation";
 import { WorkflowSubjectHistoryPaneDocument } from "../documents.console";
+import { WorkflowDecisionDocument } from "../documents.public";
 import { useWorkflowsT } from "../i18n";
+import { WorkflowApprovals } from "./WorkflowApprovals";
 
-export function WorkflowSubjectHistoryPane({ subjectDeclaration, subjectId }: {
+export function WorkflowSubjectHistoryPane({ subjectDeclaration, subjectId, actionContent }: {
   subjectDeclaration: string;
   subjectId: string;
+  actionContent?: React.ReactNode;
 }): React.ReactElement {
   const t = useWorkflowsT();
   const routeHref = useRouteHref();
   const recordHref = useResourceRecordHrefLookup();
   const assignmentSubjects = useAssignmentSubjects();
+  const search = useRouteSearch();
+  const decisionId = routeSearchParam(search, DECISION_SEARCH_KEY) ?? null;
+  const followedRunId = routeSearchParam(search, WORKFLOW_RUN_SEARCH_KEY) ?? null;
   const recipientLabels = React.useMemo(
     () => new Map(assignmentSubjects.options.map((option) => [option.value, option.label])),
     [assignmentSubjects.options],
@@ -27,18 +33,49 @@ export function WorkflowSubjectHistoryPane({ subjectDeclaration, subjectId }: {
     { subjectDeclaration, id: subjectId },
     { models: ["workflows.WorkflowRun", "workflows.Decision", "workflows.StepArtifact"] },
   );
+  const selectedDecision = useAuthoredQuery(
+    WorkflowDecisionDocument,
+    { id: decisionId ?? "" },
+    {
+      dataProviderName: "public",
+      enabled: Boolean(decisionId),
+      models: ["workflows.Decision"],
+      records: decisionId ? [{ model: "workflows.Decision", id: decisionId }] : [],
+    },
+  );
   if (query.isFetching && !query.data) {
-    return <LoadingPanel message={t("subjectHistory.loading")} />;
+    return <div className="space-y-4 p-3">
+      {actionContent}
+      <LoadingPanel message={t("subjectHistory.loading")} />
+    </div>;
   }
   if (query.error && !query.data) {
-    return <ErrorBanner description={errorMessage(query.error, t("subjectHistory.unavailable"))} />;
+    return <div className="space-y-4 p-3">
+      {actionContent}
+      <ErrorBanner description={errorMessage(query.error, t("subjectHistory.unavailable"))} />
+    </div>;
   }
   const history = query.data?.workflow_subject_history;
   const runs = history?.runs ?? [];
+  const selected = selectedDecision.data?.workflow_decisions[0];
+  const selectedRunId = selected && subjectDecisionRunId(selected.source_run_id, runs);
+  const pending = decisionId ? undefined : subjectPendingDecision(
+    history?.pending_decisions ?? [], followedRunId,
+  );
+  const pendingRunId = pending?.step_run?.run?.id;
   if (!runs.length) {
-    return <EmptyState icon="workflow-run" title={t("subjectHistory.empty")} description={t("subjectHistory.emptyHint")} />;
+    return <div className="space-y-4 p-3">
+      {actionContent}
+      <EmptyState icon="workflow-run" title={t("subjectHistory.empty")} description={t("subjectHistory.emptyHint")} />
+    </div>;
   }
   return <div className="space-y-4 p-3">
+    {actionContent}
+    {decisionId && selectedRunId ? (
+      <WorkflowApprovals runId={selectedRunId} decisionId={decisionId} includeResolved selectedTaskOnly />
+    ) : pending && pendingRunId ? (
+      <WorkflowApprovals runId={pendingRunId} decisionId={pending.id} selectedTaskOnly />
+    ) : null}
     {history?.truncated ? <Alert tone="info">
       {t("subjectHistory.truncated")} <TextLink href={routeHref("workflows.runs")}>{t("subjectHistory.openAllRuns")}</TextLink>
     </Alert> : null}
@@ -98,7 +135,7 @@ export function WorkflowSubjectHistoryPane({ subjectDeclaration, subjectId }: {
         {decisions.map((decision) => {
           const target = decision.target_reference;
           const targetHref = target?.model && target.id ? recordHref(target.model, target.id) : undefined;
-          const href = recordTargetHref(runHref, {
+          const href = targetHref ? decisionHref(targetHref, decision.id, target?.tab) : recordTargetHref(runHref, {
             tab: "approvals",
             search: { decision: decision.id },
           });

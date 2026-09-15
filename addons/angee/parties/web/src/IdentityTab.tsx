@@ -5,6 +5,7 @@ import {
   TextLink,
   type ListColumn,
   type RecordPanelContext,
+  useRouteSearch,
   useResourceRecordHrefLookup,
 } from "@angee/ui";
 
@@ -32,10 +33,12 @@ function linkState(row: LinkRow, t: ReturnType<typeof usePartiesT>): React.React
  * anti-link (the pair is never re-proposed), so both stay visible here instead of
  * silently vanishing.
  */
-export function IdentityTab({ recordId }: RecordPanelContext): React.ReactElement {
+export function IdentityTab({ recordId, form }: RecordPanelContext): React.ReactElement {
   const t = usePartiesT();
   const rowActions = usePartyHandleRowActions<LinkRow>("remaining");
   const recordHref = useResourceRecordHrefLookup();
+  const search = useRouteSearch();
+  const focusedHandle = typeof search.partyHandle === "string" ? search.partyHandle : "";
 
   const columns = React.useMemo<readonly ListColumn<LinkRow>[]>(
     () => [
@@ -88,9 +91,12 @@ export function IdentityTab({ recordId }: RecordPanelContext): React.ReactElemen
           "is_confirmed",
           "is_dismissed",
         ]}
-        baseFilter={{ party: { exact: recordId } }}
+        baseFilter={{
+          party: { exact: recordId },
+          ...(focusedHandle ? { id: { exact: focusedHandle } } : {}),
+        }}
         columns={columns}
-        rowActions={rowActions}
+        rowActions={form.formReadOnly ? [] : rowActions}
         emptyContent={t("identity.empty")}
       />
     </div>

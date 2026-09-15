@@ -30,7 +30,7 @@ describe("workflows-parties addon manifest", () => {
 
   test("opens the selected Party task over its declared Accounting tab without a nested portal", () => {
     render(
-      <RecordChromeProvider value={{ resource: "parties.Organization", canonicalResource: "parties.Party", dataProviderName: "console", recordId: "party-7", record: { id: "party-7" } }}>
+      <RecordChromeProvider value={{ resource: "parties.Organization", canonicalResource: "parties.Party", dataProviderName: "console", recordId: "party-7", record: { id: "party-7" }, formReadOnly: false }}>
         <SelectedPartyDecision />
       </RecordChromeProvider>,
     );

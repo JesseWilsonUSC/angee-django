@@ -28,6 +28,8 @@ export interface RecordChromeContext {
   recordId: string;
   /** The open record row, or null before it loads. */
   record: Row | null;
+  /** Whether the owning form is read-only. */
+  formReadOnly: boolean;
 }
 
 const binding = makeContext<RecordChromeContext>("RecordChromeContext");

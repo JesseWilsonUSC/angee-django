@@ -143,6 +143,8 @@ class StepResult:
     waiting_kind: Literal["scheduled", "approval", "external"] | str = ""
     artifacts_present: bool = False
     artifacts: tuple[ArtifactSpec, ...] = ()
+    error: str | None = None
+    stacktrace: str | None = None
 
     def to_attempt_result(self) -> AttemptResult:
         """Convert the implementation result into the retained closed envelope."""
@@ -156,6 +158,8 @@ class StepResult:
             checkpoint_present=checkpoint.present,
             checkpoint=checkpoint.value,
             outcome=self.outcome,
+            error=self.error,
+            stacktrace=self.stacktrace,
             waiting_kind=self.waiting_kind,
             requested_until=self.until,
             decisions=self.decisions,
@@ -177,6 +181,28 @@ class StepResult:
             kind="done",
             output=output,
             outcome=outcome,
+            artifacts_present=artifacts is not None,
+            artifacts=tuple(artifacts or ()),
+        )
+
+    @classmethod
+    def failed(
+        cls,
+        error: str,
+        *,
+        checkpoint: dict[str, Any] | None = None,
+        outcome: str = "failed",
+        artifacts: tuple[ArtifactSpec, ...] | list[ArtifactSpec] | None = None,
+    ) -> Self:
+        """Return a retained operation failure with optional recovery evidence."""
+
+        if not error:
+            raise ValueError("StepResult.failed requires an error.")
+        return cls(
+            kind="error",
+            error=error,
+            outcome=outcome,
+            resume_state=checkpoint,
             artifacts_present=artifacts is not None,
             artifacts=tuple(artifacts or ()),
         )

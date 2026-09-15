@@ -151,15 +151,24 @@ def test_party_handle_review_delivers_exact_nonterminal_artifact_runs(
     second = retain(link)
     terminal = retain(link, terminal=True)
     unrelated = retain(workflow)
-    delivered: list[int] = []
-    monkeypatch.setattr(engine, "deliver", lambda run_id: delivered.append(run_id))
+
+    def fail_broad_deliver(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("PartyHandle review must wake exact artifact waits, not the whole run")
+
+    monkeypatch.setattr(engine, "deliver", fail_broad_deliver)
 
     with system_context(reason="review retained handle"):
         getattr(link, disposition)()
 
-    assert delivered == [first.pk, second.pk]
-    assert terminal.pk not in delivered
-    assert unrelated.pk not in delivered
+    # deliver_artifact bumps the run-scoped generation only for the exact
+    # external waits retaining this link; terminal and unrelated holds are left
+    # parked, and no unrelated approval or timer row in those runs is touched.
+    for woken in (first, second):
+        woken.refresh_from_db()
+        assert woken.deliveries == 1
+    for parked in (terminal, unrelated):
+        parked.refresh_from_db()
+        assert parked.deliveries == 0
 
 
 @pytest.mark.django_db(transaction=True)

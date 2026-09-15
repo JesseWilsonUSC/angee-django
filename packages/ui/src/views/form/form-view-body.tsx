@@ -174,7 +174,7 @@ export function FormViewRecordHeader({
               }
             />
           ) : (
-            <h1 className="truncate text-28 font-semibold leading-9 text-fg">
+            <h1 className={compact ? "truncate text-base font-semibold text-fg" : "truncate text-28 font-semibold leading-9 text-fg"}>
               {titleText(
                 recordRepresentationValue(displayRecord, modelMetadata),
                 t("form.record"),

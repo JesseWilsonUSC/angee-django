@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -16,20 +16,36 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 /** Inline PDF viewer: one page at a time from `file.url`, with paging when the
  * document has more than one. react-pdf owns the fetch and its own
  * loading/error surfaces. */
-export default function PdfPreview({ file }: PreviewProviderProps): ReactElement {
+export default function PdfPreview({ file, page: sourcePage }: PreviewProviderProps): ReactElement {
   const t = useStorageT();
   const [pageCount, setPageCount] = useState(0);
-  const [page, setPage] = useState(1);
+  const requestedPage = typeof sourcePage === "number" && Number.isInteger(sourcePage) && sourcePage > 0 ? sourcePage : 1;
+  const [page, setPage] = useState(requestedPage);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState<number>();
+  // Follow an externally requested page; do not re-run when the count resolves,
+  // so manual paging is never clobbered on load. The effective page is clamped
+  // during render instead of mirrored into state.
+  useEffect(() => {
+    setPage(requestedPage);
+  }, [requestedPage]);
+  const currentPage = pageCount ? Math.min(page, pageCount) : page;
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setWidth(Math.max(1, entry.contentRect.width));
+    });
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div className="flex h-full flex-col bg-inset">
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div ref={viewportRef} className="min-h-0 flex-1 overflow-auto p-4">
         <Document
           file={file.url}
-          onLoadSuccess={({ numPages }) => {
-            setPageCount(numPages);
-            setPage((current) => Math.min(current, numPages));
-          }}
+          onLoadSuccess={({ numPages }) => setPageCount(numPages)}
           loading={<LoadingPanel message={t("preview.loading")} />}
           error={
             <EmptyState
@@ -40,7 +56,7 @@ export default function PdfPreview({ file }: PreviewProviderProps): ReactElement
           }
           className="grid place-content-center"
         >
-          <Page pageNumber={page} className="shadow-sm" />
+          <Page pageNumber={currentPage} width={width} className="shadow-sm" />
         </Document>
       </div>
       {pageCount > 1 ? (
@@ -48,24 +64,24 @@ export default function PdfPreview({ file }: PreviewProviderProps): ReactElement
           <Button
             variant="ghost"
             size="iconSm"
-            disabled={page <= 1}
+            disabled={currentPage <= 1}
             aria-label={t("preview.pdfPrev")}
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            onClick={() => setPage(Math.max(1, currentPage - 1))}
           >
             <Glyph name="chevron-left" />
           </Button>
           <span className="tabular-nums">
             {t("preview.pdfPage", {
-              page: String(page),
+              page: String(currentPage),
               total: String(pageCount),
             })}
           </span>
           <Button
             variant="ghost"
             size="iconSm"
-            disabled={page >= pageCount}
+            disabled={currentPage >= pageCount}
             aria-label={t("preview.pdfNext")}
-            onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+            onClick={() => setPage(Math.min(pageCount, currentPage + 1))}
           >
             <Glyph name="chevron-right" />
           </Button>

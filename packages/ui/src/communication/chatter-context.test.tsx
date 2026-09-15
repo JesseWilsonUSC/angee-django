@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { useEffect, useRef } from "react";
 
 import {
@@ -56,6 +56,15 @@ describe("ChatterProvider", () => {
     expect(screen.getByTestId("content").textContent).toBe("details");
     expect(renders).toEqual([1, 2]);
   });
+
+  test("honors an open request made before the pane controller registers", () => {
+    const expand = vi.fn();
+    render(<ChatterProvider defaultCollapsed>
+      <PendingOpen controller={{ collapsed: true, collapse: vi.fn(), expand, toggle: vi.fn() }} />
+    </ChatterProvider>);
+
+    expect(expand).toHaveBeenCalledOnce();
+  });
 });
 
 function Publisher({
@@ -64,6 +73,18 @@ function Publisher({
   content: ChatterContent | null;
 }): null {
   useChatterContent(content);
+  return null;
+}
+
+function PendingOpen({ controller }: {
+  controller: { collapsed: boolean; collapse: () => void; expand: () => void; toggle: () => void };
+}): null {
+  const { registerSecondaryController, setCollapsed } = useChatter();
+  useEffect(() => {
+    setCollapsed(false);
+    registerSecondaryController(controller);
+    return () => registerSecondaryController(null);
+  }, [controller, registerSecondaryController, setCollapsed]);
   return null;
 }
 

@@ -69,6 +69,22 @@ describe("MessagePartsView", () => {
     expect(screen.getByText("Earlier message")).toBeTruthy();
   });
 
+  test("renders only the preferred supported multipart alternative", () => {
+    render(
+      <MessagePartsView
+        parts={[
+          { id: "plain", type: "text/plain", parent: { id: "alternative", type: "multipart/alternative" }, fragment: { text: "Plain copy" } },
+          { id: "html", type: "text/html", parent: { id: "alternative", type: "multipart/alternative" }, fragment: { text: "<p>Rich copy</p>" } },
+          { id: "attachment", disposition: "ATTACHMENT", file: { id: "invoice", filename: "invoice.pdf" } },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByText("Plain copy")).toBeNull();
+    expect(screen.getByTitle("HTML message body")).toBeTruthy();
+    expect(screen.getByText("invoice.pdf")).toBeTruthy();
+  });
+
   test("splits inline CID images from downloadable attachment chips", () => {
     render(
       <MessagePartsView

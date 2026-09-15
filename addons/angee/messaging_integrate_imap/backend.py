@@ -182,6 +182,18 @@ class ImapChannelBackend(AnymailEmailChannelBackend):
                 self._work.popleft()
                 continue
             messages = self._fetch_chunk(work, chunk)
+            answered = {
+                int(message.metadata["uid"])
+                for message in messages
+                if isinstance(message.metadata, dict) and message.metadata.get("uid") is not None
+            }
+            missing = sorted(set(chunk) - answered)
+            still_present = self._present_uids(work, missing) if missing else set()
+            if still_present:
+                raise ImapError(
+                    f"IMAP mailbox {work.name!r} still contains UID(s) that its FETCH did not answer: "
+                    f"{sorted(still_present)[:20]}. Retry the sync before advancing its cursor."
+                )
             self._advance_cursor(work.name, work.uidvalidity, chunk[-1])
             if messages:
                 return messages
@@ -431,6 +443,24 @@ class ImapChannelBackend(AnymailEmailChannelBackend):
             messages.extend(self._parse_fetched(work, data, body_key=b"BODY[HEADER]", truncated=True))
         return messages
 
+    def _present_uids(self, work: _MailboxWork, uids: list[int]) -> set[int]:
+        """Return unanswered UIDs that still exist in the planned mailbox epoch."""
+
+        if not uids:
+            return set()
+
+        def search() -> set[int]:
+            client = self._client_or_fail()
+            current = int(client.folder_status(work.name, [b"UIDVALIDITY"])[b"UIDVALIDITY"])
+            if current != work.uidvalidity:
+                raise ImapError(
+                    f"IMAP mailbox {work.name!r} changed UIDVALIDITY while confirming unanswered messages."
+                )
+            sequence = ",".join(str(uid) for uid in uids)
+            return {int(uid) for uid in client.search(["UID", sequence])} & set(uids)
+
+        return self._with_retry(work.name, search)
+
     def _fetch_bodies(self, run: list[int]) -> dict[int, dict[bytes, Any]]:
         """Pull one byte-budgeted run of full bodies (flags and receipt time ride along)."""
 
@@ -486,10 +516,10 @@ class ImapChannelBackend(AnymailEmailChannelBackend):
     def _report_unanswered(mailbox: str, requested: list[int], answered: dict[int, Any], *, phase: str) -> None:
         """Log UIDs a fetch did not answer — usually expunged, but never silent.
 
-        The cursor still advances past them (a vanished message has nothing left
-        to fetch), so the log line is the only trace distinguishing an expunge
-        from a misbehaving server; a recurring pattern here is the signal to
-        investigate before trusting the watermark.
+        Before advancing, the caller confirms missing UIDs with an exact UID
+        search. Confirmed expunges may advance; a UID that still exists fails the
+        sync with its cursor unchanged. This stage log identifies which FETCH
+        response was incomplete when that failure is investigated.
         """
 
         missing = [uid for uid in requested if uid not in answered]

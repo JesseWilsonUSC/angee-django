@@ -18,7 +18,6 @@ import {
   Glyph,
   LoadingPanel,
   parseRecordNavigationScope,
-  PreviewPane,
   recordNavigationHref,
   recordNavigationSearch,
   RecordPager,
@@ -39,7 +38,6 @@ import {
   type ChatterTab,
   type FieldDescriptor,
   type ListViewNavigationScope,
-  type PreviewFile,
   type ScopedExplorerController,
 } from "@angee/ui";
 
@@ -69,6 +67,7 @@ import { useFolderActions } from "../data/use-folder-actions";
 import { useStorageUpload } from "../data/use-upload";
 import { FileBrowserContent } from "./FileBrowserContent";
 import { FileDetail } from "./FileDetail";
+import { FilePreview, filePreviewPageFromSearch } from "./FilePreview";
 import { NewFolderControl } from "./NewFolderControl";
 import { SelectedFolderControl } from "./SelectedFolderControl";
 import { useStorageT } from "../i18n";
@@ -166,6 +165,9 @@ export function StoragePage(): ReactElement {
     [filesHref, navigate, fileResource],
   );
   const openFileId = useRouteRecordId() ?? null;
+  const openFilePreviewPage = openFileId
+    ? filePreviewPageFromSearch(search, openFileId)
+    : null;
   const searchStr = useRouterState({ select: (state) => state.location.searchStr });
   useBreadcrumbCollectionLink(
     filesHref,
@@ -521,6 +523,7 @@ export function StoragePage(): ReactElement {
             openFile={openFile}
             openFileFetching={openFileQuery.isFetching}
             openFileError={openFileQuery.error}
+            openFilePreviewPage={openFilePreviewPage}
             fileResource={fileResource}
             navigationScope={navigationScope}
             uploads={uploads}
@@ -540,6 +543,7 @@ function StorageExplorerContent({
   openFile,
   openFileFetching,
   openFileError,
+  openFilePreviewPage,
   fileResource,
   navigationScope,
   uploads,
@@ -552,6 +556,7 @@ function StorageExplorerContent({
   openFile: StorageFile | null;
   openFileFetching: boolean;
   openFileError: Error | null;
+  openFilePreviewPage: number | null;
   fileResource: DataResourceMetadata | undefined;
   navigationScope: ListViewNavigationScope | null;
   uploads: ReturnType<typeof useStorageUpload>;
@@ -697,6 +702,7 @@ function StorageExplorerContent({
           file={openFile}
           fetching={openFileFetching}
           error={openFileError}
+          page={openFilePreviewPage}
         />
       ) : (
         <FileBrowserContent
@@ -718,10 +724,12 @@ function FilePreviewFrame({
   file,
   fetching,
   error,
+  page,
 }: {
   file: StorageFile | null;
   fetching: boolean;
   error: Error | null;
+  page?: number | null;
 }): ReactElement {
   const t = useStorageT();
   // The file's verbs (download, trash/restore) live in the shell control band,
@@ -749,7 +757,7 @@ function FilePreviewFrame({
       />
       <div className="min-h-0 flex-1 overflow-hidden p-3">
         {file ? (
-          <FilePreview file={file} />
+          <FilePreview file={file} page={page} />
         ) : fetching ? (
           <LoadingPanel message={t("loadingFile")} />
         ) : error ? (
@@ -764,27 +772,5 @@ function FilePreviewFrame({
         )}
       </div>
     </div>
-  );
-}
-
-function FilePreview({ file }: { file: StorageFile }): ReactElement {
-  const t = useStorageT();
-  const previewFile: PreviewFile = {
-    url: file.url,
-    name: file.filename,
-    mime: file.mime_type?.mime_type ?? null,
-    size: file.size_bytes,
-  };
-  return (
-    <PreviewPane
-      file={previewFile}
-      fallback={
-        <EmptyState
-          icon="file"
-          title={file.title || file.filename}
-          description={t("preview.unsupported")}
-        />
-      }
-    />
   );
 }

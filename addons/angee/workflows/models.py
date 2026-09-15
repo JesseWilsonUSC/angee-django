@@ -1493,6 +1493,39 @@ class WorkflowRun(AuditMixin, RecordRefMixin, AngeeDataModel):
 
         return self.status in RunStatus.TERMINAL
 
+    def execution_lineage_root_id(self) -> int:
+        """Return the original run retained by this recovery provenance chain.
+
+        This identity does not grant access to either run. Callers must still
+        authorize every record and validate their domain payloads independently.
+        """
+
+        current = self
+        seen: set[int] = set()
+        while current.origin == RunOrigin.RECOVERY:
+            if current.pk is None or current.pk in seen:
+                raise ValidationError({"run": "Workflow recovery lineage is cyclic."})
+            seen.add(current.pk)
+            source = current.recovery_source_attempt
+            if (
+                source is None
+                or source.step_run.current_attempt_id != source.pk
+                or source.step_run.status not in {StepRunStatus.FAILED, StepRunStatus.CANCELED}
+                or source.step_run.run.workflow_id != current.workflow_id
+            ):
+                raise ValidationError({"run": "Workflow recovery lineage is incomplete or stale."})
+            current = source.step_run.run
+        if current.pk is None:
+            raise ValidationError({"run": "Workflow execution lineage requires a saved run."})
+        return current.pk
+
+    def same_execution_lineage(self, other: Any) -> bool:
+        """Return whether two authorized runs share exact recovery provenance."""
+
+        if not isinstance(other, type(self)):
+            raise TypeError("Workflow execution lineage requires two WorkflowRun records.")
+        return self.execution_lineage_root_id() == other.execution_lineage_root_id()
+
     def allows_test_step(self, step: Any) -> bool:
         """Return whether the pinned test scope admits one copied step."""
 
@@ -2475,6 +2508,9 @@ class StepArtifact(AuditMixin, AngeeDataModel):
         abstract = True
         ordering = ("attempt_id", "declaration_index")
         rebac_resource_type = "workflows/step_artifact"
+        indexes = (
+            models.Index(fields=("target_content_type", "target_object_id"), name="idx_war_target"),
+        )
         constraints = (
             models.UniqueConstraint(fields=("attempt", "declaration_index"), name="uniq_war_attempt_index"),
         )
@@ -2500,6 +2536,7 @@ class Decision(AuditMixin, AngeeDataModel):
     """One awaited resolution slot for a suspended step-run."""
 
     runtime = True
+    rebac_grantable = {"reader": "share"}
     _form_schema_state_attribute = "_workflows_form_schema_state"
 
     sqid_prefix = "wdc_"

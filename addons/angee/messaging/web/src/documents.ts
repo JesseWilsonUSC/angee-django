@@ -115,6 +115,7 @@ export const MessagePartFields = graphql(`
     role
     disposition
     cid
+    parent { id type }
     fragment { id text }
     file {
       id
@@ -123,6 +124,16 @@ export const MessagePartFields = graphql(`
       size_bytes
       url
       mime_type { mime_type label }
+    }
+  }
+`);
+
+/** Exact actor-readable Message body for passive record detail and peeks. */
+export const MessageDetailPartsDocument = graphql(`
+  query MessagingMessageDetailParts($id: String!) {
+    messages(where: { id: { _eq: $id } }, limit: 1) {
+      id
+      parts { ...MessagePartFields }
     }
   }
 `);

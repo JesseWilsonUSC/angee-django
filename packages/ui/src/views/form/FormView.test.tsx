@@ -2616,6 +2616,26 @@ describe("FormView", () => {
     expect(screen.queryByRole("button", { name: "Editor action" })).toBeNull();
   });
 
+  test("workspace records without tabs keep the compact header and scrolling form body", async () => {
+    renderWithProviders(
+      <FormView
+        resource="notes.Note"
+        id="note-1"
+        fields={fields}
+        recordPresentation="workspace"
+        readOnly
+        hideRecordChrome
+      />,
+    );
+
+    const heading = await screen.findByRole("heading", { name: "First" });
+    expect(heading.className).toContain("text-base");
+    expect(heading.className).not.toContain("text-28");
+    expect(document.querySelector("form")?.className).toContain("min-h-0");
+    expect(heading.closest("form")?.querySelector(".overflow-auto")).toBeTruthy();
+    expect(screen.queryByRole("tab")).toBeNull();
+  });
+
   test("document records honor overview tab placement without changing presentation", async () => {
     renderWithProviders(
       <FormView
