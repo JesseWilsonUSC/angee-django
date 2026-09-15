@@ -142,6 +142,7 @@ describe("PairingDialog", () => {
       canonicalResource: "integrate.Integration",
       recordId: "chn_1",
       record: { lifecycle: "DISCONNECTED" },
+      formReadOnly: false,
     };
     mocks.recordActions.clear();
   });
@@ -405,6 +406,7 @@ describe("ChannelPairingAction", () => {
       canonicalResource: "integrate.Integration",
       recordId: "chn_1",
       record: { lifecycle: "DISCONNECTED" },
+      formReadOnly: false,
     };
     mocks.recordActions.clear();
   });
