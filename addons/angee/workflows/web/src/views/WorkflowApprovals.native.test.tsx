@@ -21,7 +21,7 @@ vi.mock("@angee/refine", async (importOriginal) => {
       if (authoredMode.current === "empty") return { data: { workflow_decisions: [] }, isFetching: false, error: null, refetch: vi.fn() };
       const data = { workflow_decisions: [{
         id: String(variables.id ?? "decision-1"), action: "review", priority: 1, payload: {}, verdict: authoredVerdict.current,
-        resolution: {}, attempts: 0, max_attempts: 3, expires_at: null, escalate_at: null,
+        resolution: {}, resolved_by: "", attempts: 0, max_attempts: 3, expires_at: null, escalate_at: null,
         decision_schema: null, workflow_name: "Session", step_name: "Approve tool",
         created_at: "2026-09-09T00:00:00Z", updated_at: "2026-09-09T00:00:00Z",
       }] };

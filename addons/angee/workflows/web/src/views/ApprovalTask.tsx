@@ -4,10 +4,10 @@ import {
   Badge, Button, Collapsible, ErrorBanner, FieldDescription, FieldLabel, FieldRoot,
   Glyph, JsonEditor, JsonValueView, LabeledDescriptorField, LazyBoundary, TextLink, formSpecInitialValues,
   PageAside,
-  errorMessage, statusTone, useDottedPathFieldErrors, useFormSpecFields, useResourceRecordHrefLookup, useRouteHref, validationErrorMap,
+  errorMessage, jsonValueFromUnknown, statusTone, useDottedPathFieldErrors, useFormSpecFields, useResourceRecordHrefLookup, useRouteHref, validationErrorMap,
   useModelSlot,
   useRecordPeek,
-  type DottedPathFieldErrorMap, type FormSpecFieldDescriptor, type RecordPeekReference,
+  type DottedPathFieldErrorMap, type FormSpecFieldDescriptor, type JsonValue, type RecordPeekReference,
 } from "@angee/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { decisionHref } from "../decision-navigation";
@@ -195,7 +195,7 @@ function FormSpecApprovalResolution({ approval, active, editable, onResolved, re
   async function resolve(verdict: ApprovalVerdict, submittedValues: Readonly<Record<string, unknown>> = values): Promise<void> {
     setError(null); validationErrors.clear();
     try {
-      validationErrors.replace(await resolution.resolve(approval.id, verdict, submittedValues));
+      validationErrors.replace(await resolution.resolve(approval.id, verdict, jsonValueFromUnknown(submittedValues) ?? {}));
     } catch (cause) {
       setError(errorMessage(cause, t("inbox.actionFailed")));
     }
@@ -238,7 +238,7 @@ function JsonApprovalResolution({ approval, active, editable, onResolved, reconc
   onCommitted: (verdict: string) => void;
 }): React.ReactElement {
   const t = useWorkflowsT();
-  const [payload, setPayload] = React.useState<JsonValue>(() => active ? {} : approval.resolution ?? {});
+  const [payload, setPayload] = React.useState<JsonValue>(() => active ? {} : jsonValueFromUnknown(approval.resolution) ?? {});
   const [jsonValid, setJsonValid] = React.useState(true);
   const validationErrors = useDottedPathFieldErrors();
   const [error, setError] = React.useState<string | null>(null);
@@ -264,7 +264,7 @@ function JsonApprovalResolution({ approval, active, editable, onResolved, reconc
           onChange={(value) => {
             validationErrors.clear();
             onDirtyChange?.(true);
-            setPayload(value);
+            setPayload(jsonValueFromUnknown(value) ?? {});
           }}
         />
         <FieldDescription>{t("json.label")}</FieldDescription>
@@ -286,7 +286,7 @@ function ApprovalVerdictButtons({ disabled = false, fetching, onResolve }: { dis
 }
 
 function useApprovalResolver(onResolved: ApprovalTaskProps["onResolved"], reconcile: ReconcileApproval | undefined, onCommitted: (verdict: string) => void): {
-  resolve: (approval: string, verdict: ApprovalVerdict, payload: unknown) => Promise<DottedPathFieldErrorMap>;
+  resolve: (approval: string, verdict: ApprovalVerdict, payload: JsonValue) => Promise<DottedPathFieldErrorMap>;
   retryContinuation: () => Promise<void>;
   committed: boolean; continuationError: Error | null; fetching: boolean; error: Error | null;
 } {
@@ -312,7 +312,7 @@ function useApprovalResolver(onResolved: ApprovalTaskProps["onResolved"], reconc
       setResolving(false);
     }
   }, [onResolved]);
-  const resolve = React.useCallback(async (approval: string, verdict: ApprovalVerdict, payload: unknown): Promise<DottedPathFieldErrorMap> => {
+  const resolve = React.useCallback(async (approval: string, verdict: ApprovalVerdict, payload: JsonValue): Promise<DottedPathFieldErrorMap> => {
     if (inFlight.current || committedRef.current) return {};
     inFlight.current = true;
     setResolving(true);

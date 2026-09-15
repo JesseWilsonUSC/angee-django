@@ -39,6 +39,7 @@ const approval = {
   payload: { subject: "A note" },
   verdict: "PENDING",
   resolution: {},
+  resolved_by: "",
   attempts: 0,
   max_attempts: 3,
   expires_at: null,
