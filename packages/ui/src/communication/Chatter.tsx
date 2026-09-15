@@ -170,7 +170,8 @@ function ChatterPanels({ tabs, active }: { tabs: readonly ChatterTab[]; active: 
       <ScrollArea
         className="h-full"
         viewportClassName={cn("overflow-x-hidden p-4", tab.panelClassName)}
-        contentClassName="min-w-0 max-w-full"
+        contentClassName="w-full min-w-0 max-w-full"
+        contentStyle={{ minWidth: 0 }}
       >
         {tab.children}
       </ScrollArea>

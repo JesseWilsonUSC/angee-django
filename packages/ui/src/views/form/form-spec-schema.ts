@@ -56,6 +56,7 @@ const FieldBaseSchema = v.object({
   minItems: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
   maxItems: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
   defaultValue: v.optional(JsonValueSchema),
+  default: v.optional(JsonValueSchema),
   const: v.optional(JsonValueSchema),
   enum: v.optional(v.array(v.string("form-spec select values must be strings."))),
   options: v.optional(v.array(v.object({

@@ -145,6 +145,7 @@ export type ScrollAreaProps = Omit<ScrollAreaRootProps, "children"> &
   {
     children: React.ReactNode;
     contentClassName?: string;
+    contentStyle?: React.CSSProperties;
     scrollbarClassName?: string;
     scrollbars?: ScrollAreaScrollbarPolicy;
     thumbClassName?: string;
@@ -157,6 +158,7 @@ export const ScrollArea = React.forwardRef<HTMLDivElement, ScrollAreaProps>(
       children,
       className,
       contentClassName,
+      contentStyle,
       scrollbarClassName,
       scrollbars = "vertical",
       thumbClassName,
@@ -170,7 +172,7 @@ export const ScrollArea = React.forwardRef<HTMLDivElement, ScrollAreaProps>(
     return (
       <ScrollAreaRoot ref={ref} className={className} {...props}>
         <ScrollAreaViewport className={viewportClassName}>
-          <ScrollAreaContent className={contentClassName}>
+          <ScrollAreaContent className={contentClassName} style={contentStyle}>
             {children}
           </ScrollAreaContent>
         </ScrollAreaViewport>

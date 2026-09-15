@@ -17,7 +17,8 @@ export type FormSpecRelationCreate = Pick<RelationCreateConfig, "resource" | "de
  * Descriptor produced from a backend-emitted JSON form schema.
  * `type`/`properties`/`required`/`items`/`enum`/`const` are the recursive schema
  * vocabulary. Presentation extensions live on each property: string-only
- * `widget`/`label`/`description`/`placeholder`, `readOnly`, JSON `defaultValue`,
+ * `widget`/`label`/`description`/`placeholder`, `readOnly`, JSON `defaultValue`
+ * (overriding the standard schema `default` when both are supplied),
  * string-labelled `options`, and the pure-data `relation` config. A property's
  * key becomes the descriptor's `name`; no function-valued extension is admitted.
  * Arrays of objects resolve to the registered fixed-N `rows` view composer.
@@ -208,7 +209,8 @@ function deserializeField(
     ...(field.maxItems !== undefined ? { maxItems: field.maxItems } : {}),
     ...(readOnly ? { readOnly: true } : {}),
     ...(layout ? { layout } : {}),
-    ...(Object.hasOwn(field, "defaultValue") ? { defaultValue: field.defaultValue, hasDefault: true } : {}),
+    ...(Object.hasOwn(field, "defaultValue") ? { defaultValue: field.defaultValue, hasDefault: true }
+      : Object.hasOwn(field, "default") ? { defaultValue: field.default, hasDefault: true } : {}),
     ...(options ? { options } : {}),
     ...(relation ? { relation } : {}),
     ...(rowTemplate ? { rowTemplate } : {}),

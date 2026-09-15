@@ -221,6 +221,16 @@ describe("deserializeFormSpec", () => {
 });
 
 describe("formSpecInitialValues", () => {
+  test("honors retained JSON Schema defaults without replacing explicit payload or presentation defaults", () => {
+    const fields = deserializeFormSpec({ type: "object", properties: {
+      action: { type: "string", enum: ["keep", "replace"], default: "keep" },
+      enabled: { type: "boolean", default: false },
+      optional: { type: "string", nullable: true, default: "source", defaultValue: null },
+    } }, defaultWidgets);
+    expect(formSpecInitialValues(fields, {})).toEqual({ action: "keep", enabled: false, optional: null });
+    expect(formSpecInitialValues(fields, { action: "replace" }).action).toBe("replace");
+  });
+
   test("prefills declared fields from payload before schema defaults", () => {
     const fields = deserializeFormSpec(
       {

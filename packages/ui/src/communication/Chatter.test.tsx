@@ -163,6 +163,21 @@ describe("Chatter", () => {
     expect(recordsMounted).toHaveBeenCalledOnce();
   });
 
+  test("lets active panel content shrink to the chatter viewport", async () => {
+    renderChatterContent(
+      <PublishedContent content={{
+        tabs: [{ id: "workflow", label: "Workflow", children: <span>Compact decision</span> }],
+      }} />,
+      "workflow",
+    );
+
+    const panelContent = (await screen.findByText("Compact decision"))
+      .closest<HTMLElement>('[role="presentation"]');
+    expect(panelContent).not.toBeNull();
+    expect(panelContent?.style.minWidth).toBe("0");
+    expect(panelContent?.className).toContain("w-full");
+  });
+
   test("removing a temporary record peek preserves the publisher's tabs and composer", async () => {
     const base = {
       tabs: [{ id: "workflow", label: "Workflow", children: "Decision form" }],
