@@ -179,6 +179,10 @@ function FormSpecApprovalResolution({ approval, active, editable, onResolved, re
     model: DECISION_MODEL,
     impl: approval.action,
   });
+  // SlotContribution.content is intentionally `unknown` at the framework level
+  // (no composer parses a rendered surface's private contract), so this surface
+  // owns the WORKFLOW_DECISION_CONTENT_SLOT contract: the function narrowing plus
+  // this cast is the trust boundary for a contributed decision-content component.
   const contributedContent = contributions[0]?.content;
   const Content = typeof contributedContent === "function"
     ? contributedContent as React.ComponentType<WorkflowDecisionContentProps>

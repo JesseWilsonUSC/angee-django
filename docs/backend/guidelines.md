@@ -291,10 +291,12 @@ Use these owners instead of maintaining another contract in an addon:
   identifies external ISO reference data; it is not a row lifecycle state.
   `angee.parties.fields.CountryCodeField` therefore retains the GraphQL/string
   boundary while its Django choices supply selector labels through resource
-  metadata. It accepts ISO codes and exact names/aliases recognized by
-  django-countries; fuzzy or colloquial names fail validation instead of being
-  guessed. Compose that owner for postal, tax, and bank countries instead of
-  declaring another country vocabulary or using `StateField`.
+  metadata. It accepts ISO alpha-2/alpha-3 codes and exact names/aliases,
+  resolved through the configured django-countries catalogue first (so
+  `COUNTRIES_OVERRIDE` names win) and the complete pycountry ISO catalogue only
+  as an exact-match fallback; fuzzy or colloquial names fail validation instead
+  of being guessed. Compose that owner for postal, tax, and bank countries
+  instead of declaring another country vocabulary or using `StateField`.
 - **A hand-written `@strawberry.type` owes the boundary the same enum.** The rule
   above is not about models — it is about the API boundary, so a `state: str`
   field on a plain strawberry type has the identical defect: it crosses as a bare

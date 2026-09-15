@@ -114,6 +114,7 @@ addons = [
     "openai>=2.43.0",
     "phonenumbers>=9.0",
     "pillow>=11.0",
+    "pycountry>=26,<27",
     "pydantic-ai-slim>=2.13",
     "pydantic-ai-slim[anthropic]>=2.13",
     "pydantic-ai-slim[mcp]>=2.13",

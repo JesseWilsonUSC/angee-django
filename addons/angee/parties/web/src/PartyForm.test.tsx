@@ -47,3 +47,19 @@ test("does not invent a form for a missing or non-concrete Party", () => {
   expect(screen.queryByTestId("organization-form")).toBeNull();
   expect(screen.queryByTestId("person-form")).toBeNull();
 });
+
+test("keeps the resolved concrete form mounted during a background refetch", () => {
+  state.kind = "organization";
+  state.fetching = true;
+  render(<PartyForm resource="parties.Party" id="party-1" readOnly />);
+  expect(screen.getByTestId("organization-form").textContent).toBe("parties.Organization:party-1:true");
+  expect(screen.queryByText("partyRedirect.loading")).toBeNull();
+});
+
+test("shows the loading panel only on the first load, before a Party resolves", () => {
+  state.kind = null;
+  state.fetching = true;
+  render(<PartyForm resource="parties.Party" id="party-1" readOnly />);
+  expect(screen.getAllByText("partyRedirect.loading").length).toBeGreaterThan(0);
+  expect(screen.queryByTestId("organization-form")).toBeNull();
+});

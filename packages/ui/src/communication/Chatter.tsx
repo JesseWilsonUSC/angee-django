@@ -167,10 +167,14 @@ function ChatterPanels({ tabs, active }: { tabs: readonly ChatterTab[]; active: 
   }, [active]);
   return <>{tabs.map((tab) => (
     <Tabs.Panel key={tab.id} value={tab.id} keepMounted={visited.includes(tab.id)} className="min-h-0 flex-1">
+      {/* base-ui's ScrollArea.Content sets inline `min-width: fit-content`; only an
+          inline `contentStyle` override lets long content shrink and wrap instead of
+          overflowing horizontally, since a `min-w-0` class can never beat that inline
+          style. */}
       <ScrollArea
         className="h-full"
         viewportClassName={cn("overflow-x-hidden p-4", tab.panelClassName)}
-        contentClassName="w-full min-w-0 max-w-full"
+        contentClassName="w-full max-w-full"
         contentStyle={{ minWidth: 0 }}
       >
         {tab.children}

@@ -766,14 +766,14 @@ def test_decision_relation_permission_defaults_to_write_and_allows_declared_read
     )
     monkeypatch.setattr(engine, "instance_from_public_id", lambda _model, _value, *, queryset: object())
 
-    assert engine._relation_error({"resource": "arp.Company"}, "company-1", object()) is None
+    assert engine._relation_error({"resource": "demo.Company"}, "company-1", object()) is None
     assert engine._relation_error(
-        {"resource": "arp.Company", "permission": "read"}, "company-1", object(),
+        {"resource": "demo.Company", "permission": "read"}, "company-1", object(),
     ) is None
     assert actions == ["write", "read"]
 
     assert engine._relation_error(
-        {"resource": "arp.Company", "permission": "read;delete"}, "company-1", object(),
+        {"resource": "demo.Company", "permission": "read;delete"}, "company-1", object(),
     ) == "Relation value must reference a permitted record."
     assert actions == ["write", "read"]
 

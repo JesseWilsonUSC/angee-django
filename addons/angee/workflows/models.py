@@ -2508,6 +2508,9 @@ class StepArtifact(AuditMixin, AngeeDataModel):
         abstract = True
         ordering = ("attempt_id", "declaration_index")
         rebac_resource_type = "workflows/step_artifact"
+        indexes = (
+            models.Index(fields=("target_content_type", "target_object_id"), name="idx_war_target"),
+        )
         constraints = (
             models.UniqueConstraint(fields=("attempt", "declaration_index"), name="uniq_war_attempt_index"),
         )

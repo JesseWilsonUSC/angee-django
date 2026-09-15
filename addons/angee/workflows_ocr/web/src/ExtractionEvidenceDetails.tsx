@@ -1,7 +1,7 @@
 import * as React from "react";
 import type { DocumentType } from "@angee/gql/console";
-import { Badge, Button, CodeBlock, TextLink, statusTone, useRecordPeekContext, useResourceRecordHrefLookup, useT } from "@angee/ui";
-import { FileRecordPreview } from "@angee/storage";
+import { Badge, Button, CodeBlock, recordTargetHref, statusTone, TextLink, useRecordPeekContext, useResourceRecordHrefLookup, useT } from "@angee/ui";
+import { FileRecordPreview, filePreviewReference } from "@angee/storage";
 
 import { ExtractionRecordEvidenceDocument } from "./documents";
 
@@ -11,13 +11,33 @@ function json(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? "";
 }
 
+/** The 1-based source page that produced the earliest extracted part, offered as
+ * a preview jump only when a single source can own it. Model source pages are
+ * 0-based; the file preview is 1-based. */
+function evidencePreviewPage(evidence: ExtractionEvidence): number | null {
+  if (evidence.sources.length !== 1) return null;
+  const partPages = evidence.parts
+    .map((part) => part.source_page)
+    .filter((page): page is number => typeof page === "number");
+  return partPages.length ? Math.min(...partPages) + 1 : null;
+}
+
 export function ExtractionEvidenceDetails({ evidence }: { evidence: ExtractionEvidence }): React.ReactElement {
   const t = useT("workflowsOcr");
   const recordHref = useResourceRecordHrefLookup();
   const peek = useRecordPeekContext();
   const [sourceId, setSourceId] = React.useState(evidence.sources[0]?.id);
-  const selected = evidence.sources.find((source) => source.id === sourceId);
-  const fileHref = selected?.file ? recordHref("storage.File", selected.file) : undefined;
+  // Fall back to the first source when a retained selection is no longer present
+  // after a background refetch, so the preview and links never silently blank.
+  const selected = evidence.sources.find((source) => source.id === sourceId) ?? evidence.sources[0];
+  // Jump the previewed document straight to the page the extraction came from,
+  // both inline and through the opened file (peek reference and deep-link URL).
+  const previewPage = evidencePreviewPage(evidence);
+  const fileReference = selected?.file ? filePreviewReference(selected.file, previewPage) : undefined;
+  const fileBaseHref = fileReference ? recordHref("storage.File", fileReference.id) : undefined;
+  const fileHref = fileBaseHref && fileReference
+    ? recordTargetHref(fileBaseHref, { tab: fileReference.tab, search: fileReference.search })
+    : fileBaseHref;
   const messageHref = selected?.source_message ? recordHref("messaging.Message", selected.source_message) : undefined;
   return <div className="grid gap-4 p-4">
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -33,9 +53,9 @@ export function ExtractionEvidenceDetails({ evidence }: { evidence: ExtractionEv
         </Button>)}
       </div>
       <div className="flex flex-wrap gap-3 text-xs">
-        {fileHref && selected?.file ? <TextLink href={fileHref} onClick={peek ? (event) => {
+        {fileHref && fileReference ? <TextLink href={fileHref} onClick={peek ? (event) => {
           event.preventDefault();
-          peek.openRecord({ model: "storage.File", id: selected.file!, tab: "preview", label: t("document") });
+          peek.openRecord({ ...fileReference, label: t("document") });
         } : undefined}>{t("openFile")}</TextLink> : null}
         {messageHref && selected?.source_message ? <TextLink href={messageHref} onClick={peek ? (event) => {
           event.preventDefault();
@@ -44,7 +64,7 @@ export function ExtractionEvidenceDetails({ evidence }: { evidence: ExtractionEv
       </div>
     </section>
     {selected?.file ? <div className="h-[65vh] min-h-80 overflow-hidden rounded-8 border border-border-subtle">
-      <FileRecordPreview id={selected.file} page={evidence.sources.length === 1 ? peek?.reference.page : undefined} />
+      <FileRecordPreview id={selected.file} page={previewPage} />
     </div> : null}
     <details className="text-xs text-fg-muted">
       <summary className="cursor-pointer font-medium">{t("processingDetails")}</summary>

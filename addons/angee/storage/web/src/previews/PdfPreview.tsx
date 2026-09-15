@@ -23,9 +23,13 @@ export default function PdfPreview({ file, page: sourcePage }: PreviewProviderPr
   const [page, setPage] = useState(requestedPage);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState<number>();
+  // Follow an externally requested page; do not re-run when the count resolves,
+  // so manual paging is never clobbered on load. The effective page is clamped
+  // during render instead of mirrored into state.
   useEffect(() => {
-    setPage(pageCount ? Math.min(requestedPage, pageCount) : requestedPage);
-  }, [requestedPage, pageCount]);
+    setPage(requestedPage);
+  }, [requestedPage]);
+  const currentPage = pageCount ? Math.min(page, pageCount) : page;
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport || typeof ResizeObserver === "undefined") return;
@@ -41,10 +45,7 @@ export default function PdfPreview({ file, page: sourcePage }: PreviewProviderPr
       <div ref={viewportRef} className="min-h-0 flex-1 overflow-auto p-4">
         <Document
           file={file.url}
-          onLoadSuccess={({ numPages }) => {
-            setPageCount(numPages);
-            setPage((current) => Math.min(current, numPages));
-          }}
+          onLoadSuccess={({ numPages }) => setPageCount(numPages)}
           loading={<LoadingPanel message={t("preview.loading")} />}
           error={
             <EmptyState
@@ -55,7 +56,7 @@ export default function PdfPreview({ file, page: sourcePage }: PreviewProviderPr
           }
           className="grid place-content-center"
         >
-          <Page pageNumber={page} width={width} className="shadow-sm" />
+          <Page pageNumber={currentPage} width={width} className="shadow-sm" />
         </Document>
       </div>
       {pageCount > 1 ? (
@@ -63,24 +64,24 @@ export default function PdfPreview({ file, page: sourcePage }: PreviewProviderPr
           <Button
             variant="ghost"
             size="iconSm"
-            disabled={page <= 1}
+            disabled={currentPage <= 1}
             aria-label={t("preview.pdfPrev")}
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            onClick={() => setPage(Math.max(1, currentPage - 1))}
           >
             <Glyph name="chevron-left" />
           </Button>
           <span className="tabular-nums">
             {t("preview.pdfPage", {
-              page: String(page),
+              page: String(currentPage),
               total: String(pageCount),
             })}
           </span>
           <Button
             variant="ghost"
             size="iconSm"
-            disabled={page >= pageCount}
+            disabled={currentPage >= pageCount}
             aria-label={t("preview.pdfNext")}
-            onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+            onClick={() => setPage(Math.min(pageCount, currentPage + 1))}
           >
             <Glyph name="chevron-right" />
           </Button>

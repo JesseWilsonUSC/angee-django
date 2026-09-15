@@ -130,7 +130,12 @@ export function ChatterProvider({
           if (previous && sameChatterContent(previous, next)) {
             return current;
           }
-          return [...current.filter((entry) => entry.owner !== owner), { ...next, owner }];
+          const entry = { ...next, owner };
+          // Replace an existing owner's entry in place so a republish never
+          // reorders the merged tab strip; only a new owner is appended.
+          return previous
+            ? current.map((existing) => (existing.owner === owner ? entry : existing))
+            : [...current, entry];
         }
         return previous ? current.filter((entry) => entry.owner !== owner) : current;
       });

@@ -473,7 +473,11 @@ _MISSING = object()
 
 
 def json_pointer_value(value: Any, pointer: str) -> Any:
-    """Resolve one RFC 6901 pointer or raise ``KeyError`` when it is invalid or absent."""
+    """Resolve one RFC 6901 pointer or raise ``KeyError`` when it is invalid or absent.
+
+    The public raising contract is consumed by downstream accounting-intake steps;
+    :func:`_json_pointer_value` keeps the internal sentinel/array-baseline shape.
+    """
 
     resolved = _json_pointer_value(value, pointer)
     if resolved is _MISSING:

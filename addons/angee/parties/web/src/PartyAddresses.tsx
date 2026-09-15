@@ -48,7 +48,9 @@ export function addressFields({
   ];
 }
 
-/** Canonical create/edit address collection shared by every Party subtype. */
+// Two call shapes: inside a record panel it derives read-only from the form
+// surface; embedded standalone (e.g. a consumer company view) it takes an
+// explicit `readOnly`. Both are live — keep the union.
 type PartyAddressesProps = Pick<RecordPanelContext, "recordId"> & (
   | { form: RecordPanelContext["form"]; readOnly?: never }
   | { form?: never; readOnly: boolean }

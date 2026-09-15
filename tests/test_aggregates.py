@@ -1683,7 +1683,7 @@ def test_interleaved_json_resources_do_not_replace_upstream_builders(monkeypatch
     assert "metadata__mailbox" not in region.group_key_type.__annotations__
 
 
-@pytest.mark.parametrize("widget", ["demo.cost.allocation", "arp.example.percent_editor"])
+@pytest.mark.parametrize("widget", ["demo.cost.allocation", "demo.example.percent_editor"])
 def test_resource_field_accepts_addon_qualified_widget(widget):
     """Addon-owned widgets use a qualified registry name without widening built-ins."""
     from angee.graphql.data.resource_fields import require_unique_resource_fields

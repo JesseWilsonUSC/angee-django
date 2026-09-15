@@ -3,10 +3,6 @@
 from __future__ import annotations
 
 from django.db import models, transaction
-from rebac import system_context
-
-from angee.base.refs import canonical_record_target
-from angee.workflows.states import RunStatus
 
 
 class PartyHandle(models.Model):
@@ -18,27 +14,9 @@ class PartyHandle(models.Model):
         abstract = True
 
     def _deliver_artifact_runs_on_commit(self) -> None:
-        target = canonical_record_target(self)
-        run_model = self._meta.apps.get_model("workflows", "WorkflowRun")
-        with system_context(reason="workflows_parties.party_handle.artifact_runs"):
-            run_ids = tuple(
-                run_model._base_manager.filter(
-                    step_runs__attempts__artifacts__target_content_type=target.content_type,
-                    step_runs__attempts__artifacts__target_object_id=target.object_id,
-                )
-                .exclude(status__in=RunStatus.TERMINAL)
-                .order_by("pk")
-                .values_list("pk", flat=True)
-                .distinct()
-            )
+        from angee.workflows import engine
 
-        def deliver() -> None:
-            from angee.workflows import engine
-
-            for run_id in run_ids:
-                engine.deliver(run_id)
-
-        transaction.on_commit(deliver)
+        transaction.on_commit(lambda: engine.deliver_artifact(self))
 
     def confirm(self) -> None:
         """Confirm the association and notify exact artifact-linked workflows."""

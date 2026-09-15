@@ -22,6 +22,10 @@ def country_choices() -> Countries:
 def normalize_country_code(value: Any) -> str:
     """Resolve an ISO code or exact upstream-recognized name to alpha-2.
 
+    The configured django-countries catalogue resolves first, so a project's
+    ``COUNTRIES_OVERRIDE`` names win; the complete pycountry ISO catalogue is an
+    exact-match fallback only when that catalogue has no match, keeping the
+    field's contract full ISO completeness rather than a validation gate.
     Deliberately reject fuzzy or colloquial names so ingestion cannot silently
     attach an address to the wrong jurisdiction.
     """
